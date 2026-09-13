@@ -1,0 +1,90 @@
+use rayon::prelude::*;
+
+use crate::Matrix;
+
+use super::{GemmKernel, assert_gemm_dimensions, ikj_rows};
+
+/// Rayon work-stealing implementation of the contiguous `i-k-j` kernel.
+///
+/// It runs in the currently installed Rayon pool. The benchmark runner
+/// installs a per-thread-count pool, avoiding global-pool configuration and
+/// ensuring that pool construction is outside the timed region.
+pub struct RayonIkjGemm;
+
+impl GemmKernel for RayonIkjGemm {
+    fn name(&self) -> &'static str {
+        "rayon-ikj"
+    }
+
+    fn compute(&self, lhs: &Matrix<f64>, rhs: &Matrix<f64>, output: &mut Matrix<f64>) {
+        assert_gemm_dimensions(lhs, rhs, output);
+        let n = lhs.cols();
+        output.as_mut_slice().fill(0.0);
+
+        output
+            .as_mut_slice()
+            .par_chunks_exact_mut(n)
+            .enumerate()
+            .for_each(|(row, output_row)| {
+                ikj_rows(lhs.as_slice(), rhs.as_slice(), output_row, row, n)
+            });
+    }
+}
+
+/// Rayon work-stealing implementation, partitioned into whole blocks of rows.
+pub struct RayonTiledGemm {
+    block_size: usize,
+}
+
+impl RayonTiledGemm {
+    #[must_use]
+    pub fn new(block_size: usize) -> Self {
+        assert!(block_size > 0, "block size must be greater than zero");
+        Self { block_size }
+    }
+}
+
+impl GemmKernel for RayonTiledGemm {
+    fn name(&self) -> &'static str {
+        "rayon-tiled"
+    }
+
+    fn compute(&self, lhs: &Matrix<f64>, rhs: &Matrix<f64>, output: &mut Matrix<f64>) {
+        assert_gemm_dimensions(lhs, rhs, output);
+        let n = lhs.cols();
+        let block_size = self.block_size;
+        output.as_mut_slice().fill(0.0);
+
+        // Each task receives an integral group of output rows. `par_chunks`
+        // proves those mutable groups are disjoint without pointer arithmetic.
+        output
+            .as_mut_slice()
+            .par_chunks_mut(block_size * n)
+            .enumerate()
+            .for_each(|(tile_index, output_rows)| {
+                let ii = tile_index * block_size;
+
+                for kk in (0..n).step_by(block_size) {
+                    let k_end = (kk + block_size).min(n);
+                    for jj in (0..n).step_by(block_size) {
+                        let j_end = (jj + block_size).min(n);
+                        for (local_row, output_row) in output_rows.chunks_exact_mut(n).enumerate() {
+                            let lhs_row =
+                                &lhs.as_slice()[(ii + local_row) * n..(ii + local_row + 1) * n];
+                            let output_tile = &mut output_row[jj..j_end];
+
+                            for (&a_ik, rhs_row) in lhs_row[kk..k_end]
+                                .iter()
+                                .zip(rhs.as_slice()[kk * n..k_end * n].chunks_exact(n))
+                            {
+                                for (out, &b_kj) in output_tile.iter_mut().zip(&rhs_row[jj..j_end])
+                                {
+                                    *out += a_ik * b_kj;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+    }
+}
