@@ -63,9 +63,9 @@ pub(crate) fn run(
     Ok(records)
 }
 
-fn benchmark_inputs(n: usize) -> (Matrix<f64>, Matrix<f64>) {
-    let lhs = Matrix::from_fn(n, n, |row, col| ((row * 17 + col * 13) % 23) as f64 / 23.0);
-    let rhs = Matrix::from_fn(n, n, |row, col| ((row * 7 + col * 19) % 29) as f64 / 29.0);
+fn benchmark_inputs(n: usize) -> (Matrix<f32>, Matrix<f32>) {
+    let lhs = Matrix::from_fn(n, n, |row, col| ((row * 17 + col * 13) % 23) as f32 / 23.0);
+    let rhs = Matrix::from_fn(n, n, |row, col| ((row * 7 + col * 19) % 29) as f32 / 29.0);
     (lhs, rhs)
 }
 
@@ -74,9 +74,9 @@ fn measure(
     threads: usize,
     block_size: usize,
     repetitions: usize,
-    lhs: &Matrix<f64>,
-    rhs: &Matrix<f64>,
-    output: &mut Matrix<f64>,
+    lhs: &Matrix<f32>,
+    rhs: &Matrix<f32>,
+    output: &mut Matrix<f32>,
 ) -> Result<Duration, rayon::ThreadPoolBuildError> {
     let mut total = Duration::ZERO;
     match choice {
@@ -131,9 +131,9 @@ fn measure(
 
 fn time_kernel(
     kernel: &impl GemmKernel,
-    lhs: &Matrix<f64>,
-    rhs: &Matrix<f64>,
-    output: &mut Matrix<f64>,
+    lhs: &Matrix<f32>,
+    rhs: &Matrix<f32>,
+    output: &mut Matrix<f32>,
 ) -> Duration {
     let start = Instant::now();
     kernel.compute(black_box(lhs), black_box(rhs), black_box(output));

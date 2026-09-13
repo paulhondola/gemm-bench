@@ -10,7 +10,7 @@ impl GemmKernel for IkjGemm {
         "ikj"
     }
 
-    fn compute(&self, lhs: &Matrix<f64>, rhs: &Matrix<f64>, output: &mut Matrix<f64>) {
+    fn compute(&self, lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &mut Matrix<f32>) {
         assert_gemm_dimensions(lhs, rhs, output);
         output.as_mut_slice().fill(0.0);
         ikj_rows(

@@ -16,7 +16,7 @@ impl GemmKernel for RayonIkjGemm {
         "rayon-ikj"
     }
 
-    fn compute(&self, lhs: &Matrix<f64>, rhs: &Matrix<f64>, output: &mut Matrix<f64>) {
+    fn compute(&self, lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &mut Matrix<f32>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();
         output.as_mut_slice().fill(0.0);
@@ -49,7 +49,7 @@ impl GemmKernel for RayonTiledGemm {
         "rayon-tiled"
     }
 
-    fn compute(&self, lhs: &Matrix<f64>, rhs: &Matrix<f64>, output: &mut Matrix<f64>) {
+    fn compute(&self, lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &mut Matrix<f32>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();
         let block_size = self.block_size;

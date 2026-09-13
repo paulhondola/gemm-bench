@@ -22,10 +22,10 @@ use crate::Matrix;
 pub trait GemmKernel: Send + Sync {
     fn name(&self) -> &'static str;
 
-    fn compute(&self, lhs: &Matrix<f64>, rhs: &Matrix<f64>, output: &mut Matrix<f64>);
+    fn compute(&self, lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &mut Matrix<f32>);
 }
 
-pub(crate) fn assert_gemm_dimensions(lhs: &Matrix<f64>, rhs: &Matrix<f64>, output: &Matrix<f64>) {
+pub(crate) fn assert_gemm_dimensions(lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &Matrix<f32>) {
     assert!(
         lhs.is_square() && rhs.is_square() && output.is_square(),
         "this benchmark supports only square matrices"
@@ -46,9 +46,9 @@ pub(crate) fn assert_gemm_dimensions(lhs: &Matrix<f64>, rhs: &Matrix<f64>, outpu
 /// shared by the Rayon and scoped-thread kernels, whose row slices are known
 /// to be disjoint by construction.
 pub(crate) fn ikj_rows(
-    lhs: &[f64],
-    rhs: &[f64],
-    output_rows: &mut [f64],
+    lhs: &[f32],
+    rhs: &[f32],
+    output_rows: &mut [f32],
     first_row: usize,
     n: usize,
 ) {
@@ -74,13 +74,13 @@ mod tests {
     };
     use crate::Matrix;
 
-    fn inputs(n: usize) -> (Matrix<f64>, Matrix<f64>) {
-        let lhs = Matrix::from_fn(n, n, |row, col| ((row * 17 + col * 13) % 23) as f64 / 23.0);
-        let rhs = Matrix::from_fn(n, n, |row, col| ((row * 7 + col * 19) % 29) as f64 / 29.0);
+    fn inputs(n: usize) -> (Matrix<f32>, Matrix<f32>) {
+        let lhs = Matrix::from_fn(n, n, |row, col| ((row * 17 + col * 13) % 23) as f32 / 23.0);
+        let rhs = Matrix::from_fn(n, n, |row, col| ((row * 7 + col * 19) % 29) as f32 / 29.0);
         (lhs, rhs)
     }
 
-    fn assert_close(actual: &Matrix<f64>, expected: &Matrix<f64>) {
+    fn assert_close(actual: &Matrix<f32>, expected: &Matrix<f32>) {
         for (index, (&actual, &expected)) in actual
             .as_slice()
             .iter()
