@@ -1,0 +1,80 @@
+use std::{fs::File, path::Path};
+
+use tabled::{
+    Table, Tabled,
+    settings::{Alignment, Style, object::Columns},
+};
+
+use crate::{benchmark::BenchmarkRecord, cli::OutputFormat};
+
+/// Renders the human-facing view after all timed work is complete.
+pub(crate) fn print_results_table(records: &[BenchmarkRecord]) {
+    println!("{}", render_results_table(records));
+}
+
+pub(crate) fn write_records(
+    path: &Path,
+    format: OutputFormat,
+    records: &[BenchmarkRecord],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::create(path)?;
+    match format {
+        OutputFormat::Csv => {
+            let mut writer = csv::Writer::from_writer(file);
+            for record in records {
+                writer.serialize(record)?;
+            }
+            writer.flush()?;
+        }
+        OutputFormat::Json => serde_json::to_writer_pretty(file, records)?,
+    }
+    Ok(())
+}
+
+/// Presentation-only view: benchmark files retain the full precision values
+/// in `BenchmarkRecord`, while the terminal stays compact and easy to scan.
+#[derive(Tabled)]
+struct TerminalBenchmarkRecord<'a> {
+    kernel: &'a str,
+    n: usize,
+    threads: usize,
+    elapsed_ms: String,
+    gflops: String,
+}
+
+fn render_results_table(records: &[BenchmarkRecord]) -> String {
+    let rows = records.iter().map(|record| TerminalBenchmarkRecord {
+        kernel: &record.kernel,
+        n: record.n,
+        threads: record.threads,
+        elapsed_ms: format!("{:.3}", record.elapsed_ms),
+        gflops: format!("{:.3}", record.gflops),
+    });
+    let mut table = Table::new(rows);
+    table.with(Style::psql());
+    table.modify(Columns::new(1..), Alignment::right());
+    table.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_results_table;
+    use crate::benchmark::BenchmarkRecord;
+
+    #[test]
+    fn terminal_table_uses_schema_headers_and_compact_float_precision() {
+        let table = render_results_table(&[BenchmarkRecord {
+            kernel: "rayon-ikj".to_owned(),
+            n: 256,
+            threads: 4,
+            elapsed_ms: 12.345_67,
+            gflops: 2.5,
+        }]);
+
+        assert!(table.contains("kernel"));
+        assert!(table.contains("elapsed_ms"));
+        assert!(table.contains("rayon-ikj"));
+        assert!(table.contains("12.346"));
+        assert!(table.contains("2.500"));
+    }
+}
