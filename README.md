@@ -19,5 +19,6 @@ two through `available_parallelism()`. Sequential kernels are recorded once at
 one thread, while parallel kernels are swept over the requested worker counts.
 
 CSV records have the stable visualization-pipeline columns:
-`kernel,n,threads,elapsed_ms,gflops`. Use `--format json` to write the same
-records as a JSON array instead.
+`kernel,n,threads,elapsed_ms,gflops`. The `--output` extension selects the
+format: use `.csv` for CSV or `.json` for a JSON array. Other extensions are
+rejected.
