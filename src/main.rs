@@ -12,6 +12,10 @@ use rayon_gemm::{
     kernels::{IkjGemm, NaiveGemm, RayonIkjGemm, RayonTiledGemm, StaticIkjGemm, TiledGemm},
 };
 use serde::Serialize;
+use tabled::{
+    Table, Tabled,
+    settings::{Alignment, Style, object::Columns},
+};
 
 const DEFAULT_SIZES: [usize; 6] = [64, 128, 256, 512, 1024, 2048];
 
@@ -89,6 +93,17 @@ struct BenchmarkRecord {
     gflops: f64,
 }
 
+/// Presentation-only view: benchmark files retain the full precision values
+/// in `BenchmarkRecord`, while the terminal stays compact and easy to scan.
+#[derive(Tabled)]
+struct TerminalBenchmarkRecord<'a> {
+    kernel: &'a str,
+    n: usize,
+    threads: usize,
+    elapsed_ms: String,
+    gflops: String,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     validate_cli(&cli)?;
@@ -116,7 +131,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.kernel.clone()
     };
 
-    println!("kernel          n  threads   elapsed_ms    gflops");
     let mut records = Vec::new();
     for n in sizes {
         let (lhs, rhs) = benchmark_inputs(n);
@@ -147,17 +161,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     elapsed_ms,
                     gflops,
                 };
-                println!(
-                    "{:<14} {:>5} {:>8} {:>12.3} {:>9.3}",
-                    record.kernel, record.n, record.threads, record.elapsed_ms, record.gflops
-                );
                 records.push(record);
             }
         }
     }
 
+    print_results_table(&records);
     write_records(&cli.output, cli.format, &records)?;
     Ok(())
+}
+
+fn print_results_table(records: &[BenchmarkRecord]) {
+    println!("{}", render_results_table(records));
+}
+
+fn render_results_table(records: &[BenchmarkRecord]) -> String {
+    let rows = records.iter().map(|record| TerminalBenchmarkRecord {
+        kernel: &record.kernel,
+        n: record.n,
+        threads: record.threads,
+        elapsed_ms: format!("{:.3}", record.elapsed_ms),
+        gflops: format!("{:.3}", record.gflops),
+    });
+    let mut table = Table::new(rows);
+    table.with(Style::psql());
+    table.modify(Columns::new(1..), Alignment::right());
+    table.to_string()
 }
 
 fn validate_cli(cli: &Cli) -> Result<(), String> {
@@ -285,4 +314,26 @@ fn write_records(
         OutputFormat::Json => serde_json::to_writer_pretty(file, records)?,
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BenchmarkRecord, render_results_table};
+
+    #[test]
+    fn terminal_table_uses_schema_headers_and_compact_float_precision() {
+        let table = render_results_table(&[BenchmarkRecord {
+            kernel: "rayon-ikj".to_owned(),
+            n: 256,
+            threads: 4,
+            elapsed_ms: 12.345_67,
+            gflops: 2.5,
+        }]);
+
+        assert!(table.contains("kernel"));
+        assert!(table.contains("elapsed_ms"));
+        assert!(table.contains("rayon-ikj"));
+        assert!(table.contains("12.346"));
+        assert!(table.contains("2.500"));
+    }
 }
