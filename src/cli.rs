@@ -1,5 +1,6 @@
 use std::{
     ffi::OsStr,
+    fs::{self, File, OpenOptions},
     path::{Path, PathBuf},
 };
 
@@ -34,7 +35,8 @@ pub(crate) struct Cli {
     #[arg(long, default_value_t = 64)]
     block_size: usize,
 
-    /// Destination for structured records. Use a .csv or .json extension.
+    /// Destination for structured records. Use a .csv or .json extension;
+    /// missing parent directories are created.
     #[arg(long)]
     output: PathBuf,
 }
@@ -48,7 +50,7 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) precisions: Vec<Precision>,
     pub(crate) repetitions: usize,
     pub(crate) block_size: usize,
-    pub(crate) output: PathBuf,
+    pub(crate) output: File,
     pub(crate) format: OutputFormat,
 }
 
@@ -56,6 +58,7 @@ impl Cli {
     pub(crate) fn into_plan(self) -> Result<BenchmarkPlan, String> {
         validate_cli(&self)?;
         let format = infer_output_format(&self.output)?;
+        let output = open_output(&self.output)?;
 
         let sizes = if self.sizes.is_empty() {
             DEFAULT_SIZES.to_vec()
@@ -92,7 +95,7 @@ impl Cli {
             precisions,
             repetitions: self.repetitions,
             block_size: self.block_size,
-            output: self.output,
+            output,
             format,
         })
     }
@@ -175,6 +178,28 @@ fn infer_output_format(path: &Path) -> Result<OutputFormat, String> {
     }
 }
 
+/// Creates missing parent directories and opens the output file before any
+/// benchmark runs, so an unwritable path fails immediately instead of after
+/// the sweep. The file is not truncated here: an existing result file keeps
+/// its contents until the new records are written.
+fn open_output(path: &Path) -> Result<File, String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "cannot create output directory '{}': {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|error| format!("cannot open output file '{}': {error}", path.display()))
+}
+
 fn default_thread_counts() -> Vec<usize> {
     let max = std::thread::available_parallelism()
         .map(|parallelism| parallelism.get())
@@ -191,14 +216,21 @@ fn default_thread_counts() -> Vec<usize> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{ffi::OsStr, fs, path::PathBuf};
 
     use clap::Parser;
 
-    use super::{Cli, KernelChoice, OutputFormat, Precision, infer_output_format};
+    use super::{Cli, KernelChoice, OutputFormat, Precision, infer_output_format, open_output};
+
+    /// A per-process path under the system temp directory, so tests never
+    /// write into the repository and parallel test runs do not collide.
+    fn temp_output(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("rayon-gemm-test-{}-{name}", std::process::id()))
+    }
 
     #[test]
     fn empty_sweeps_expand_to_defaults() {
+        let output = temp_output("defaults.csv");
         let plan = Cli {
             sizes: Vec::new(),
             threads: Vec::new(),
@@ -206,7 +238,7 @@ mod tests {
             precision: Vec::new(),
             repetitions: 1,
             block_size: 64,
-            output: PathBuf::from("results.csv"),
+            output: output.clone(),
         }
         .into_plan()
         .expect("default plan should be valid");
@@ -217,17 +249,25 @@ mod tests {
         assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticIkj));
         assert_eq!(plan.precisions, [Precision::F32]);
         assert_eq!(plan.format, OutputFormat::Csv);
+        fs::remove_file(output).expect("remove test output");
     }
 
     #[test]
     fn precision_flag_accepts_a_comma_delimited_sweep() {
-        let plan =
-            Cli::try_parse_from(["rayon-gemm", "--precision", "f16,f64", "--output", "r.csv"])
-                .expect("precision list should parse")
-                .into_plan()
-                .expect("plan should be valid");
+        let output = temp_output("precision.csv");
+        let plan = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--precision"),
+            OsStr::new("f16,f64"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("precision list should parse")
+        .into_plan()
+        .expect("plan should be valid");
 
         assert_eq!(plan.precisions, [Precision::F16, Precision::F64]);
+        fs::remove_file(output).expect("remove test output");
     }
 
     #[test]
@@ -250,5 +290,42 @@ mod tests {
             .expect_err("unsupported extension must be rejected");
 
         assert!(error.contains(".csv or .json"));
+    }
+
+    #[test]
+    fn missing_output_directories_are_created_before_running() {
+        let root = temp_output("nested");
+        let output = root.join("a/b/results.csv");
+
+        open_output(&output).expect("missing parent directories should be created");
+
+        assert!(output.is_file());
+        fs::remove_dir_all(root).expect("remove test directories");
+    }
+
+    #[test]
+    fn unusable_output_paths_are_rejected_before_running() {
+        let blocker = temp_output("blocker");
+        fs::write(&blocker, b"").expect("create a regular file");
+
+        let error = open_output(&blocker.join("results.csv"))
+            .expect_err("a regular file cannot be a parent directory");
+
+        assert!(error.contains("output directory"));
+        fs::remove_file(blocker).expect("remove test file");
+    }
+
+    #[test]
+    fn existing_output_is_not_truncated_until_records_are_written() {
+        let output = temp_output("existing.csv");
+        fs::write(&output, b"previous results").expect("seed an existing output");
+
+        open_output(&output).expect("existing output should open");
+
+        assert_eq!(
+            fs::read(&output).expect("read existing output"),
+            b"previous results"
+        );
+        fs::remove_file(output).expect("remove test output");
     }
 }

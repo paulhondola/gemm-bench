@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path};
+use std::fs::File;
 
 use tabled::{
     Table, Tabled,
@@ -12,12 +12,14 @@ pub(crate) fn print_results_table(records: &[BenchmarkRecord]) {
     println!("{}", render_results_table(records));
 }
 
+/// Writes into the output file that `Cli::into_plan` opened before the sweep.
+/// Truncation happens only now, so a failed run leaves earlier results intact.
 pub(crate) fn write_records(
-    path: &Path,
+    file: File,
     format: OutputFormat,
     records: &[BenchmarkRecord],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let file = File::create(path)?;
+    file.set_len(0)?;
     match format {
         OutputFormat::Csv => {
             let mut writer = csv::Writer::from_writer(file);

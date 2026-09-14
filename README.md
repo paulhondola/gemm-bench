@@ -28,4 +28,6 @@ one thread, while parallel kernels are swept over the requested worker counts.
 CSV records have the stable visualization-pipeline columns:
 `kernel,n,threads,precision,elapsed_ms,gflops`. The `--output` extension
 selects the format: use `.csv` for CSV or `.json` for a JSON array. Other
-extensions are rejected.
+extensions are rejected. Missing parent directories are created and the file
+is opened before the sweep starts, so an unwritable path fails immediately;
+an existing file keeps its contents until the new records are written.

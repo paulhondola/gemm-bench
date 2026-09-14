@@ -13,6 +13,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let records = benchmark::run(&plan)?;
 
     report::print_results_table(&records);
-    report::write_records(&plan.output, plan.format, &records)?;
+    report::write_records(plan.output, plan.format, &records)?;
     Ok(())
 }
