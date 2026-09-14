@@ -133,6 +133,39 @@ h1 {
   display: block;
 }
 
+.grid-2col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  margin-bottom: 24px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.grid-2col > .card {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 20px;
+}
+
+.grid-2col > .card > .chart-container {
+  flex: 1;
+  min-height: 480px;
+  width: 100% !important;
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .grid-2col {
+    grid-template-columns: 1fr;
+  }
+}
+
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -183,6 +216,88 @@ table.data-table th {
 
 table.data-table tr:hover {
   background-color: rgba(255, 255, 255, 0.03);
+}
+
+.table-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.table-controls .search-bar {
+  margin-bottom: 0;
+}
+
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sort-select {
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sort-select:focus, .search-bar:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sort-dir-btn {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.sort-dir-btn:hover {
+  background: #1e293b;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+table.data-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+table.data-table th.sortable:hover {
+  background-color: #1e293b;
+  color: var(--text-primary);
+}
+
+table.data-table th .sort-icon {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+table.data-table th.sorted-active {
+  color: var(--accent);
+  background-color: rgba(56, 189, 248, 0.08);
+}
+
+table.data-table th.sorted-active .sort-icon {
+  color: var(--accent);
 }
 
 .search-bar {

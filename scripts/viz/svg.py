@@ -132,7 +132,7 @@ def generate_serial_baseline_svg(data: BenchmarkData, dest: Path):
 
     # Plot Lines & Points for each serial kernel
     legend_items = []
-    for kernel in SERIAL_KERNELS:
+    for kernel in ["naive-ijk", "ikj", "tiled"]:
         pts = []
         for n in sizes:
             rec = data.get_record(kernel, n, 1)
@@ -278,7 +278,7 @@ def generate_parallel_speedup_grid_svg(data: BenchmarkData, dest: Path):
         )
 
         # Curves for parallel kernels
-        for kernel in ["rayon-ikj", "rayon-tiled", "static-ikj"]:
+        for kernel in ["rayon-ikj", "rayon-tiled", "static-ikj", "static-tiled"]:
             pts = []
             for t in threads:
                 speedup = data.get_speedup(kernel, n, t)
@@ -310,16 +310,17 @@ def generate_parallel_speedup_grid_svg(data: BenchmarkData, dest: Path):
             )
 
     # Shared Legend at top right
-    leg_x = total_w - outer_margin_x - 470
+    leg_x = total_w - outer_margin_x - 560
     leg_y = 30
     items = [
         ("Rayon (i-k-j)", COLOR_PALETTE["rayon-ikj"]),
         ("Rayon Tiled", COLOR_PALETTE["rayon-tiled"]),
-        ("Static Threads", COLOR_PALETTE["static-ikj"]),
+        ("Static ikj", COLOR_PALETTE["static-ikj"]),
+        ("Static Tiled", COLOR_PALETTE["static-tiled"]),
         ("Ideal Linear (y=x)", "#94a3b8", "dash"),
     ]
     for i, item in enumerate(items):
-        ix = leg_x + i * 115
+        ix = leg_x + i * 110
         if len(item) == 3:
             chart.elements.append(
                 f'<line x1="{ix}" y1="{leg_y + 4}" x2="{ix + 16}" y2="{leg_y + 4}" stroke="{item[1]}" stroke-width="2" stroke-dasharray="3,3"/>'
@@ -491,7 +492,9 @@ def generate_peak_landscape_svg(data: BenchmarkData, dest: Path):
         ("naive-ijk", "Naive (1 thread)", COLOR_PALETTE["naive-ijk"], "dash"),
         ("ikj", "Contiguous ikj (1 thread)", COLOR_PALETTE["ikj"], "solid"),
         ("rayon-ikj", "Rayon ikj (Peak Threads)", COLOR_PALETTE["rayon-ikj"], "solid"),
+        ("rayon-tiled", "Rayon Tiled (Peak Threads)", COLOR_PALETTE["rayon-tiled"], "solid"),
         ("static-ikj", "Static ikj (Peak Threads)", COLOR_PALETTE["static-ikj"], "solid"),
+        ("static-tiled", "Static Tiled (Peak Threads)", COLOR_PALETTE["static-tiled"], "solid"),
         ("mps", "Apple Silicon MPS (GPU/AMX)", COLOR_PALETTE["mps"], "solid"),
     ]
 

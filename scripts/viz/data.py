@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 # Kernel classifications
 SERIAL_KERNELS = {"naive-ijk", "ikj", "tiled"}
-PARALLEL_KERNELS = {"rayon-ikj", "rayon-tiled", "static-ikj"}
+PARALLEL_KERNELS = {"rayon-ikj", "rayon-tiled", "static-ikj", "static-tiled"}
 ACCELERATED_KERNELS = {"mps"}
 
 COLOR_PALETTE = {
@@ -23,6 +23,7 @@ COLOR_PALETTE = {
     "rayon-ikj": "#38bdf8",  # Bright Blue (Rayon work-stealing)
     "rayon-tiled": "#2563eb",  # Deep Blue (Rayon tiled)
     "static-ikj": "#a855f7",  # Purple (Static OS threads)
+    "static-tiled": "#d946ef",  # Fuchsia / Magenta (Static Tiled)
     "mps": "#2ecc71",  # Emerald Green (Apple Silicon GPU / AMX)
     "ideal": "#94a3b8",  # Gray (Theoretical linear scaling)
 }
@@ -34,6 +35,7 @@ KERNEL_DISPLAY_NAMES = {
     "rayon-ikj": "Rayon (i-k-j)",
     "rayon-tiled": "Rayon Tiled",
     "static-ikj": "Static Threads (i-k-j)",
+    "static-tiled": "Static Tiled",
     "mps": "Apple Silicon MPS",
 }
 

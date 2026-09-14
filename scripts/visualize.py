@@ -92,9 +92,7 @@ def main():
         figures_dir.mkdir(parents=True, exist_ok=True)
         print("Generating static vector figures...")
         generate_serial_baseline_svg(filtered, figures_dir / "01_serial_baseline.svg")
-        generate_parallel_speedup_grid_svg(
-            filtered, figures_dir / "02_parallel_speedup_grid.svg"
-        )
+        generate_parallel_speedup_grid_svg(filtered, figures_dir / "02_parallel_speedup_grid.svg")
         generate_parallel_efficiency_svg(filtered, figures_dir / "03_parallel_efficiency.svg")
         generate_peak_landscape_svg(filtered, figures_dir / "04_peak_landscape.svg")
         generate_mps_crossover_svg(filtered, figures_dir / "05_mps_crossover.svg")

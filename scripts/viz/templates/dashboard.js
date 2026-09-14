@@ -6,7 +6,7 @@
  */
 
 const SERIAL_KERNELS = new Set(["naive-ijk", "ikj", "tiled"]);
-const PARALLEL_KERNELS = new Set(["rayon-ikj", "rayon-tiled", "static-ikj"]);
+const PARALLEL_KERNELS = new Set(["rayon-ikj", "rayon-tiled", "static-ikj", "static-tiled"]);
 const ACCELERATED_KERNELS = new Set(["mps"]);
 
 const COLORS = {
@@ -16,6 +16,7 @@ const COLORS = {
   "rayon-ikj": "#38bdf8",
   "rayon-tiled": "#2563eb",
   "static-ikj": "#a855f7",
+  "static-tiled": "#d946ef",
   "mps": "#2ecc71",
   "ideal": "#94a3b8"
 };
@@ -48,6 +49,14 @@ function switchTab(tabId) {
   if (targetContent) targetContent.classList.add('active');
 
   window.dispatchEvent(new Event('resize'));
+  setTimeout(() => {
+    window.dispatchEvent(new Event('resize'));
+    if (targetContent) {
+      targetContent.querySelectorAll('.js-plotly-plot').forEach(el => {
+        Plotly.Plots.resize(el);
+      });
+    }
+  }, 40);
 }
 
 // 1. Parallel Speedup Grid Chart
@@ -94,7 +103,7 @@ function renderParallelGrid() {
     });
 
     // Parallel kernels
-    ["rayon-ikj", "rayon-tiled", "static-ikj"].forEach(k => {
+    ["rayon-ikj", "rayon-tiled", "static-ikj", "static-tiled"].forEach(k => {
       const xVals = [];
       const yVals = [];
       const textVals = [];
@@ -189,7 +198,7 @@ function renderParallelEfficiency() {
   });
 
   targetSizes.forEach(n => {
-    ["rayon-ikj", "static-ikj"].forEach(k => {
+    ["rayon-ikj", "rayon-tiled", "static-ikj", "static-tiled"].forEach(k => {
       const xVals = [];
       const yVals = [];
       const textVals = [];
@@ -204,15 +213,17 @@ function renderParallelEfficiency() {
         }
       });
 
-      data.push({
-        x: xVals,
-        y: yVals,
-        mode: 'lines+markers',
-        name: `${k} (N=${n})`,
-        marker: { size: 7 },
-        text: textVals,
-        hoverinfo: 'text'
-      });
+      if (xVals.length > 0) {
+        data.push({
+          x: xVals,
+          y: yVals,
+          mode: 'lines+markers',
+          name: `${k} (N=${n})`,
+          marker: { size: 7 },
+          text: textVals,
+          hoverinfo: 'text'
+        });
+      }
     });
   });
 
@@ -246,15 +257,17 @@ function renderSerialBaseline() {
       }
     });
 
-    data.push({
-      x: xVals,
-      y: yVals,
-      type: 'bar',
-      name: k,
-      marker: { color: COLORS[k] },
-      text: textVals,
-      hoverinfo: 'text'
-    });
+    if (xVals.length > 0) {
+      data.push({
+        x: xVals,
+        y: yVals,
+        type: 'bar',
+        name: k,
+        marker: { color: COLORS[k] },
+        text: textVals,
+        hoverinfo: 'text'
+      });
+    }
   });
 
   const layout = {
@@ -278,7 +291,9 @@ function renderPeakLandscape() {
     { k: "naive-ijk", name: "Naive (1T)", style: "dash" },
     { k: "ikj", name: "Contiguous ikj (1T)", style: "solid" },
     { k: "rayon-ikj", name: "Rayon ikj (Peak Threads)", style: "solid" },
+    { k: "rayon-tiled", name: "Rayon Tiled (Peak Threads)", style: "solid" },
     { k: "static-ikj", name: "Static ikj (Peak Threads)", style: "solid" },
+    { k: "static-tiled", name: "Static Tiled (Peak Threads)", style: "solid" },
     { k: "mps", name: "Apple Silicon MPS (GPU/AMX)", style: "solid" },
   ];
 
@@ -328,10 +343,16 @@ function renderPeakLandscape() {
   Plotly.newPlot('chart-peak-landscape', data, layout, { responsive: true });
 }
 
-// 5. Scheduler Shootout Chart
-function renderSchedulerShootout() {
+// 5. Scheduler Shootout Charts
+function renderSchedulerComparison(containerId, rayonKernel, staticKernel, label) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
   const data = [];
-  const targetSizes = [512, 1024, 2048].filter(s => SIZES.includes(s));
+  let targetSizes = [512, 1024, 2048].filter(s => SIZES.includes(s));
+  if (targetSizes.length === 0) {
+    targetSizes = SIZES.slice(-3);
+  }
 
   targetSizes.forEach(n => {
     const xVals = [];
@@ -339,26 +360,46 @@ function renderSchedulerShootout() {
     const textVals = [];
 
     THREADS.forEach(t => {
-      const rayonRec = getRecord("rayon-ikj", n, t);
-      const staticRec = getRecord("static-ikj", n, t);
-      if (rayonRec && staticRec && staticRec.elapsed_ms > 0) {
+      const rayonRec = getRecord(rayonKernel, n, t);
+      const staticRec = getRecord(staticKernel, n, t);
+      if (rayonRec && staticRec && staticRec.elapsed_ms > 0 && rayonRec.elapsed_ms > 0) {
         const ratio = staticRec.elapsed_ms / rayonRec.elapsed_ms;
         xVals.push(t);
         yVals.push(ratio);
-        textVals.push(`<b>N=${n}, Threads=${t}</b><br>Rayon Time: ${rayonRec.elapsed_ms.toFixed(2)} ms<br>Static Time: ${staticRec.elapsed_ms.toFixed(2)} ms<br>Ratio (Static/Rayon): ${ratio.toFixed(2)}x`);
+        textVals.push(
+          `<b>${label} (N=${n}, Threads=${t})</b><br>` +
+          `Rayon Time: ${rayonRec.elapsed_ms.toFixed(2)} ms (${rayonRec.gflops.toFixed(1)} GFLOPS)<br>` +
+          `Static Time: ${staticRec.elapsed_ms.toFixed(2)} ms (${staticRec.gflops.toFixed(1)} GFLOPS)<br>` +
+          `Speed Ratio (Static / Rayon): ${ratio.toFixed(2)}x`
+        );
       }
     });
 
-    data.push({
-      x: xVals,
-      y: yVals,
-      mode: 'lines+markers',
-      name: `N = ${n}`,
-      marker: { size: 7 },
-      text: textVals,
-      hoverinfo: 'text'
-    });
+    if (xVals.length > 0) {
+      data.push({
+        x: xVals,
+        y: yVals,
+        mode: 'lines+markers',
+        name: `N = ${n}`,
+        marker: { size: 7 },
+        text: textVals,
+        hoverinfo: 'text'
+      });
+    }
   });
+
+  if (data.length === 0) {
+    container.innerHTML = `
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 320px; color: #94a3b8; text-align: center;">
+        <p style="font-size: 15px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px;">
+          No benchmark records found for ${staticKernel}
+        </p>
+        <p style="font-size: 13px; color: #64748b; max-width: 480px;">
+          Run benchmarks with <code>--kernel ${rayonKernel},${staticKernel}</code> to generate scheduler shootout comparison curves.
+        </p>
+      </div>`;
+    return;
+  }
 
   data.push({
     x: [1, Math.max(...THREADS)],
@@ -372,14 +413,19 @@ function renderSchedulerShootout() {
   const layout = {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: '#161d24',
-    margin: { t: 30, b: 60, l: 70, r: 30 },
-    font: { family: '-apple-system, BlinkMacSystemFont, Segoe UI', color: '#94a3b8' },
+    margin: { t: 30, b: 50, l: 55, r: 20 },
+    font: { family: '-apple-system, BlinkMacSystemFont, Segoe UI', color: '#94a3b8', size: 11 },
     xaxis: { title: 'Worker Threads', gridcolor: '#222b35', tickvals: THREADS },
     yaxis: { title: 'Speed Ratio (Static / Rayon Time)', gridcolor: '#222b35' },
-    legend: { orientation: 'h', x: 0, y: 1.1, font: { color: '#e2e8f0' } }
+    legend: { orientation: 'h', x: 0, y: 1.15, font: { color: '#e2e8f0', size: 11 } }
   };
 
-  Plotly.newPlot('chart-scheduler', data, layout, { responsive: true });
+  Plotly.newPlot(containerId, data, layout, { responsive: true });
+}
+
+function renderSchedulerShootout() {
+  renderSchedulerComparison('chart-scheduler', 'rayon-ikj', 'static-ikj', 'Contiguous ikj');
+  renderSchedulerComparison('chart-scheduler-tiled', 'rayon-tiled', 'static-tiled', '2D Cache-Tiled');
 }
 
 // 6. MPS Gap Chart
@@ -437,20 +483,113 @@ function renderMpsGap() {
   Plotly.newPlot('chart-mps-gap', data, layout, { responsive: true });
 }
 
-// 7. Interactive Data Table
-function populateTable() {
+// 7. Interactive Sortable Data Table
+let tableRecords = [];
+let currentSortField = "gflops";
+let currentSortDir = "desc";
+
+function getCategory(kernel) {
+  if (PARALLEL_KERNELS.has(kernel)) return "parallel";
+  if (ACCELERATED_KERNELS.has(kernel)) return "mps";
+  return "serial";
+}
+
+function initTableData() {
+  tableRecords = RAW_RECORDS.map(r => {
+    const sp = getSpeedup(r.kernel, r.n, r.threads);
+    return {
+      ...r,
+      category: getCategory(r.kernel),
+      speedup: sp !== null ? sp : 0
+    };
+  });
+}
+
+function sortTableBy(field) {
+  if (currentSortField === field) {
+    currentSortDir = currentSortDir === "asc" ? "desc" : "asc";
+  } else {
+    currentSortField = field;
+    const isText = field === "kernel" || field === "category" || field === "precision";
+    currentSortDir = isText ? "asc" : "desc";
+  }
+  updateSortUI();
+  renderTable();
+}
+
+function toggleSortDirection() {
+  currentSortDir = currentSortDir === "asc" ? "desc" : "asc";
+  updateSortUI();
+  renderTable();
+}
+
+function applyTableSort() {
+  const select = document.getElementById("sortField");
+  if (select) {
+    currentSortField = select.value;
+    const isText = currentSortField === "kernel" || currentSortField === "category" || currentSortField === "precision";
+    currentSortDir = isText ? "asc" : "desc";
+    updateSortUI();
+    renderTable();
+  }
+}
+
+function updateSortUI() {
+  const select = document.getElementById("sortField");
+  if (select) select.value = currentSortField;
+
+  const icon = document.getElementById("sortDirIcon");
+  if (icon) {
+    icon.innerHTML = currentSortDir === "asc" ? "Asc &#x25B2;" : "Desc &#x25BC;";
+  }
+
+  document.querySelectorAll("#benchmarkTable th.sortable").forEach(th => {
+    th.classList.remove("sorted-active");
+    const span = th.querySelector(".sort-icon");
+    if (span) span.innerHTML = "";
+  });
+
+  const activeTh = document.querySelector(`#benchmarkTable th[data-col="${currentSortField}"]`);
+  if (activeTh) {
+    activeTh.classList.add("sorted-active");
+    const span = activeTh.querySelector(".sort-icon");
+    if (span) {
+      span.innerHTML = currentSortDir === "asc" ? "&#x25B2;" : "&#x25BC;";
+    }
+  }
+}
+
+function renderTable() {
   const tbody = document.querySelector("#benchmarkTable tbody");
   if (!tbody) return;
+
+  const query = (document.getElementById("tableSearch")?.value || "").toLowerCase().trim();
+
+  const sorted = [...tableRecords].sort((a, b) => {
+    const valA = a[currentSortField];
+    const valB = b[currentSortField];
+
+    if (typeof valA === "string" || typeof valB === "string") {
+      const cmp = String(valA || "").localeCompare(String(valB || ""));
+      return currentSortDir === "asc" ? cmp : -cmp;
+    }
+    const numA = Number(valA) || 0;
+    const numB = Number(valB) || 0;
+    return currentSortDir === "asc" ? numA - numB : numB - numA;
+  });
+
   tbody.innerHTML = "";
 
-  RAW_RECORDS.forEach(r => {
+  sorted.forEach(r => {
+    const rowText = `${r.kernel} ${r.category} ${r.n} ${r.threads} ${r.precision} ${r.elapsed_ms} ${r.gflops}`.toLowerCase();
+    if (query && !rowText.includes(query)) return;
+
     const tr = document.createElement("tr");
     let catBadge = '<span class="badge badge-serial">Serial</span>';
-    if (PARALLEL_KERNELS.has(r.kernel)) catBadge = '<span class="badge badge-parallel">Parallel</span>';
-    else if (ACCELERATED_KERNELS.has(r.kernel)) catBadge = '<span class="badge badge-mps">MPS</span>';
+    if (r.category === "parallel") catBadge = '<span class="badge badge-parallel">Parallel</span>';
+    else if (r.category === "mps") catBadge = '<span class="badge badge-mps">MPS</span>';
 
-    const sp = getSpeedup(r.kernel, r.n, r.threads);
-    const spText = sp ? `${sp.toFixed(2)}x` : '-';
+    const spText = r.speedup > 0 ? `${r.speedup.toFixed(2)}x` : "-";
 
     tr.innerHTML = `
       <td style="font-weight:600; color:#f8fafc;">${r.kernel}</td>
@@ -467,12 +606,7 @@ function populateTable() {
 }
 
 function filterTable() {
-  const query = document.getElementById("tableSearch").value.toLowerCase();
-  const rows = document.querySelectorAll("#benchmarkTable tbody tr");
-  rows.forEach(row => {
-    const text = row.innerText.toLowerCase();
-    row.style.display = text.includes(query) ? "" : "none";
-  });
+  renderTable();
 }
 
 // Initialize on DOM Ready
@@ -483,5 +617,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderPeakLandscape();
   renderSchedulerShootout();
   renderMpsGap();
-  populateTable();
+  initTableData();
+  updateSortUI();
+  renderTable();
 });

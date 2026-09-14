@@ -127,6 +127,7 @@ def test_kernel_classification():
     assert "rayon-ikj" in PARALLEL_KERNELS
     assert "rayon-tiled" in PARALLEL_KERNELS
     assert "static-ikj" in PARALLEL_KERNELS
+    assert "static-tiled" in PARALLEL_KERNELS
 
     assert "mps" in ACCELERATED_KERNELS
     assert "naive-mps" not in ACCELERATED_KERNELS

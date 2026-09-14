@@ -98,8 +98,6 @@ def create_dummy_data() -> BenchmarkData:
     return BenchmarkData(records)
 
 
-
-
 def test_svg_chart_rendering():
     chart = SvgChart(400, 300, "Test Title & Features", "Test Subtitle <Speed & Accuracy>")
     chart.elements.append('<circle cx="50" cy="50" r="10" fill="red"/>')

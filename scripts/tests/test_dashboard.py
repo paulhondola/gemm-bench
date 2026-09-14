@@ -71,6 +71,7 @@ def test_generate_interactive_dashboard(tmp_path: Path):
     # Verify HTML does not contain inline style or huge script tags
     assert "<style>" not in content
     assert "Plotly.newPlot" not in content  # Now cleanly in assets/dashboard.js
+    assert "chart-scheduler-tiled" in content
 
     # Verify KPI cards rendered in HTML
     assert "200" in content  # MPS GFLOPS
