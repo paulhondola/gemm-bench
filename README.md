@@ -21,14 +21,10 @@ High-performance, safe Rust benchmarks for dense, row-major square matrix multip
 
 ### 2. Apple Silicon GPU Kernels (Metal & MPS)
 
-On macOS / Apple Silicon devices, `rayon-gemm` benchmarks unified zero-copy GPU matrix multiplication:
+On macOS / Apple Silicon devices, `rayon-gemm` benchmarks unified zero-copy GPU matrix multiplication using Apple's production-grade accelerated BLAS implementation:
 
-* **Custom Tiled Metal Shader (Naive / Custom Compute Kernel)**:
-  - Custom Metal Shading Language (MSL) shader (`matmul.metal`).
-  - Employs shared `threadgroup` memory tiles (`tileA`, `tileB`) and `threadgroup_barrier` synchronization to reduce global unified memory bandwidth demands.
-  - Demonstrates raw compute pipeline dispatch via Metal command encoders.
 * **Metal Performance Shaders (MPS / Hardware Library)**:
-  - Apple's production-grade accelerated BLAS implementation using `MPSMatrixMultiplication` from the `MetalPerformanceShaders` framework.
+  - Leverages `MPSMatrixMultiplication` from the `MetalPerformanceShaders` framework.
   - Directly engages Apple Silicon matrix coprocessors (AMX) and GPU hardware execution units for near-peak theoretical TFLOPS.
 
 ---
@@ -54,7 +50,7 @@ The benchmark suite requires **Rust Nightly** because the `f16` primitive type (
 
 ### 1. Default Benchmark Sweep
 
-Running without flags performs a full sweep across all default sizes (`64, 128, 256, 512, 1024, 2048`), all CPU kernels and Apple Silicon GPU kernels (`mps`, `naive-mps` on macOS), and powers-of-two thread counts up to `available_parallelism()` at `f32` precision:
+Running without flags performs a full sweep across all default sizes (`64, 128, 256, 512, 1024, 2048`), all CPU kernels and Apple Silicon GPU kernels (`mps` on macOS), and powers-of-two thread counts up to `available_parallelism()` at `f32` precision:
 
 ```sh
 cargo run --release -- --output results.csv
@@ -120,7 +116,7 @@ cargo run --release -- \
 | :--- | :--- | :--- |
 | `--sizes <N,...>` | Matrix dimensions (square $N \times N$), comma-delimited | `64,128,256,512,1024,2048` |
 | `--threads <T,...>` | Worker thread counts for parallel kernels | Powers of 2 up to CPU count |
-| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `mps`, `naive-mps`) | All kernels (CPU + macOS GPU) |
+| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `mps`) | All kernels (CPU + macOS GPU) |
 | `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`; note MPS supports `f16`, `f32`) | `f32` |
 | `--repetitions <R>` | Timed iterations measured per configuration (mean is recorded) | `1` |
 | `--block-size <B>` | Tile edge length for blocked kernels | `64` |

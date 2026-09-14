@@ -293,37 +293,3 @@ impl<T: MpsElement> GemmKernel<T> for MpsGemm<T> {
         });
     }
 }
-
-/// A skeleton GEMM kernel for a naive MPS implementation.
-///
-/// Currently mirrors `MpsGemm` by invoking Apple's `MPSMatrixMultiplication`,
-/// serving as a baseline skeleton to be replaced by custom shaders.
-pub struct NaiveMpsGemm<T: MpsElement> {
-    inner: MpsGemm<T>,
-}
-
-impl<T: MpsElement> NaiveMpsGemm<T> {
-    pub fn new() -> Option<Self> {
-        MpsGemm::new().map(|inner| Self { inner })
-    }
-
-    pub fn benchmark(
-        &self,
-        lhs: &Matrix<T>,
-        rhs: &Matrix<T>,
-        output: &mut Matrix<T>,
-        repetitions: usize,
-    ) -> Duration {
-        self.inner.benchmark(lhs, rhs, output, repetitions)
-    }
-}
-
-impl<T: MpsElement> GemmKernel<T> for NaiveMpsGemm<T> {
-    fn name(&self) -> &'static str {
-        "naive-mps"
-    }
-
-    fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
-        self.inner.compute(lhs, rhs, output);
-    }
-}
