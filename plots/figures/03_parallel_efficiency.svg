@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 520" width="820" height="520" style="background-color:#111418; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<defs>
+  <linearGradient id="grid-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#1e242c"/>
+    <stop offset="100%" stop-color="#15191f"/>
+  </linearGradient>
+  <filter id="drop-shadow" x="-10%" y="-10%" width="120%" height="120%">
+    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+  </filter>
+</defs>
+<rect width="820" height="520" rx="12" fill="#111418"/>
+<rect x="75" y="70" width="705" height="390" rx="8" fill="url(#grid-grad)" stroke="#2a323d" stroke-width="1"/>
+<text x="75" y="32" fill="#f8fafc" font-size="18" font-weight="700">Parallel Efficiency vs Worker Threads</text>
+<text x="75" y="52" fill="#94a3b8" font-size="12">Core utilization efficiency (Speedup / Threads × 100%) showing Amdahl saturation</text>
+<line x1="75" y1="395.0" x2="780" y2="395.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="399.0" fill="#64748b" font-size="11" text-anchor="end">20%</text>
+<line x1="75" y1="330.0" x2="780" y2="330.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="334.0" fill="#64748b" font-size="11" text-anchor="end">40%</text>
+<line x1="75" y1="265.0" x2="780" y2="265.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="269.0" fill="#64748b" font-size="11" text-anchor="end">60%</text>
+<line x1="75" y1="200.0" x2="780" y2="200.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="204.0" fill="#64748b" font-size="11" text-anchor="end">80%</text>
+<line x1="75" y1="135.0" x2="780" y2="135.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="139.0" fill="#64748b" font-size="11" text-anchor="end">100%</text>
+<text x="30" y="265.0" fill="#94a3b8" font-size="12" font-weight="600" text-anchor="middle" transform="rotate(-90 30 265.0)">Efficiency (%)</text>
+<line x1="75" y1="135.0" x2="780" y2="135.0" stroke="#475569" stroke-width="1.2" stroke-dasharray="4,4"/>
+<line x1="75.0" y1="460" x2="75.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="75.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">1</text>
+<line x1="153.33333333333331" y1="460" x2="153.33333333333331" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="153.33333333333331" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">2</text>
+<line x1="310.0" y1="460" x2="310.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="310.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">4</text>
+<line x1="623.3333333333334" y1="460" x2="623.3333333333334" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="623.3333333333334" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">8</text>
+<line x1="780.0" y1="460" x2="780.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="780.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">10</text>
+<text x="427.5" y="508" fill="#94a3b8" font-size="12" font-weight="600" text-anchor="middle">Worker Threads</text>
+<polyline points="75.0,135.0 153.3,148.5 310.0,162.4 623.3,201.5 780.0,232.4" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="75.0" cy="135.0" r="4" fill="#38bdf8" stroke="#111418" stroke-width="1.5"/>
+<circle cx="153.3" cy="148.5" r="4" fill="#38bdf8" stroke="#111418" stroke-width="1.5"/>
+<circle cx="310.0" cy="162.4" r="4" fill="#38bdf8" stroke="#111418" stroke-width="1.5"/>
+<circle cx="623.3" cy="201.5" r="4" fill="#38bdf8" stroke="#111418" stroke-width="1.5"/>
+<circle cx="780.0" cy="232.4" r="4" fill="#38bdf8" stroke="#111418" stroke-width="1.5"/>
+<polyline points="75.0,135.0 153.3,143.2 310.0,150.8 623.3,163.8 780.0,213.2" fill="none" stroke="#a855f7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="75.0" cy="135.0" r="4" fill="#a855f7" stroke="#111418" stroke-width="1.5"/>
+<circle cx="153.3" cy="143.2" r="4" fill="#a855f7" stroke="#111418" stroke-width="1.5"/>
+<circle cx="310.0" cy="150.8" r="4" fill="#a855f7" stroke="#111418" stroke-width="1.5"/>
+<circle cx="623.3" cy="163.8" r="4" fill="#a855f7" stroke="#111418" stroke-width="1.5"/>
+<circle cx="780.0" cy="213.2" r="4" fill="#a855f7" stroke="#111418" stroke-width="1.5"/>
+<polyline points="75.0,135.0 153.3,165.2 310.0,211.1 623.3,216.1 780.0,261.6" fill="none" stroke="#ec4899" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="75.0" cy="135.0" r="4" fill="#ec4899" stroke="#111418" stroke-width="1.5"/>
+<circle cx="153.3" cy="165.2" r="4" fill="#ec4899" stroke="#111418" stroke-width="1.5"/>
+<circle cx="310.0" cy="211.1" r="4" fill="#ec4899" stroke="#111418" stroke-width="1.5"/>
+<circle cx="623.3" cy="216.1" r="4" fill="#ec4899" stroke="#111418" stroke-width="1.5"/>
+<circle cx="780.0" cy="261.6" r="4" fill="#ec4899" stroke="#111418" stroke-width="1.5"/>
+<rect x="550" y="77" width="215" height="76" rx="6" fill="#161c23" stroke="#2e3846" stroke-width="1"/>
+<circle cx="566" cy="89" r="5" fill="#38bdf8"/>
+<text x="580" y="93" fill="#e2e8f0" font-size="11" font-weight="500">rayon-ikj (N=512)</text>
+<circle cx="566" cy="111" r="5" fill="#a855f7"/>
+<text x="580" y="115" fill="#e2e8f0" font-size="11" font-weight="500">rayon-ikj (N=1024)</text>
+<circle cx="566" cy="133" r="5" fill="#ec4899"/>
+<text x="580" y="137" fill="#e2e8f0" font-size="11" font-weight="500">rayon-ikj (N=2048)</text>
+</svg>

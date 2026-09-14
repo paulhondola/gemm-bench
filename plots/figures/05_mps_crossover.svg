@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 520" width="820" height="520" style="background-color:#111418; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<defs>
+  <linearGradient id="grid-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#1e242c"/>
+    <stop offset="100%" stop-color="#15191f"/>
+  </linearGradient>
+  <filter id="drop-shadow" x="-10%" y="-10%" width="120%" height="120%">
+    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+  </filter>
+</defs>
+<rect width="820" height="520" rx="12" fill="#111418"/>
+<rect x="75" y="70" width="705" height="390" rx="8" fill="url(#grid-grad)" stroke="#2a323d" stroke-width="1"/>
+<text x="75" y="32" fill="#f8fafc" font-size="18" font-weight="700">Hardware Coprocessor Gap: MPS vs Multi-Core CPU</text>
+<text x="75" y="52" fill="#94a3b8" font-size="12">Ratio of Apple Silicon MPS throughput to the fastest multi-threaded CPU kernel</text>
+<line x1="75" y1="445.3449744399516" x2="780" y2="445.3449744399516" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="4,4"/>
+<text x="770" y="439.3449744399516" fill="#e2e8f0" font-size="11" font-weight="600" text-anchor="end">1.0x Parity (Crossover Threshold)</text>
+<line x1="75" y1="460.0" x2="780" y2="460.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="464.0" fill="#64748b" font-size="11" text-anchor="end">0.0x</text>
+<line x1="75" y1="382.0" x2="780" y2="382.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="386.0" fill="#64748b" font-size="11" text-anchor="end">5.3x</text>
+<line x1="75" y1="304.0" x2="780" y2="304.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="308.0" fill="#64748b" font-size="11" text-anchor="end">10.6x</text>
+<line x1="75" y1="226.0" x2="780" y2="226.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="230.0" fill="#64748b" font-size="11" text-anchor="end">16.0x</text>
+<line x1="75" y1="148.0" x2="780" y2="148.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="152.0" fill="#64748b" font-size="11" text-anchor="end">21.3x</text>
+<line x1="75" y1="70.0" x2="780" y2="70.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="74.0" fill="#64748b" font-size="11" text-anchor="end">26.6x</text>
+<text x="30" y="265.0" fill="#94a3b8" font-size="12" font-weight="600" text-anchor="middle" transform="rotate(-90 30 265.0)">Speedup Multiplier (MPS / Best CPU)</text>
+<line x1="75.0" y1="460" x2="75.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="75.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=64</text>
+<line x1="216.0" y1="460" x2="216.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="216.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=128</text>
+<line x1="357.0" y1="460" x2="357.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="357.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=256</text>
+<line x1="498.0" y1="460" x2="498.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="498.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=512</text>
+<line x1="639.0" y1="460" x2="639.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="639.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=1024</text>
+<line x1="780.0" y1="460" x2="780.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="780.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=2048</text>
+<text x="427.5" y="508" fill="#94a3b8" font-size="12" font-weight="600" text-anchor="middle">Matrix Dimension (N x N)</text>
+<polyline points="75.0,458.0 216.0,457.8 357.0,452.0 498.0,432.4 639.0,348.5 780.0,120.9" fill="none" stroke="#2ecc71" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="75.0" cy="458.0" r="5" fill="#2ecc71" stroke="#111418" stroke-width="2"/>
+<text x="75.0" y="446.0" fill="#86efac" font-size="11" font-weight="700" text-anchor="middle">0.1x</text>
+<circle cx="216.0" cy="457.8" r="5" fill="#2ecc71" stroke="#111418" stroke-width="2"/>
+<text x="216.0" y="445.8" fill="#86efac" font-size="11" font-weight="700" text-anchor="middle">0.1x</text>
+<circle cx="357.0" cy="452.0" r="5" fill="#2ecc71" stroke="#111418" stroke-width="2"/>
+<text x="357.0" y="440.0" fill="#86efac" font-size="11" font-weight="700" text-anchor="middle">0.5x</text>
+<circle cx="498.0" cy="432.4" r="5" fill="#2ecc71" stroke="#111418" stroke-width="2"/>
+<text x="498.0" y="420.4" fill="#86efac" font-size="11" font-weight="700" text-anchor="middle">1.9x</text>
+<circle cx="639.0" cy="348.5" r="5" fill="#2ecc71" stroke="#111418" stroke-width="2"/>
+<text x="639.0" y="336.5" fill="#86efac" font-size="11" font-weight="700" text-anchor="middle">7.6x</text>
+<circle cx="780.0" cy="120.9" r="5" fill="#2ecc71" stroke="#111418" stroke-width="2"/>
+<text x="780.0" y="108.9" fill="#86efac" font-size="11" font-weight="700" text-anchor="middle">23.1x</text>
+</svg>

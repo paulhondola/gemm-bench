@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 520" width="820" height="520" style="background-color:#111418; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<defs>
+  <linearGradient id="grid-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#1e242c"/>
+    <stop offset="100%" stop-color="#15191f"/>
+  </linearGradient>
+  <filter id="drop-shadow" x="-10%" y="-10%" width="120%" height="120%">
+    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+  </filter>
+</defs>
+<rect width="820" height="520" rx="12" fill="#111418"/>
+<rect x="75" y="70" width="705" height="390" rx="8" fill="url(#grid-grad)" stroke="#2a323d" stroke-width="1"/>
+<text x="75" y="32" fill="#f8fafc" font-size="18" font-weight="700">Single-Threaded Baseline: Cache Locality and SIMD</text>
+<text x="75" y="52" fill="#94a3b8" font-size="12">Comparison of serial CPU kernels (naive-ijk vs ikj vs tiled) at thread count = 1</text>
+<line x1="75" y1="460.0" x2="780" y2="460.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="464.0" fill="#64748b" font-size="11" text-anchor="end">0.0</text>
+<line x1="75" y1="382.0" x2="780" y2="382.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="386.0" fill="#64748b" font-size="11" text-anchor="end">7.2</text>
+<line x1="75" y1="304.0" x2="780" y2="304.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="308.0" fill="#64748b" font-size="11" text-anchor="end">14.4</text>
+<line x1="75" y1="226.0" x2="780" y2="226.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="230.0" fill="#64748b" font-size="11" text-anchor="end">21.6</text>
+<line x1="75" y1="148.0" x2="780" y2="148.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="152.0" fill="#64748b" font-size="11" text-anchor="end">28.7</text>
+<line x1="75" y1="70.0" x2="780" y2="70.0" stroke="#222b35" stroke-width="1"/>
+<text x="65" y="74.0" fill="#64748b" font-size="11" text-anchor="end">35.9</text>
+<text x="30" y="265.0" fill="#94a3b8" font-size="12" font-weight="600" text-anchor="middle" transform="rotate(-90 30 265.0)">Throughput (GFLOPS)</text>
+<line x1="75.0" y1="460" x2="75.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="75.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=64</text>
+<line x1="216.0" y1="460" x2="216.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="216.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=128</text>
+<line x1="357.0" y1="460" x2="357.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="357.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=256</text>
+<line x1="498.0" y1="460" x2="498.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="498.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=512</text>
+<line x1="639.0" y1="460" x2="639.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="639.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=1024</text>
+<line x1="780.0" y1="460" x2="780.0" y2="466" stroke="#475569" stroke-width="1.5"/>
+<text x="780.0" y="482" fill="#94a3b8" font-size="12" font-weight="500" text-anchor="middle">N=2048</text>
+<text x="427.5" y="508" fill="#94a3b8" font-size="12" font-weight="600" text-anchor="middle">Matrix Dimension (N x N)</text>
+<polyline points="75.0,442.3 216.0,428.6 357.0,434.1 498.0,435.7 639.0,438.4 780.0,451.9" fill="none" stroke="#e74c3c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="75.0" cy="442.3" r="4.5" fill="#e74c3c" stroke="#111418" stroke-width="1.5"/>
+<circle cx="216.0" cy="428.6" r="4.5" fill="#e74c3c" stroke="#111418" stroke-width="1.5"/>
+<circle cx="357.0" cy="434.1" r="4.5" fill="#e74c3c" stroke="#111418" stroke-width="1.5"/>
+<circle cx="498.0" cy="435.7" r="4.5" fill="#e74c3c" stroke="#111418" stroke-width="1.5"/>
+<circle cx="639.0" cy="438.4" r="4.5" fill="#e74c3c" stroke="#111418" stroke-width="1.5"/>
+<circle cx="780.0" cy="451.9" r="4.5" fill="#e74c3c" stroke="#111418" stroke-width="1.5"/>
+<polyline points="75.0,351.3 216.0,237.9 357.0,233.6 498.0,242.7 639.0,264.2 780.0,301.5" fill="none" stroke="#f39c12" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="75.0" cy="351.3" r="4.5" fill="#f39c12" stroke="#111418" stroke-width="1.5"/>
+<circle cx="216.0" cy="237.9" r="4.5" fill="#f39c12" stroke="#111418" stroke-width="1.5"/>
+<circle cx="357.0" cy="233.6" r="4.5" fill="#f39c12" stroke="#111418" stroke-width="1.5"/>
+<circle cx="498.0" cy="242.7" r="4.5" fill="#f39c12" stroke="#111418" stroke-width="1.5"/>
+<circle cx="639.0" cy="264.2" r="4.5" fill="#f39c12" stroke="#111418" stroke-width="1.5"/>
+<circle cx="780.0" cy="301.5" r="4.5" fill="#f39c12" stroke="#111418" stroke-width="1.5"/>
+<polyline points="75.0,350.1 216.0,120.9 357.0,181.3 498.0,172.8 639.0,179.6 780.0,198.5" fill="none" stroke="#e67e22" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="75.0" cy="350.1" r="4.5" fill="#e67e22" stroke="#111418" stroke-width="1.5"/>
+<circle cx="216.0" cy="120.9" r="4.5" fill="#e67e22" stroke="#111418" stroke-width="1.5"/>
+<circle cx="357.0" cy="181.3" r="4.5" fill="#e67e22" stroke="#111418" stroke-width="1.5"/>
+<circle cx="498.0" cy="172.8" r="4.5" fill="#e67e22" stroke="#111418" stroke-width="1.5"/>
+<circle cx="639.0" cy="179.6" r="4.5" fill="#e67e22" stroke="#111418" stroke-width="1.5"/>
+<circle cx="780.0" cy="198.5" r="4.5" fill="#e67e22" stroke="#111418" stroke-width="1.5"/>
+<rect x="550" y="77" width="215" height="76" rx="6" fill="#161c23" stroke="#2e3846" stroke-width="1"/>
+<circle cx="566" cy="89" r="5" fill="#e74c3c"/>
+<text x="580" y="93" fill="#e2e8f0" font-size="11" font-weight="500">Naive (i-j-k)</text>
+<circle cx="566" cy="111" r="5" fill="#f39c12"/>
+<text x="580" y="115" fill="#e2e8f0" font-size="11" font-weight="500">Cache Tiled (64x64)</text>
+<circle cx="566" cy="133" r="5" fill="#e67e22"/>
+<text x="580" y="137" fill="#e2e8f0" font-size="11" font-weight="500">Contiguous (i-k-j)</text>
+</svg>

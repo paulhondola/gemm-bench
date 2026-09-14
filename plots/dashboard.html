@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rayon-gemm Performance Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>rayon-gemm Performance Dashboard</h1>
+        <div class="subtitle">High-performance dense GEMM analysis across serial CPU, Rayon work-stealing, static OS threads, and Apple Silicon MPS</div>
+      </div>
+      <div>
+        <span class="badge badge-serial">Serial Kernels</span>
+        <span class="badge badge-parallel">Multi-Threaded CPU</span>
+        <span class="badge badge-mps">Apple Silicon MPS</span>
+      </div>
+    </header>
+
+    <!-- KPI Stat Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Peak GPU / AMX (MPS)</div>
+        <div class="stat-val">3,403 <span>GFLOPS</span></div>
+        <div class="stat-meta">Apple Silicon Hardware Coprocessor</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Peak Multi-Core CPU</div>
+        <div class="stat-val">198 <span>GFLOPS</span></div>
+        <div class="stat-meta">rayon-ikj @ max threads</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Max Parallel Speedup</div>
+        <div class="stat-val">7.60x</div>
+        <div class="stat-meta">Strong scaling over 1-thread CPU</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Max Cache Speedup</div>
+        <div class="stat-val">32.3x</div>
+        <div class="stat-meta">ikj loop interchange vs naive-ijk</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('parallel-grid')">Parallel Speedup Grid</button>
+      <button class="tab-btn" onclick="switchTab('parallel-efficiency')">Parallel Efficiency</button>
+      <button class="tab-btn" onclick="switchTab('serial-baseline')">Serial Kernels (Cache & Memory)</button>
+      <button class="tab-btn" onclick="switchTab('peak-landscape')">Peak Performance Landscape</button>
+      <button class="tab-btn" onclick="switchTab('scheduler-shootout')">Rayon vs Static Scheduler</button>
+      <button class="tab-btn" onclick="switchTab('mps-gap')">Apple Silicon MPS vs CPU</button>
+      <button class="tab-btn" onclick="switchTab('data-table')">Benchmark Records Table</button>
+    </div>
+
+    <!-- Tab 1: Parallel Speedup Grid -->
+    <div id="parallel-grid" class="tab-content active">
+      <div class="card">
+        <div class="card-title">Parallel Speedup Strong Scaling Grid</div>
+        <div class="card-desc">Strong scaling speedup (T(1) / T(p)) across worker threads for every matrix size N, benchmarked against ideal linear scaling (y = x).</div>
+        <div id="chart-parallel-grid" class="chart-container" style="min-height: 720px;"></div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Parallel Efficiency -->
+    <div id="parallel-efficiency" class="tab-content">
+      <div class="card">
+        <div class="card-title">Core Utilization & Parallel Efficiency</div>
+        <div class="card-desc">Parallel efficiency (S(p) / p × 100%) highlighting cache coherence contention and memory bandwidth saturation as thread counts scale.</div>
+        <div id="chart-parallel-efficiency" class="chart-container"></div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Serial Baseline -->
+    <div id="serial-baseline" class="tab-content">
+      <div class="card">
+        <div class="card-title">Single-Threaded Algorithmic Baselines: Cache Locality & SIMD</div>
+        <div class="card-desc">Comparing naive-ijk (column-strided in B), ikj (contiguous streaming rows), and tiled (2D cache-blocked) single-threaded kernels at thread = 1.</div>
+        <div id="chart-serial-baseline" class="chart-container"></div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Peak Landscape -->
+    <div id="peak-landscape" class="tab-content">
+      <div class="card">
+        <div class="card-title">Complete Peak Architectural Landscape</div>
+        <div class="card-desc">Comparing every kernel at its peak configuration across matrix sizes N on a logarithmic throughput scale.</div>
+        <div id="chart-peak-landscape" class="chart-container"></div>
+      </div>
+    </div>
+
+    <!-- Tab 5: Scheduler Shootout -->
+    <div id="scheduler-shootout" class="tab-content">
+      <div class="card">
+        <div class="card-title">Scheduler Shootout: Rayon Work-Stealing vs Static OS Threads</div>
+        <div class="card-desc">Throughput comparison between rayon-ikj (dynamic work-stealing) and static-ikj (persistent thread pool with fixed row chunks).</div>
+        <div id="chart-scheduler" class="chart-container"></div>
+      </div>
+    </div>
+
+    <!-- Tab 6: MPS Gap -->
+    <div id="mps-gap" class="tab-content">
+      <div class="card">
+        <div class="card-title">Apple Silicon GPU & AMX Acceleration Gap</div>
+        <div class="card-desc">Speedup multiplier of native MetalPerformanceShaders over the fastest multi-core CPU kernel across matrix sizes N.</div>
+        <div id="chart-mps-gap" class="chart-container"></div>
+      </div>
+    </div>
+
+    <!-- Tab 7: Data Table -->
+    <div id="data-table" class="tab-content">
+      <div class="card">
+        <div class="card-title">Full Benchmark Records</div>
+        <div class="card-desc">Search and inspect all recorded execution times, GFLOPS, and configuration parameters.</div>
+        <input type="text" id="tableSearch" class="search-bar" placeholder="Filter by kernel, size, threads..." onkeyup="filterTable()">
+        <div style="overflow-x: auto;">
+          <table class="data-table" id="benchmarkTable">
+            <thead>
+              <tr>
+                <th>Kernel</th>
+                <th>Category</th>
+                <th>Dimension (N)</th>
+                <th>Threads</th>
+                <th>Precision</th>
+                <th>Elapsed (ms)</th>
+                <th>Throughput (GFLOPS)</th>
+                <th>Speedup vs T1</th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="assets/data.js"></script>
+  <script src="assets/dashboard.js"></script>
+</body>
+</html>
