@@ -135,6 +135,4 @@ cargo run --release -- \
 2. **Work Validation**: `static-ikj` requires at least one matrix row per worker thread; thread counts exceeding the matrix dimension $N$ are rejected upfront.
 3. **Structured Export**:
    - The `--output` file extension automatically selects the format: `.csv` or `.json`.
-   - Records follow the standard schema:
-     $$\text{GFLOPS} = \frac{2 \times N^3}{\text{elapsed\_seconds} \times 10^9}$$
    - Columns: `kernel, n, threads, precision, elapsed_ms, gflops`.
