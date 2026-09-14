@@ -1,6 +1,5 @@
 use crate::Matrix;
-
-use super::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
+use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
 
 /// Sequential `i-k-j` GEMM with contiguous output and RHS accesses.
 pub struct IkjGemm;

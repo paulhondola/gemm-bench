@@ -3,8 +3,9 @@ use std::sync::Mutex;
 use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 
 use crate::Matrix;
+use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
 
-use super::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
+use super::static_row_counts;
 
 /// Fixed, contiguous row chunks on a persistent thread pool.
 ///
@@ -22,12 +23,6 @@ impl StaticIkjGemm {
         let pool = ThreadPoolBuilder::new().num_threads(threads).build()?;
         Ok(Self { pool })
     }
-}
-
-/// Row counts per worker, as OpenMP's static schedule assigns them: every
-/// worker gets `n / threads` rows and the first `n % threads` get one more.
-fn static_row_counts(n: usize, threads: usize) -> impl Iterator<Item = usize> {
-    (0..threads).map(move |worker| n / threads + usize::from(worker < n % threads))
 }
 
 impl<T: Element> GemmKernel<T> for StaticIkjGemm {
@@ -68,20 +63,5 @@ impl<T: Element> GemmKernel<T> for StaticIkjGemm {
             let (first_row, rows) = &mut *chunk;
             ikj_rows(lhs_data, rhs_data, rows, *first_row, n);
         });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::static_row_counts;
-
-    #[test]
-    fn static_schedule_uses_every_thread_with_balanced_rows() {
-        assert_eq!(
-            static_row_counts(64, 10).collect::<Vec<_>>(),
-            [7, 7, 7, 7, 6, 6, 6, 6, 6, 6]
-        );
-        assert_eq!(static_row_counts(64, 12).count(), 12);
-        assert_eq!(static_row_counts(7, 7).collect::<Vec<_>>(), [1; 7]);
     }
 }

@@ -1,6 +1,5 @@
 use crate::Matrix;
-
-use super::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
 
 /// Sequential cache-blocked GEMM. A block size of 64 is a practical default,
 /// while the CLI permits empirical tuning per target CPU and precision.

@@ -6,7 +6,9 @@ use std::{
 use rayon::ThreadPoolBuilder;
 use rayon_gemm::{
     Element, GemmKernel, Matrix,
-    kernels::{IkjGemm, NaiveGemm, RayonIkjGemm, RayonTiledGemm, StaticIkjGemm, TiledGemm},
+    kernels::{
+        IkjGemm, NaiveGemm, RayonIkjGemm, RayonTiledGemm, StaticIkjGemm, StaticTiledGemm, TiledGemm,
+    },
 };
 use serde::Serialize;
 
@@ -162,6 +164,13 @@ fn measure<T: Element>(
         }
         KernelChoice::StaticIkj => {
             let kernel = StaticIkjGemm::new(threads)?;
+            kernel.compute(lhs, rhs, output);
+            for _ in 0..repetitions {
+                total += time_kernel(&kernel, lhs, rhs, output);
+            }
+        }
+        KernelChoice::StaticTiled => {
+            let kernel = StaticTiledGemm::new(threads, block_size)?;
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
                 total += time_kernel(&kernel, lhs, rhs, output);

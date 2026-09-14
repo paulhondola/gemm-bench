@@ -18,6 +18,7 @@ High-performance, safe Rust benchmarks for dense, row-major square matrix multip
 | `rayon-ikj` | Rayon work-stealing parallel iterator | Dynamically distributes row chunks across a Rayon worker thread pool with `ikj` compute. |
 | `rayon-tiled` | Rayon parallel 2D tiled iterator | Work-stealing scheduling over 2D matrix tiles. |
 | `static-ikj` | OpenMP-style persistent thread pool | Partitions contiguous row chunks evenly across dedicated threads, eliminating work-stealing overhead. |
+| `static-tiled` | OpenMP-style thread pool with 2D blocking | Combines deterministic row partitioning on a persistent thread pool with L1/L2 cache-blocked compute. |
 
 ### 2. Apple Silicon GPU Kernels (Metal & MPS)
 
@@ -116,7 +117,7 @@ cargo run --release -- \
 | :--- | :--- | :--- |
 | `--sizes <N,...>` | Matrix dimensions (square $N \times N$), comma-delimited | `64,128,256,512,1024,2048` |
 | `--threads <T,...>` | Worker thread counts for parallel kernels | Powers of 2 up to CPU count |
-| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `mps`) | All kernels (CPU + macOS GPU) |
+| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `mps`) | All kernels (CPU + macOS GPU) |
 | `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`; note MPS supports `f16`, `f32`) | `f32` |
 | `--repetitions <R>` | Timed iterations measured per configuration (mean is recorded) | `1` |
 | `--block-size <B>` | Tile edge length for blocked kernels | `64` |
@@ -128,7 +129,7 @@ cargo run --release -- \
 ## Methodology & Output Schema
 
 1. **Warmup Run**: Every configuration executes one untimed warmup pass prior to measurement, isolating thread pool initialization, cold caches, and dynamic loader overhead from the recorded metrics.
-2. **Work Validation**: `static-ikj` requires at least one matrix row per worker thread; thread counts exceeding the matrix dimension $N$ are rejected upfront.
+2. **Work Validation**: `static-ikj` and `static-tiled` require at least one matrix row per worker thread; thread counts exceeding the matrix dimension $N$ are rejected upfront.
 3. **Structured Export**:
    - The `--output` file extension automatically selects the format: `.csv` or `.json`.
    - Columns: `kernel, n, threads, precision, elapsed_ms, gflops`.

@@ -108,6 +108,7 @@ impl Cli {
                 KernelChoice::RayonIkj,
                 KernelChoice::RayonTiled,
                 KernelChoice::StaticIkj,
+                KernelChoice::StaticTiled,
             ];
             #[cfg(target_os = "macos")]
             if !precisions.contains(&Precision::F64) {
@@ -152,6 +153,7 @@ pub(crate) enum KernelChoice {
     RayonIkj,
     RayonTiled,
     StaticIkj,
+    StaticTiled,
     #[cfg(target_os = "macos")]
     #[value(name = "mps")]
     Mps,
@@ -166,13 +168,17 @@ impl KernelChoice {
             Self::RayonIkj => "rayon-ikj",
             Self::RayonTiled => "rayon-tiled",
             Self::StaticIkj => "static-ikj",
+            Self::StaticTiled => "static-tiled",
             #[cfg(target_os = "macos")]
             Self::Mps => "mps",
         }
     }
 
     pub(crate) fn uses_workers(self) -> bool {
-        matches!(self, Self::RayonIkj | Self::RayonTiled | Self::StaticIkj)
+        matches!(
+            self,
+            Self::RayonIkj | Self::RayonTiled | Self::StaticIkj | Self::StaticTiled
+        )
     }
 }
 
@@ -209,21 +215,23 @@ fn validate_cli(cli: &Cli) -> Result<(), String> {
     Ok(())
 }
 
-/// `static-ikj` gives every worker at least one row, so a worker count above
-/// the smallest matrix dimension cannot be honored and is rejected up front.
+/// `static-ikj` and `static-tiled` give every worker at least one row, so a
+/// worker count above the smallest matrix dimension cannot be honored and is
+/// rejected up front.
 fn validate_static_threads(
     kernels: &[KernelChoice],
     threads: &[usize],
     sizes: &[usize],
 ) -> Result<(), String> {
-    if !kernels.contains(&KernelChoice::StaticIkj) {
+    if !kernels.contains(&KernelChoice::StaticIkj) && !kernels.contains(&KernelChoice::StaticTiled)
+    {
         return Ok(());
     }
     let max_threads = threads.iter().copied().max().unwrap_or(1);
     let min_size = sizes.iter().copied().min().unwrap_or(usize::MAX);
     if max_threads > min_size {
         return Err(format!(
-            "static-ikj needs at least one row per thread; --threads {max_threads} exceeds --sizes {min_size}"
+            "static kernels need at least one row per thread; --threads {max_threads} exceeds --sizes {min_size}"
         ));
     }
     Ok(())
@@ -327,7 +335,7 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert_eq!(plan.kernels.last(), Some(&KernelChoice::Mps));
         #[cfg(not(target_os = "macos"))]
-        assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticIkj));
+        assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticTiled));
         assert_eq!(plan.precisions, [Precision::F32]);
         assert_eq!(plan.format, OutputFormat::Csv);
         assert!(!plan.no_progress);
