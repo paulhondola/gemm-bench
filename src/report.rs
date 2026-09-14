@@ -46,7 +46,9 @@ impl BenchmarkProgress {
             return;
         }
         let finish_style = ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} {msg}")
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} {msg}",
+            )
             .unwrap_or_else(|_| ProgressStyle::default_bar())
             .progress_chars("=>-");
         self.bar.set_style(finish_style);
@@ -121,9 +123,9 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use indicatif::ProgressStyle;
     use super::render_results_table;
     use crate::benchmark::BenchmarkRecord;
+    use indicatif::ProgressStyle;
 
     #[test]
     fn terminal_table_uses_schema_headers_and_compact_float_precision() {

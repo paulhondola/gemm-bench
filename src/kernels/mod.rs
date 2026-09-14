@@ -57,7 +57,8 @@ impl MpsBench for f16 {
         output: &mut Matrix<Self>,
         repetitions: usize,
     ) -> std::time::Duration {
-        let kernel = NaiveMpsGemm::<f16>::new().expect("Failed to initialize Metal Performance Shaders");
+        let kernel =
+            NaiveMpsGemm::<f16>::new().expect("Failed to initialize Metal Performance Shaders");
         kernel.benchmark(lhs, rhs, output, repetitions)
     }
 }
@@ -80,7 +81,8 @@ impl MpsBench for f32 {
         output: &mut Matrix<Self>,
         repetitions: usize,
     ) -> std::time::Duration {
-        let kernel = NaiveMpsGemm::<f32>::new().expect("Failed to initialize Metal Performance Shaders");
+        let kernel =
+            NaiveMpsGemm::<f32>::new().expect("Failed to initialize Metal Performance Shaders");
         kernel.benchmark(lhs, rhs, output, repetitions)
     }
 }
@@ -102,7 +104,9 @@ impl MpsBench for f64 {
         _output: &mut Matrix<Self>,
         _repetitions: usize,
     ) -> std::time::Duration {
-        panic!("naive-mps GEMM does not support f64 precision; validation should have rejected this")
+        panic!(
+            "naive-mps GEMM does not support f64 precision; validation should have rejected this"
+        )
     }
 }
 
@@ -115,7 +119,15 @@ impl<T: Element> MpsBench for T {}
 /// and the `f64` conversions let callers build inputs and compare results
 /// independently of precision.
 pub trait Element:
-    Copy + Default + Send + Sync + Add<Output = Self> + Mul<Output = Self> + AddAssign + MpsBench + 'static
+    Copy
+    + Default
+    + Send
+    + Sync
+    + Add<Output = Self>
+    + Mul<Output = Self>
+    + AddAssign
+    + MpsBench
+    + 'static
 {
     /// Machine epsilon of the element type, widened to `f64`.
     const EPSILON: f64;
