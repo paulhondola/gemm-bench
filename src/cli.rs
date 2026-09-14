@@ -100,6 +100,7 @@ impl Cli {
             self.precision
         };
         let kernels = if self.kernel.is_empty() {
+            #[allow(unused_mut)]
             let mut list = vec![
                 KernelChoice::Naive,
                 KernelChoice::Ikj,
