@@ -25,17 +25,17 @@
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-label">Peak GPU / AMX (MPS)</div>
-        <div class="stat-val">3,403 <span>GFLOPS</span></div>
+        <div class="stat-val">0 <span>GFLOPS</span></div>
         <div class="stat-meta">Apple Silicon Hardware Coprocessor</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Peak Multi-Core CPU</div>
-        <div class="stat-val">198 <span>GFLOPS</span></div>
+        <div class="stat-val">199 <span>GFLOPS</span></div>
         <div class="stat-meta">rayon-ikj @ max threads</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Max Parallel Speedup</div>
-        <div class="stat-val">7.60x</div>
+        <div class="stat-val">7.76x</div>
         <div class="stat-meta">Strong scaling over 1-thread CPU</div>
       </div>
       <div class="stat-card">
@@ -94,10 +94,17 @@
 
     <!-- Tab 5: Scheduler Shootout -->
     <div id="scheduler-shootout" class="tab-content">
-      <div class="card">
-        <div class="card-title">Scheduler Shootout: Rayon Work-Stealing vs Static OS Threads</div>
-        <div class="card-desc">Throughput comparison between rayon-ikj (dynamic work-stealing) and static-ikj (persistent thread pool with fixed row chunks).</div>
-        <div id="chart-scheduler" class="chart-container"></div>
+      <div class="grid-2col">
+        <div class="card">
+          <div class="card-title">Scheduler Shootout: Contiguous ikj (Rayon vs Static Threads)</div>
+          <div class="card-desc">Throughput and execution time ratio between rayon-ikj (dynamic work-stealing) and static-ikj (persistent thread pool with fixed row chunks). Values &gt; 1.0x indicate Rayon is faster; values &lt; 1.0x indicate Static is faster.</div>
+          <div id="chart-scheduler" class="chart-container"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Scheduler Shootout: 2D Cache-Tiled (Rayon vs Static Threads)</div>
+          <div class="card-desc">Throughput and execution time ratio between rayon-tiled (work-stealing with 2D block decomposition) and static-tiled (persistent thread pool with static block scheduling). Values &gt; 1.0x indicate Rayon is faster; values &lt; 1.0x indicate Static is faster.</div>
+          <div id="chart-scheduler-tiled" class="chart-container"></div>
+        </div>
       </div>
     </div>
 
@@ -114,20 +121,37 @@
     <div id="data-table" class="tab-content">
       <div class="card">
         <div class="card-title">Full Benchmark Records</div>
-        <div class="card-desc">Search and inspect all recorded execution times, GFLOPS, and configuration parameters.</div>
-        <input type="text" id="tableSearch" class="search-bar" placeholder="Filter by kernel, size, threads..." onkeyup="filterTable()">
+        <div class="card-desc">Search, sort, and inspect all recorded execution times, GFLOPS, and configuration parameters.</div>
+        <div class="table-controls">
+          <input type="text" id="tableSearch" class="search-bar" placeholder="Filter by kernel, size, threads..." onkeyup="filterTable()">
+          <div class="sort-controls">
+            <label for="sortField">Sort by:</label>
+            <select id="sortField" class="sort-select" onchange="applyTableSort()">
+              <option value="gflops">Throughput (GFLOPS)</option>
+              <option value="elapsed_ms">Elapsed Time (ms)</option>
+              <option value="speedup">Speedup vs T1</option>
+              <option value="n">Dimension (N)</option>
+              <option value="threads">Threads</option>
+              <option value="kernel">Kernel</option>
+              <option value="precision">Precision</option>
+            </select>
+            <button id="sortDirBtn" class="sort-dir-btn" onclick="toggleSortDirection()" title="Toggle Ascending / Descending">
+              <span id="sortDirIcon">Desc &#x25BC;</span>
+            </button>
+          </div>
+        </div>
         <div style="overflow-x: auto;">
           <table class="data-table" id="benchmarkTable">
             <thead>
               <tr>
-                <th>Kernel</th>
-                <th>Category</th>
-                <th>Dimension (N)</th>
-                <th>Threads</th>
-                <th>Precision</th>
-                <th>Elapsed (ms)</th>
-                <th>Throughput (GFLOPS)</th>
-                <th>Speedup vs T1</th>
+                <th class="sortable" data-col="kernel" onclick="sortTableBy('kernel')">Kernel <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="category" onclick="sortTableBy('category')">Category <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="n" onclick="sortTableBy('n')">Dimension (N) <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="threads" onclick="sortTableBy('threads')">Threads <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="precision" onclick="sortTableBy('precision')">Precision <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="elapsed_ms" onclick="sortTableBy('elapsed_ms')">Elapsed (ms) <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="gflops" onclick="sortTableBy('gflops')">Throughput (GFLOPS) <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="speedup" onclick="sortTableBy('speedup')">Speedup vs T1 <span class="sort-icon"></span></th>
               </tr>
             </thead>
             <tbody>

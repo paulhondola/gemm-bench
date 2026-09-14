@@ -4,911 +4,1103 @@ const RAW_RECORDS = [
     "n": 64,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.32171700000000003,
-    "gflops": 1.6296558776813161
+    "elapsed_ms": 0.15185400000000002,
+    "gflops": 3.4525794513150787
   },
   {
     "kernel": "ikj",
     "n": 64,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.051761999999999996,
-    "gflops": 10.128820370155713
+    "elapsed_ms": 0.024908,
+    "gflops": 21.0489802473101
   },
   {
     "kernel": "tiled",
     "n": 64,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.052367000000000004,
-    "gflops": 10.011801325262093
+    "elapsed_ms": 0.025054,
+    "gflops": 20.92631915063463
   },
   {
     "kernel": "rayon-ikj",
     "n": 64,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.08502900000000001,
-    "gflops": 6.165990426795564
+    "elapsed_ms": 0.030208,
+    "gflops": 17.35593220338983
   },
   {
     "kernel": "rayon-ikj",
     "n": 64,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 0.049892000000000006,
-    "gflops": 10.508458269862903
+    "elapsed_ms": 0.019608,
+    "gflops": 26.738474092207262
   },
   {
     "kernel": "rayon-ikj",
     "n": 64,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 0.035292,
-    "gflops": 14.855718009747251
+    "elapsed_ms": 0.02155,
+    "gflops": 24.328909512761022
   },
   {
     "kernel": "rayon-ikj",
     "n": 64,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 0.060578999999999994,
-    "gflops": 8.654616286171775
+    "elapsed_ms": 0.046900000000000004,
+    "gflops": 11.178848614072495
   },
   {
     "kernel": "rayon-ikj",
     "n": 64,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 0.053962,
-    "gflops": 9.715874133649605
+    "elapsed_ms": 0.057592,
+    "gflops": 9.103486595360465
   },
   {
     "kernel": "rayon-tiled",
     "n": 64,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.0596,
-    "gflops": 8.796778523489934
+    "elapsed_ms": 0.042416999999999996,
+    "gflops": 12.360327227290945
   },
   {
     "kernel": "rayon-tiled",
     "n": 64,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 0.052496,
-    "gflops": 9.987199024687595
+    "elapsed_ms": 0.033433000000000004,
+    "gflops": 15.681751562827145
   },
   {
     "kernel": "rayon-tiled",
     "n": 64,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 0.0522,
-    "gflops": 10.04383141762452
+    "elapsed_ms": 0.042321,
+    "gflops": 12.388365114245884
   },
   {
     "kernel": "rayon-tiled",
     "n": 64,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 0.053063,
-    "gflops": 9.880481691574166
+    "elapsed_ms": 0.038238,
+    "gflops": 13.711177362832784
   },
   {
     "kernel": "rayon-tiled",
     "n": 64,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 0.066675,
-    "gflops": 7.863337082864642
+    "elapsed_ms": 0.03535,
+    "gflops": 14.831343705799153
   },
   {
     "kernel": "static-ikj",
     "n": 64,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.052696,
-    "gflops": 9.949294064065585
+    "elapsed_ms": 0.0303,
+    "gflops": 17.303234323432342
   },
   {
     "kernel": "static-ikj",
     "n": 64,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 0.032833999999999995,
-    "gflops": 15.967838216482916
+    "elapsed_ms": 0.018958,
+    "gflops": 27.655237894292643
   },
   {
     "kernel": "static-ikj",
     "n": 64,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 0.048028999999999995,
-    "gflops": 10.916071540111183
+    "elapsed_ms": 0.036558,
+    "gflops": 14.341265933584989
   },
   {
     "kernel": "static-ikj",
     "n": 64,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 0.072654,
-    "gflops": 7.21623035207972
+    "elapsed_ms": 0.040254,
+    "gflops": 13.024494460177872
   },
   {
     "kernel": "static-ikj",
     "n": 64,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 0.058154,
-    "gflops": 9.015510540977406
+    "elapsed_ms": 0.0499,
+    "gflops": 10.50677354709419
   },
   {
-    "kernel": "mps",
+    "kernel": "static-tiled",
     "n": 64,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.235958,
-    "gflops": 2.2219547546597274
+    "elapsed_ms": 0.038408000000000005,
+    "gflops": 13.650489481358049
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 64,
+    "threads": 2,
+    "precision": "f32",
+    "elapsed_ms": 0.019796,
+    "gflops": 26.484542331784194
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 64,
+    "threads": 4,
+    "precision": "f32",
+    "elapsed_ms": 0.038092,
+    "gflops": 13.763729917042948
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 64,
+    "threads": 8,
+    "precision": "f32",
+    "elapsed_ms": 0.043692,
+    "gflops": 11.99963380023803
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 64,
+    "threads": 10,
+    "precision": "f32",
+    "elapsed_ms": 0.048184,
+    "gflops": 10.880956334052797
   },
   {
     "kernel": "naive-ijk",
     "n": 128,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1.448383,
-    "gflops": 2.8958528234589886
+    "elapsed_ms": 1.380458,
+    "gflops": 3.038342347249971
   },
   {
     "kernel": "ikj",
     "n": 128,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.13425,
-    "gflops": 31.24248789571694
+    "elapsed_ms": 0.134146,
+    "gflops": 31.2667094061694
   },
   {
     "kernel": "tiled",
     "n": 128,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.20497500000000002,
-    "gflops": 20.462514940846443
+    "elapsed_ms": 0.205392,
+    "gflops": 20.42097063176755
   },
   {
     "kernel": "rayon-ikj",
     "n": 128,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.14016199999999998,
-    "gflops": 29.924687147729056
+    "elapsed_ms": 0.14077499999999998,
+    "gflops": 29.79438110459954
   },
   {
     "kernel": "rayon-ikj",
     "n": 128,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 0.07925399999999999,
-    "gflops": 52.92230045171222
+    "elapsed_ms": 0.076067,
+    "gflops": 55.13960061524708
   },
   {
     "kernel": "rayon-ikj",
     "n": 128,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 0.052221000000000004,
-    "gflops": 80.3183393653894
+    "elapsed_ms": 0.054008,
+    "gflops": 77.66079099392682
   },
   {
     "kernel": "rayon-ikj",
     "n": 128,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 0.065392,
-    "gflops": 64.14093467090775
+    "elapsed_ms": 0.08600000000000001,
+    "gflops": 48.770976744186044
   },
   {
     "kernel": "rayon-ikj",
     "n": 128,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 0.080138,
-    "gflops": 52.33851605979685
+    "elapsed_ms": 0.107846,
+    "gflops": 38.89160469558444
   },
   {
     "kernel": "rayon-tiled",
     "n": 128,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.208979,
-    "gflops": 20.070456840160972
+    "elapsed_ms": 0.21756299999999998,
+    "gflops": 19.278572183689324
   },
   {
     "kernel": "rayon-tiled",
     "n": 128,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 0.109529,
-    "gflops": 38.294004327620996
+    "elapsed_ms": 0.108767,
+    "gflops": 38.562284516443405
   },
   {
     "kernel": "rayon-tiled",
     "n": 128,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 0.115387,
-    "gflops": 36.34988343574233
+    "elapsed_ms": 0.11265800000000001,
+    "gflops": 37.23041417387136
   },
   {
     "kernel": "rayon-tiled",
     "n": 128,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 0.140446,
-    "gflops": 29.86417555501759
+    "elapsed_ms": 0.14149599999999998,
+    "gflops": 29.642562333917567
   },
   {
     "kernel": "rayon-tiled",
     "n": 128,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 0.13273700000000002,
-    "gflops": 31.598604759788152
+    "elapsed_ms": 0.146525,
+    "gflops": 28.625176591025422
   },
   {
     "kernel": "static-ikj",
     "n": 128,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.13880399999999998,
-    "gflops": 30.21745771015245
+    "elapsed_ms": 0.147908,
+    "gflops": 28.357519539172998
   },
   {
     "kernel": "static-ikj",
     "n": 128,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 0.075254,
-    "gflops": 55.73529646264651
+    "elapsed_ms": 0.09476599999999999,
+    "gflops": 44.259586771626964
   },
   {
     "kernel": "static-ikj",
     "n": 128,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 0.073408,
-    "gflops": 57.13687881429817
+    "elapsed_ms": 0.07800399999999999,
+    "gflops": 53.77037075021794
   },
   {
     "kernel": "static-ikj",
     "n": 128,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 0.099054,
-    "gflops": 42.34361055585842
+    "elapsed_ms": 0.087379,
+    "gflops": 48.001281772508264
   },
   {
     "kernel": "static-ikj",
     "n": 128,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 0.080238,
-    "gflops": 52.2732869712605
+    "elapsed_ms": 0.075658,
+    "gflops": 55.43768008670596
   },
   {
-    "kernel": "mps",
+    "kernel": "static-tiled",
     "n": 128,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.350746,
-    "gflops": 11.958237585033045
+    "elapsed_ms": 0.212704,
+    "gflops": 19.71897096434482
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 128,
+    "threads": 2,
+    "precision": "f32",
+    "elapsed_ms": 0.11315900000000001,
+    "gflops": 37.065580289680895
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 128,
+    "threads": 4,
+    "precision": "f32",
+    "elapsed_ms": 0.117608,
+    "gflops": 35.66342425685327
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 128,
+    "threads": 8,
+    "precision": "f32",
+    "elapsed_ms": 0.109787,
+    "gflops": 38.204013225609586
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 128,
+    "threads": 10,
+    "precision": "f32",
+    "elapsed_ms": 0.090408,
+    "gflops": 46.39306256083532
   },
   {
     "kernel": "naive-ijk",
     "n": 256,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 14.052004,
-    "gflops": 2.387875209827723
+    "elapsed_ms": 14.939604000000001,
+    "gflops": 2.2460054496759088
   },
   {
     "kernel": "ikj",
     "n": 256,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1.306658,
-    "gflops": 25.679582568659892
+    "elapsed_ms": 1.379067,
+    "gflops": 24.33125584181189
   },
   {
     "kernel": "tiled",
     "n": 256,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1.6087,
-    "gflops": 20.85810405917822
+    "elapsed_ms": 1.681067,
+    "gflops": 19.960199087841232
   },
   {
     "kernel": "rayon-ikj",
     "n": 256,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1.295725,
-    "gflops": 25.896260394759693
+    "elapsed_ms": 1.368479,
+    "gflops": 24.51950815467391
   },
   {
     "kernel": "rayon-ikj",
     "n": 256,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 0.720196,
-    "gflops": 46.59069475531661
+    "elapsed_ms": 0.727104,
+    "gflops": 46.148050347680666
   },
   {
     "kernel": "rayon-ikj",
     "n": 256,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 0.384713,
-    "gflops": 87.21938691959981
+    "elapsed_ms": 0.458075,
+    "gflops": 73.25095672106096
   },
   {
     "kernel": "rayon-ikj",
     "n": 256,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 0.250933,
-    "gflops": 133.71868984948173
+    "elapsed_ms": 0.306754,
+    "gflops": 109.38547500603089
   },
   {
     "kernel": "rayon-ikj",
     "n": 256,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 0.24640000000000004,
-    "gflops": 136.17870129870127
+    "elapsed_ms": 0.391742,
+    "gflops": 85.65441540605808
   },
   {
     "kernel": "rayon-tiled",
     "n": 256,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1.603988,
-    "gflops": 20.919378449215333
+    "elapsed_ms": 1.737913,
+    "gflops": 19.30731400248459
   },
   {
     "kernel": "rayon-tiled",
     "n": 256,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 0.8284670000000001,
-    "gflops": 40.50183290342283
+    "elapsed_ms": 0.848192,
+    "gflops": 39.55994869086245
   },
   {
     "kernel": "rayon-tiled",
     "n": 256,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 0.466113,
-    "gflops": 71.98776262408472
+    "elapsed_ms": 0.467921,
+    "gflops": 71.70960910068152
   },
   {
     "kernel": "rayon-tiled",
     "n": 256,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 0.457975,
-    "gflops": 73.26695125279764
+    "elapsed_ms": 0.4642,
+    "gflops": 72.284429125377
   },
   {
     "kernel": "rayon-tiled",
     "n": 256,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 0.48903300000000005,
-    "gflops": 68.61383996581007
+    "elapsed_ms": 0.49239200000000005,
+    "gflops": 68.14577003688117
   },
   {
     "kernel": "static-ikj",
     "n": 256,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1.291492,
-    "gflops": 25.981138094544914
+    "elapsed_ms": 1.337921,
+    "gflops": 25.07953160164165
   },
   {
     "kernel": "static-ikj",
     "n": 256,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 0.701079,
-    "gflops": 47.86112834644884
+    "elapsed_ms": 0.7054039999999999,
+    "gflops": 47.56768036472717
   },
   {
     "kernel": "static-ikj",
     "n": 256,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 0.393271,
-    "gflops": 85.32139923869292
+    "elapsed_ms": 0.38832500000000003,
+    "gflops": 86.4081169123801
   },
   {
     "kernel": "static-ikj",
     "n": 256,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 0.32285400000000003,
-    "gflops": 103.93066835163881
+    "elapsed_ms": 0.33240400000000003,
+    "gflops": 100.94472990698065
   },
   {
     "kernel": "static-ikj",
     "n": 256,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 0.328571,
-    "gflops": 102.12231755084899
+    "elapsed_ms": 0.329792,
+    "gflops": 101.74422666407918
   },
   {
-    "kernel": "mps",
+    "kernel": "static-tiled",
     "n": 256,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.4506,
-    "gflops": 74.46611628939192
+    "elapsed_ms": 1.643384,
+    "gflops": 20.417888941355155
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 256,
+    "threads": 2,
+    "precision": "f32",
+    "elapsed_ms": 0.856617,
+    "gflops": 39.17086866125702
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 256,
+    "threads": 4,
+    "precision": "f32",
+    "elapsed_ms": 0.457787,
+    "gflops": 73.29703988973037
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 256,
+    "threads": 8,
+    "precision": "f32",
+    "elapsed_ms": 0.406312,
+    "gflops": 82.58292149874974
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 256,
+    "threads": 10,
+    "precision": "f32",
+    "elapsed_ms": 0.453433,
+    "gflops": 74.00086010502103
   },
   {
     "kernel": "naive-ijk",
     "n": 512,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 119.801112,
-    "gflops": 2.240675829453069
+    "elapsed_ms": 121.95412499999999,
+    "gflops": 2.201118297556561
   },
   {
     "kernel": "ikj",
     "n": 512,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 10.146096,
-    "gflops": 26.45701913327057
+    "elapsed_ms": 10.633633,
+    "gflops": 25.244002308524284
   },
   {
     "kernel": "tiled",
     "n": 512,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 13.408504,
-    "gflops": 20.019791618811468
+    "elapsed_ms": 13.896221,
+    "gflops": 19.31715507403056
   },
   {
     "kernel": "rayon-ikj",
     "n": 512,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 10.156942,
-    "gflops": 26.428767241163726
+    "elapsed_ms": 10.538313,
+    "gflops": 25.47233660643786
   },
   {
     "kernel": "rayon-ikj",
     "n": 512,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 5.29855,
-    "gflops": 50.66205962008474
+    "elapsed_ms": 5.298862,
+    "gflops": 50.6590766092795
   },
   {
     "kernel": "rayon-ikj",
     "n": 512,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 2.772929,
-    "gflops": 96.80574439518647
+    "elapsed_ms": 2.743071,
+    "gflops": 97.8594633533
   },
   {
     "kernel": "rayon-ikj",
     "n": 512,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 1.596229,
-    "gflops": 168.16851216210205
+    "elapsed_ms": 2.846146,
+    "gflops": 94.31542022088819
   },
   {
     "kernel": "rayon-ikj",
     "n": 512,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 1.4501620000000002,
-    "gflops": 185.10721974510435
+    "elapsed_ms": 2.255312,
+    "gflops": 119.02364550891406
   },
   {
     "kernel": "rayon-tiled",
     "n": 512,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 13.506017,
-    "gflops": 19.87524937959133
+    "elapsed_ms": 14.798340999999999,
+    "gflops": 18.139564157901216
   },
   {
     "kernel": "rayon-tiled",
     "n": 512,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 6.974317,
-    "gflops": 38.48913893647221
+    "elapsed_ms": 9.070908000000001,
+    "gflops": 29.593008329485865
   },
   {
     "kernel": "rayon-tiled",
     "n": 512,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 3.6994749999999996,
-    "gflops": 72.56041897836856
+    "elapsed_ms": 5.052375,
+    "gflops": 53.13054870234296
   },
   {
     "kernel": "rayon-tiled",
     "n": 512,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 2.181833,
-    "gflops": 123.03208174044484
+    "elapsed_ms": 3.2033919999999996,
+    "gflops": 83.79725490979563
   },
   {
     "kernel": "rayon-tiled",
     "n": 512,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 2.006383,
-    "gflops": 133.79073486966348
+    "elapsed_ms": 3.710896,
+    "gflops": 72.33710025826646
   },
   {
     "kernel": "static-ikj",
     "n": 512,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 10.312879,
-    "gflops": 26.02914821360747
+    "elapsed_ms": 11.184713,
+    "gflops": 24.000209571761026
   },
   {
     "kernel": "static-ikj",
     "n": 512,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 5.317258,
-    "gflops": 50.48381252141611
+    "elapsed_ms": 5.6623790000000005,
+    "gflops": 47.40683306433568
   },
   {
     "kernel": "static-ikj",
     "n": 512,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 2.781754,
-    "gflops": 96.49863215798378
+    "elapsed_ms": 2.7894539999999997,
+    "gflops": 96.23225763895013
   },
   {
     "kernel": "static-ikj",
     "n": 512,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 1.565204,
-    "gflops": 171.50189751623432
+    "elapsed_ms": 1.928288,
+    "gflops": 139.20921356145968
   },
   {
     "kernel": "static-ikj",
     "n": 512,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 1.907863,
-    "gflops": 140.69954498829318
+    "elapsed_ms": 2.234179,
+    "gflops": 120.14948488908004
   },
   {
-    "kernel": "mps",
+    "kernel": "static-tiled",
     "n": 512,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 0.76975,
-    "gflops": 348.73069957778495
+    "elapsed_ms": 14.454533,
+    "gflops": 18.571022391384073
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 512,
+    "threads": 2,
+    "precision": "f32",
+    "elapsed_ms": 7.443563,
+    "gflops": 36.06276402846325
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 512,
+    "threads": 4,
+    "precision": "f32",
+    "elapsed_ms": 3.664404,
+    "gflops": 73.25487473542765
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 512,
+    "threads": 8,
+    "precision": "f32",
+    "elapsed_ms": 3.079408,
+    "gflops": 87.17112380041878
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 512,
+    "threads": 10,
+    "precision": "f32",
+    "elapsed_ms": 3.222808,
+    "gflops": 83.29241332403295
   },
   {
     "kernel": "naive-ijk",
     "n": 1024,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1077.834634,
-    "gflops": 1.9924054954797454
+    "elapsed_ms": 1094.032083,
+    "gflops": 1.962907378466706
   },
   {
     "kernel": "ikj",
     "n": 1024,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 83.124275,
-    "gflops": 25.83461507483825
+    "elapsed_ms": 84.470963,
+    "gflops": 25.42274376580743
   },
   {
     "kernel": "tiled",
     "n": 1024,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 119.023433,
-    "gflops": 18.042528213750984
+    "elapsed_ms": 123.30785800000001,
+    "gflops": 17.415626893786445
   },
   {
     "kernel": "rayon-ikj",
     "n": 1024,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 82.460129,
-    "gflops": 26.04269086214988
+    "elapsed_ms": 83.756892,
+    "gflops": 25.639485858668206
   },
   {
     "kernel": "rayon-ikj",
     "n": 1024,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 42.291729000000004,
-    "gflops": 50.77786363380887
+    "elapsed_ms": 42.408192,
+    "gflops": 50.6384155212276
   },
   {
     "kernel": "rayon-ikj",
     "n": 1024,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 21.668629,
-    "gflops": 99.10565398484603
+    "elapsed_ms": 21.596621,
+    "gflops": 99.43609456312633
   },
   {
     "kernel": "rayon-ikj",
     "n": 1024,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 11.310412000000001,
-    "gflops": 189.86785344335817
+    "elapsed_ms": 11.284554,
+    "gflops": 190.30292628313
   },
   {
     "kernel": "rayon-ikj",
     "n": 1024,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 10.856788,
-    "gflops": 197.80101149621785
+    "elapsed_ms": 10.788692000000001,
+    "gflops": 199.04949070749262
   },
   {
     "kernel": "rayon-tiled",
     "n": 1024,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 119.92965,
-    "gflops": 17.906194573235226
+    "elapsed_ms": 123.590933,
+    "gflops": 17.375737814035276
   },
   {
     "kernel": "rayon-tiled",
     "n": 1024,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 65.718442,
-    "gflops": 32.67703224005219
+    "elapsed_ms": 63.849779,
+    "gflops": 33.63337636611084
   },
   {
     "kernel": "rayon-tiled",
     "n": 1024,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 31.732267,
-    "gflops": 67.67507811528246
+    "elapsed_ms": 31.743716999999997,
+    "gflops": 67.65066762660467
   },
   {
     "kernel": "rayon-tiled",
     "n": 1024,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 17.048113,
-    "gflops": 125.96606134649623
+    "elapsed_ms": 17.473504000000002,
+    "gflops": 122.89942807120998
   },
   {
     "kernel": "rayon-tiled",
     "n": 1024,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 15.819099999999999,
-    "gflops": 135.75258061457353
+    "elapsed_ms": 19.738542000000002,
+    "gflops": 108.79646774315954
   },
   {
     "kernel": "static-ikj",
     "n": 1024,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 82.292263,
-    "gflops": 26.095814718328988
+    "elapsed_ms": 84.221171,
+    "gflops": 25.49814521101826
   },
   {
     "kernel": "static-ikj",
     "n": 1024,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 42.018113,
-    "gflops": 51.10852188911957
+    "elapsed_ms": 42.868158,
+    "gflops": 50.09507635014315
   },
   {
     "kernel": "static-ikj",
     "n": 1024,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 21.622508,
-    "gflops": 99.31704721764932
+    "elapsed_ms": 23.205229,
+    "gflops": 92.5430922487341
   },
   {
     "kernel": "static-ikj",
     "n": 1024,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 12.062763,
-    "gflops": 178.02585095968476
+    "elapsed_ms": 12.056567000000001,
+    "gflops": 178.11734036728694
   },
   {
     "kernel": "static-ikj",
     "n": 1024,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 14.437183,
-    "gflops": 148.7467221271629
+    "elapsed_ms": 14.837746000000001,
+    "gflops": 144.73112344691705
   },
   {
-    "kernel": "mps",
+    "kernel": "static-tiled",
     "n": 1024,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1.427304,
-    "gflops": 1504.573411130355
+    "elapsed_ms": 121.604467,
+    "gflops": 17.65957864031426
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 1024,
+    "threads": 2,
+    "precision": "f32",
+    "elapsed_ms": 62.206279,
+    "gflops": 34.52197563528916
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 1024,
+    "threads": 4,
+    "precision": "f32",
+    "elapsed_ms": 31.912029,
+    "gflops": 67.29386113305425
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 1024,
+    "threads": 8,
+    "precision": "f32",
+    "elapsed_ms": 16.581304000000003,
+    "gflops": 129.51235005401264
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 1024,
+    "threads": 10,
+    "precision": "f32",
+    "elapsed_ms": 20.624829000000002,
+    "gflops": 104.1212825570578
   },
   {
     "kernel": "naive-ijk",
     "n": 2048,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 23001.582863,
-    "gflops": 0.7468994323705992
+    "elapsed_ms": 23438.920516,
+    "gflops": 0.732963327908919
   },
   {
     "kernel": "ikj",
     "n": 2048,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 713.114917,
-    "gflops": 24.09130530640688
+    "elapsed_ms": 724.576054,
+    "gflops": 23.710235922314926
   },
   {
     "kernel": "tiled",
     "n": 2048,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1176.524208,
-    "gflops": 14.602223283789838
+    "elapsed_ms": 1177.1664420000002,
+    "gflops": 14.594256658227094
   },
   {
     "kernel": "rayon-ikj",
     "n": 2048,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 713.183933,
-    "gflops": 24.08897395056711
+    "elapsed_ms": 715.982925,
+    "gflops": 23.994802926340736
   },
   {
     "kernel": "rayon-ikj",
     "n": 2048,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 393.172871,
-    "gflops": 43.695459303447215
+    "elapsed_ms": 383.354158,
+    "gflops": 44.81461548148905
   },
   {
     "kernel": "rayon-ikj",
     "n": 2048,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 232.803342,
-    "gflops": 73.79562954899505
+    "elapsed_ms": 230.47999099999998,
+    "gflops": 74.53952557643062
   },
   {
     "kernel": "rayon-ikj",
     "n": 2048,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 118.77053699999999,
-    "gflops": 144.64756679512192
+    "elapsed_ms": 111.376138,
+    "gflops": 154.2508969380856
   },
   {
     "kernel": "rayon-ikj",
     "n": 2048,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 116.832117,
-    "gflops": 147.0474868139212
+    "elapsed_ms": 121.807221,
+    "gflops": 141.04146735274423
   },
   {
     "kernel": "rayon-tiled",
     "n": 2048,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 1189.686358,
-    "gflops": 14.440670911685785
+    "elapsed_ms": 1183.3017459999999,
+    "gflops": 14.518586862627684
   },
   {
     "kernel": "rayon-tiled",
     "n": 2048,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 643.4524289999999,
-    "gflops": 26.699517182178514
+    "elapsed_ms": 704.380079,
+    "gflops": 24.390055449026974
   },
   {
     "kernel": "rayon-tiled",
     "n": 2048,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 314.52385799999996,
-    "gflops": 54.621831530503485
+    "elapsed_ms": 308.42886699999997,
+    "gflops": 55.701236239991765
   },
   {
     "kernel": "rayon-tiled",
     "n": 2048,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 157.450963,
-    "gflops": 109.1125062474213
+    "elapsed_ms": 156.53035,
+    "gflops": 109.7542373348044
   },
   {
     "kernel": "rayon-tiled",
     "n": 2048,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 160.559033,
-    "gflops": 107.00032793545788
+    "elapsed_ms": 162.85316699999998,
+    "gflops": 105.49300023130654
   },
   {
     "kernel": "static-ikj",
     "n": 2048,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 713.7950870000001,
-    "gflops": 24.06834888175687
+    "elapsed_ms": 716.8349830000001,
+    "gflops": 23.96628176836621
   },
   {
     "kernel": "static-ikj",
     "n": 2048,
     "threads": 2,
     "precision": "f32",
-    "elapsed_ms": 396.00818300000003,
-    "gflops": 43.38261157598352
+    "elapsed_ms": 383.83598800000004,
+    "gflops": 44.75835961478422
   },
   {
     "kernel": "static-ikj",
     "n": 2048,
     "threads": 4,
     "precision": "f32",
-    "elapsed_ms": 229.024492,
-    "gflops": 75.01323999880327
+    "elapsed_ms": 233.006475,
+    "gflops": 73.73129516679741
   },
   {
     "kernel": "static-ikj",
     "n": 2048,
     "threads": 8,
     "precision": "f32",
-    "elapsed_ms": 121.1409,
-    "gflops": 141.81724903810357
+    "elapsed_ms": 111.483179,
+    "gflops": 154.1027923504047
   },
   {
     "kernel": "static-ikj",
     "n": 2048,
     "threads": 10,
     "precision": "f32",
-    "elapsed_ms": 126.453691,
-    "gflops": 135.85897768693837
+    "elapsed_ms": 130.743621,
+    "gflops": 131.40120376503876
   },
   {
-    "kernel": "mps",
+    "kernel": "static-tiled",
     "n": 2048,
     "threads": 1,
     "precision": "f32",
-    "elapsed_ms": 5.048729,
-    "gflops": 3402.810724045596
+    "elapsed_ms": 1184.955496,
+    "gflops": 14.498324402893862
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 2048,
+    "threads": 2,
+    "precision": "f32",
+    "elapsed_ms": 638.2127869999999,
+    "gflops": 26.91871666306805
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 2048,
+    "threads": 4,
+    "precision": "f32",
+    "elapsed_ms": 315.681737,
+    "gflops": 54.42148585237923
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 2048,
+    "threads": 8,
+    "precision": "f32",
+    "elapsed_ms": 170.993687,
+    "gflops": 100.4707804446605
+  },
+  {
+    "kernel": "static-tiled",
+    "n": 2048,
+    "threads": 10,
+    "precision": "f32",
+    "elapsed_ms": 163.245775,
+    "gflops": 105.23928833073933
   }
 ];
