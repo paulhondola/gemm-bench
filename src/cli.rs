@@ -94,27 +94,34 @@ impl Cli {
         } else {
             self.threads
         };
+        let precisions = if self.precision.is_empty() {
+            vec![Precision::F32]
+        } else {
+            self.precision
+        };
         let kernels = if self.kernel.is_empty() {
-            vec![
+            let mut list = vec![
                 KernelChoice::Naive,
                 KernelChoice::Ikj,
                 KernelChoice::Tiled,
                 KernelChoice::RayonIkj,
                 KernelChoice::RayonTiled,
                 KernelChoice::StaticIkj,
-            ]
+            ];
+            #[cfg(target_os = "macos")]
+            if !precisions.contains(&Precision::F64) {
+                list.push(KernelChoice::Mps);
+                list.push(KernelChoice::NaiveMps);
+            }
+            list
         } else {
             self.kernel
-        };
-        let precisions = if self.precision.is_empty() {
-            vec![Precision::F32]
-        } else {
-            self.precision
         };
 
         // Validate the resolved sweep before touching the filesystem, so a
         // rejected plan never creates directories or an output file.
         validate_static_threads(&kernels, &threads, &sizes)?;
+        validate_mps_precision(&kernels, &precisions)?;
         let output = open_output(&self.output)?;
 
         Ok(BenchmarkPlan {
@@ -145,6 +152,12 @@ pub(crate) enum KernelChoice {
     RayonIkj,
     RayonTiled,
     StaticIkj,
+    #[cfg(target_os = "macos")]
+    #[value(name = "mps")]
+    Mps,
+    #[cfg(target_os = "macos")]
+    #[value(name = "naive-mps")]
+    NaiveMps,
 }
 
 impl KernelChoice {
@@ -156,6 +169,10 @@ impl KernelChoice {
             Self::RayonIkj => "rayon-ikj",
             Self::RayonTiled => "rayon-tiled",
             Self::StaticIkj => "static-ikj",
+            #[cfg(target_os = "macos")]
+            Self::Mps => "mps",
+            #[cfg(target_os = "macos")]
+            Self::NaiveMps => "naive-mps",
         }
     }
 
@@ -214,6 +231,23 @@ fn validate_static_threads(
             "static-ikj needs at least one row per thread; --threads {max_threads} exceeds --sizes {min_size}"
         ));
     }
+    Ok(())
+}
+
+fn validate_mps_precision(
+    kernels: &[KernelChoice],
+    precisions: &[Precision],
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    if (kernels.contains(&KernelChoice::Mps) || kernels.contains(&KernelChoice::NaiveMps))
+        && precisions.contains(&Precision::F64)
+    {
+        return Err(
+            "MPS GEMM only supports f16 and f32 precisions; f64 is not supported by Metal Performance Shaders".into(),
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (kernels, precisions);
     Ok(())
 }
 
@@ -297,6 +331,9 @@ mod tests {
         assert_eq!(plan.sizes, [64, 128, 256, 512, 1024, 2048]);
         assert!(plan.threads.contains(&1));
         assert_eq!(plan.kernels.first(), Some(&KernelChoice::Naive));
+        #[cfg(target_os = "macos")]
+        assert_eq!(plan.kernels.last(), Some(&KernelChoice::NaiveMps));
+        #[cfg(not(target_os = "macos"))]
         assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticIkj));
         assert_eq!(plan.precisions, [Precision::F32]);
         assert_eq!(plan.format, OutputFormat::Csv);
@@ -447,5 +484,87 @@ mod tests {
         // 2 precisions * 2 sizes * (1 for naive + 3 for rayon-ikj) = 2 * 2 * 4 = 16
         assert_eq!(plan.total_configurations(), 16);
         fs::remove_file(output).expect("remove test output");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mps_parses_as_a_kernel_choice() {
+        let output = temp_output("mps.csv");
+        let plan = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--kernel"),
+            OsStr::new("mps"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("mps kernel should parse")
+        .into_plan()
+        .expect("mps plan should be valid");
+
+        assert_eq!(plan.kernels, [KernelChoice::Mps]);
+        assert_eq!(plan.total_configurations(), 6); // 6 default sizes * 1 precision * 1 config
+        fs::remove_file(output).expect("remove test output");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mps_with_f64_precision_is_rejected_before_running() {
+        let output = temp_output("mps_f64.csv");
+        let error = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--kernel"),
+            OsStr::new("mps"),
+            OsStr::new("--precision"),
+            OsStr::new("f64"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect_err("mps with f64 must be rejected");
+
+        assert!(error.contains("f64 is not supported by Metal Performance Shaders"));
+        assert!(!output.exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn naive_mps_parses_as_a_kernel_choice() {
+        let output = temp_output("naive_mps.csv");
+        let plan = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--kernel"),
+            OsStr::new("naive-mps"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("naive-mps kernel should parse")
+        .into_plan()
+        .expect("naive-mps plan should be valid");
+
+        assert_eq!(plan.kernels, [KernelChoice::NaiveMps]);
+        assert_eq!(plan.total_configurations(), 6);
+        fs::remove_file(output).expect("remove test output");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn naive_mps_with_f64_precision_is_rejected_before_running() {
+        let output = temp_output("naive_mps_f64.csv");
+        let error = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--kernel"),
+            OsStr::new("naive-mps"),
+            OsStr::new("--precision"),
+            OsStr::new("f64"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect_err("naive-mps with f64 must be rejected");
+
+        assert!(error.contains("f64 is not supported by Metal Performance Shaders"));
+        assert!(!output.exists());
     }
 }

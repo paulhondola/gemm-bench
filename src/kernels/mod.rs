@@ -1,6 +1,8 @@
 //! Dense floating-point GEMM kernels sharing one overwrite-style interface.
 
 mod cache_friendly;
+#[cfg(target_os = "macos")]
+pub mod mps;
 mod naive;
 mod rayon;
 mod static_threads;
@@ -9,6 +11,8 @@ mod tiled;
 use std::ops::{Add, AddAssign, Mul};
 
 pub use cache_friendly::IkjGemm;
+#[cfg(target_os = "macos")]
+pub use mps::{MpsElement, MpsGemm, NaiveMpsGemm};
 pub use naive::NaiveGemm;
 pub use rayon::{RayonIkjGemm, RayonTiledGemm};
 pub use static_threads::StaticIkjGemm;
@@ -16,13 +20,102 @@ pub use tiled::TiledGemm;
 
 use crate::Matrix;
 
+/// Helper trait dispatching MPS benchmarks for supported element types.
+pub trait MpsBench: Sized {
+    #[cfg(target_os = "macos")]
+    fn run_mps(
+        lhs: &Matrix<Self>,
+        rhs: &Matrix<Self>,
+        output: &mut Matrix<Self>,
+        repetitions: usize,
+    ) -> std::time::Duration;
+
+    #[cfg(target_os = "macos")]
+    fn run_naive_mps(
+        lhs: &Matrix<Self>,
+        rhs: &Matrix<Self>,
+        output: &mut Matrix<Self>,
+        repetitions: usize,
+    ) -> std::time::Duration;
+}
+
+#[cfg(target_os = "macos")]
+impl MpsBench for f16 {
+    fn run_mps(
+        lhs: &Matrix<Self>,
+        rhs: &Matrix<Self>,
+        output: &mut Matrix<Self>,
+        repetitions: usize,
+    ) -> std::time::Duration {
+        let kernel = MpsGemm::<f16>::new().expect("Failed to initialize Metal Performance Shaders");
+        kernel.benchmark(lhs, rhs, output, repetitions)
+    }
+
+    fn run_naive_mps(
+        lhs: &Matrix<Self>,
+        rhs: &Matrix<Self>,
+        output: &mut Matrix<Self>,
+        repetitions: usize,
+    ) -> std::time::Duration {
+        let kernel = NaiveMpsGemm::<f16>::new().expect("Failed to initialize Metal Performance Shaders");
+        kernel.benchmark(lhs, rhs, output, repetitions)
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl MpsBench for f32 {
+    fn run_mps(
+        lhs: &Matrix<Self>,
+        rhs: &Matrix<Self>,
+        output: &mut Matrix<Self>,
+        repetitions: usize,
+    ) -> std::time::Duration {
+        let kernel = MpsGemm::<f32>::new().expect("Failed to initialize Metal Performance Shaders");
+        kernel.benchmark(lhs, rhs, output, repetitions)
+    }
+
+    fn run_naive_mps(
+        lhs: &Matrix<Self>,
+        rhs: &Matrix<Self>,
+        output: &mut Matrix<Self>,
+        repetitions: usize,
+    ) -> std::time::Duration {
+        let kernel = NaiveMpsGemm::<f32>::new().expect("Failed to initialize Metal Performance Shaders");
+        kernel.benchmark(lhs, rhs, output, repetitions)
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl MpsBench for f64 {
+    fn run_mps(
+        _lhs: &Matrix<Self>,
+        _rhs: &Matrix<Self>,
+        _output: &mut Matrix<Self>,
+        _repetitions: usize,
+    ) -> std::time::Duration {
+        panic!("MPS GEMM does not support f64 precision; validation should have rejected this")
+    }
+
+    fn run_naive_mps(
+        _lhs: &Matrix<Self>,
+        _rhs: &Matrix<Self>,
+        _output: &mut Matrix<Self>,
+        _repetitions: usize,
+    ) -> std::time::Duration {
+        panic!("naive-mps GEMM does not support f64 precision; validation should have rejected this")
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+impl<T: Element> MpsBench for T {}
+
 /// A floating-point element type the kernels can multiply.
 ///
 /// `Default` supplies zero for clearing outputs and starting sums. `EPSILON`
 /// and the `f64` conversions let callers build inputs and compare results
 /// independently of precision.
 pub trait Element:
-    Copy + Default + Send + Sync + Add<Output = Self> + Mul<Output = Self> + AddAssign + 'static
+    Copy + Default + Send + Sync + Add<Output = Self> + Mul<Output = Self> + AddAssign + MpsBench + 'static
 {
     /// Machine epsilon of the element type, widened to `f64`.
     const EPSILON: f64;
@@ -173,5 +266,39 @@ mod tests {
         every_kernel_matches_naive::<f16>();
         every_kernel_matches_naive::<f32>();
         every_kernel_matches_naive::<f64>();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mps_matches_naive_on_f16_and_f32() {
+        let n = 7;
+        {
+            let (lhs, rhs) = inputs::<f16>(n);
+            let mut expected = Matrix::zeros(n, n);
+            NaiveGemm.compute(&lhs, &rhs, &mut expected);
+            let mut actual = Matrix::zeros(n, n);
+            let mps = super::MpsGemm::<f16>::new().expect("MPS should initialize");
+            mps.compute(&lhs, &rhs, &mut actual);
+            assert_close(&actual, &expected);
+
+            let mut actual_naive = Matrix::zeros(n, n);
+            let naive_mps = super::NaiveMpsGemm::<f16>::new().expect("Naive MPS should initialize");
+            naive_mps.compute(&lhs, &rhs, &mut actual_naive);
+            assert_close(&actual_naive, &expected);
+        }
+        {
+            let (lhs, rhs) = inputs::<f32>(n);
+            let mut expected = Matrix::zeros(n, n);
+            NaiveGemm.compute(&lhs, &rhs, &mut expected);
+            let mut actual = Matrix::zeros(n, n);
+            let mps = super::MpsGemm::<f32>::new().expect("MPS should initialize");
+            mps.compute(&lhs, &rhs, &mut actual);
+            assert_close(&actual, &expected);
+
+            let mut actual_naive = Matrix::zeros(n, n);
+            let naive_mps = super::NaiveMpsGemm::<f32>::new().expect("Naive MPS should initialize");
+            naive_mps.compute(&lhs, &rhs, &mut actual_naive);
+            assert_close(&actual_naive, &expected);
+        }
     }
 }

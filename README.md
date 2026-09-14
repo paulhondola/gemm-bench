@@ -54,7 +54,7 @@ The benchmark suite requires **Rust Nightly** because the `f16` primitive type (
 
 ### 1. Default Benchmark Sweep
 
-Running without flags performs a full sweep across all default sizes (`64, 128, 256, 512, 1024, 2048`), all CPU kernels, and powers-of-two thread counts up to `available_parallelism()` at `f32` precision:
+Running without flags performs a full sweep across all default sizes (`64, 128, 256, 512, 1024, 2048`), all CPU kernels and Apple Silicon GPU kernels (`mps`, `naive-mps` on macOS), and powers-of-two thread counts up to `available_parallelism()` at `f32` precision:
 
 ```sh
 cargo run --release -- --output results.csv
@@ -102,6 +102,16 @@ cargo run --release -- \
   --output results.json
 ```
 
+#### Apple Silicon GPU (MPS Native GEMM)
+Benchmark Apple Silicon's hardware matrix coprocessor and GPU execution units using native `MetalPerformanceShaders` (`f16` and `f32` supported):
+```sh
+cargo run --release -- \
+  --sizes 256,512,1024,2048 \
+  --kernel mps \
+  --precision f16,f32 \
+  --output mps_results.csv
+```
+
 ---
 
 ## CLI Options
@@ -110,8 +120,8 @@ cargo run --release -- \
 | :--- | :--- | :--- |
 | `--sizes <N,...>` | Matrix dimensions (square $N \times N$), comma-delimited | `64,128,256,512,1024,2048` |
 | `--threads <T,...>` | Worker thread counts for parallel kernels | Powers of 2 up to CPU count |
-| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`) | All kernels |
-| `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`) | `f32` |
+| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `mps`, `naive-mps`) | All kernels (CPU + macOS GPU) |
+| `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`; note MPS supports `f16`, `f32`) | `f32` |
 | `--repetitions <R>` | Timed iterations measured per configuration (mean is recorded) | `1` |
 | `--block-size <B>` | Tile edge length for blocked kernels | `64` |
 | `--no-progress` | Disables the interactive `indicatif` progress bar | `false` |

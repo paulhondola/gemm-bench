@@ -167,6 +167,14 @@ fn measure<T: Element>(
                 total += time_kernel(&kernel, lhs, rhs, output);
             }
         }
+        #[cfg(target_os = "macos")]
+        KernelChoice::Mps => {
+            return Ok(T::run_mps(lhs, rhs, output, repetitions));
+        }
+        #[cfg(target_os = "macos")]
+        KernelChoice::NaiveMps => {
+            return Ok(T::run_naive_mps(lhs, rhs, output, repetitions));
+        }
     }
 
     Ok(total.div_f64(repetitions as f64))
