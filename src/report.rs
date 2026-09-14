@@ -1,11 +1,70 @@
-use std::fs::File;
+use std::{fs::File, time::Duration};
 
+use indicatif::{ProgressBar, ProgressStyle};
 use tabled::{
     Table, Tabled,
     settings::{Alignment, Style, object::Columns},
 };
 
 use crate::{benchmark::BenchmarkRecord, cli::OutputFormat};
+
+/// Interactive progress tracker wrapping `indicatif::ProgressBar`.
+pub(crate) struct BenchmarkProgress {
+    bar: ProgressBar,
+}
+
+impl BenchmarkProgress {
+    pub(crate) fn new(total: usize, disabled: bool) -> Self {
+        if disabled {
+            return Self {
+                bar: ProgressBar::hidden(),
+            };
+        }
+
+        let bar = ProgressBar::new(total as u64);
+        let style = ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} {msg} ({eta})")
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
+            .progress_chars("=>-");
+
+        bar.set_style(style);
+        bar.enable_steady_tick(Duration::from_millis(80));
+        Self { bar }
+    }
+
+    pub(crate) fn set_target(&self, kernel: &str, n: usize, precision: &str, threads: usize) {
+        self.bar
+            .set_message(format!("{kernel:<11} n={n:<4} {precision:<3} t={threads}"));
+    }
+
+    pub(crate) fn step(&self) {
+        self.bar.inc(1);
+    }
+
+    pub(crate) fn finish(&self) {
+        if self.bar.is_hidden() {
+            return;
+        }
+        let finish_style = ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
+            .progress_chars("=>-");
+        self.bar.set_style(finish_style);
+        self.bar.finish_with_message("Complete");
+        eprintln!();
+    }
+}
+
+impl Drop for BenchmarkProgress {
+    fn drop(&mut self) {
+        if !self.bar.is_finished() {
+            self.bar.finish_with_message("Aborted");
+            if !self.bar.is_hidden() {
+                eprintln!();
+            }
+        }
+    }
+}
 
 /// Renders the human-facing view after all timed work is complete.
 pub(crate) fn print_results_table(records: &[BenchmarkRecord]) {
@@ -62,6 +121,7 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use indicatif::ProgressStyle;
     use super::render_results_table;
     use crate::benchmark::BenchmarkRecord;
 
@@ -83,5 +143,19 @@ mod tests {
         assert!(table.contains("rayon-ikj"));
         assert!(table.contains("12.346"));
         assert!(table.contains("2.500"));
+    }
+
+    #[test]
+    fn progress_bar_lifecycle_disabled() {
+        let progress = super::BenchmarkProgress::new(5, true);
+        progress.set_target("naive", 64, "f32", 1);
+        progress.step();
+        progress.finish();
+    }
+
+    #[test]
+    fn template_compilation() {
+        let res = ProgressStyle::default_bar().template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} {msg} ({eta})");
+        assert!(res.is_ok(), "template error: {:?}", res.err());
     }
 }

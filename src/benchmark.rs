@@ -10,7 +10,10 @@ use rayon_gemm::{
 };
 use serde::Serialize;
 
-use crate::cli::{BenchmarkPlan, KernelChoice, Precision};
+use crate::{
+    cli::{BenchmarkPlan, KernelChoice, Precision},
+    report::BenchmarkProgress,
+};
 
 /// One measured benchmark configuration, shared by terminal and file reporters.
 #[derive(Debug, Serialize)]
@@ -27,23 +30,26 @@ pub(crate) fn run(
     plan: &BenchmarkPlan,
 ) -> Result<Vec<BenchmarkRecord>, rayon::ThreadPoolBuildError> {
     let mut records = Vec::new();
+    let progress = BenchmarkProgress::new(plan.total_configurations(), plan.no_progress);
 
     // Each arm monomorphizes the whole sweep, so kernels compile to native
     // arithmetic for that precision with no per-element dispatch.
     for &precision in &plan.precisions {
         match precision {
-            Precision::F16 => run_precision::<f16>(plan, precision, &mut records)?,
-            Precision::F32 => run_precision::<f32>(plan, precision, &mut records)?,
-            Precision::F64 => run_precision::<f64>(plan, precision, &mut records)?,
+            Precision::F16 => run_precision::<f16>(plan, precision, &progress, &mut records)?,
+            Precision::F32 => run_precision::<f32>(plan, precision, &progress, &mut records)?,
+            Precision::F64 => run_precision::<f64>(plan, precision, &progress, &mut records)?,
         }
     }
 
+    progress.finish();
     Ok(records)
 }
 
 fn run_precision<T: Element>(
     plan: &BenchmarkPlan,
     precision: Precision,
+    progress: &BenchmarkProgress,
     records: &mut Vec<BenchmarkRecord>,
 ) -> Result<(), rayon::ThreadPoolBuildError> {
     for &n in &plan.sizes {
@@ -57,6 +63,7 @@ fn run_precision<T: Element>(
                 &[1]
             };
             for &thread_count in thread_counts {
+                progress.set_target(kernel.label(), n, precision.label(), thread_count);
                 let elapsed = measure(
                     kernel,
                     thread_count,
@@ -66,6 +73,7 @@ fn run_precision<T: Element>(
                     &rhs,
                     &mut output,
                 )?;
+                progress.step();
                 let elapsed_ms = elapsed.as_secs_f64() * 1_000.0;
                 let gflops = 2.0 * (n as f64).powi(3) / elapsed.as_secs_f64() / 1e9;
                 records.push(BenchmarkRecord {

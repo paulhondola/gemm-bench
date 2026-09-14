@@ -40,6 +40,10 @@ pub(crate) struct Cli {
     /// missing parent directories are created.
     #[arg(long)]
     output: PathBuf,
+
+    /// Disable the interactive progress bar.
+    #[arg(long)]
+    no_progress: bool,
 }
 
 /// Fully resolved configuration used by the benchmark runner.
@@ -53,6 +57,26 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) block_size: usize,
     pub(crate) output: File,
     pub(crate) format: OutputFormat,
+    pub(crate) no_progress: bool,
+}
+
+impl BenchmarkPlan {
+    /// Returns the exact number of configurations that will be measured.
+    pub(crate) fn total_configurations(&self) -> usize {
+        let configs_per_matrix: usize = self
+            .kernels
+            .iter()
+            .map(|kernel| {
+                if kernel.uses_workers() {
+                    self.threads.len()
+                } else {
+                    1
+                }
+            })
+            .sum();
+
+        self.precisions.len() * self.sizes.len() * configs_per_matrix
+    }
 }
 
 impl Cli {
@@ -102,6 +126,7 @@ impl Cli {
             block_size: self.block_size,
             output,
             format,
+            no_progress: self.no_progress,
         })
     }
 }
@@ -264,6 +289,7 @@ mod tests {
             repetitions: 1,
             block_size: 64,
             output: output.clone(),
+            no_progress: false,
         }
         .into_plan()
         .expect("default plan should be valid");
@@ -274,6 +300,8 @@ mod tests {
         assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticIkj));
         assert_eq!(plan.precisions, [Precision::F32]);
         assert_eq!(plan.format, OutputFormat::Csv);
+        assert!(!plan.no_progress);
+        assert!(plan.total_configurations() > 0);
         fs::remove_file(output).expect("remove test output");
     }
 
@@ -376,6 +404,48 @@ mod tests {
             fs::read(&output).expect("read existing output"),
             b"previous results"
         );
+        fs::remove_file(output).expect("remove test output");
+    }
+
+    #[test]
+    fn no_progress_flag_is_parsed() {
+        let output = temp_output("no_progress.csv");
+        let plan = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--no-progress"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect("plan should be valid");
+
+        assert!(plan.no_progress);
+        fs::remove_file(output).expect("remove test output");
+    }
+
+    #[test]
+    fn total_configurations_counts_worker_and_single_thread_kernels_correctly() {
+        let output = temp_output("count.csv");
+        let plan = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--sizes"),
+            OsStr::new("64,128"),
+            OsStr::new("--precision"),
+            OsStr::new("f32,f64"),
+            OsStr::new("--kernel"),
+            OsStr::new("naive,rayon-ikj"),
+            OsStr::new("--threads"),
+            OsStr::new("1,2,4"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect("plan should be valid");
+
+        // 2 precisions * 2 sizes * (1 for naive + 3 for rayon-ikj) = 2 * 2 * 4 = 16
+        assert_eq!(plan.total_configurations(), 16);
         fs::remove_file(output).expect("remove test output");
     }
 }
