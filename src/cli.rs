@@ -27,7 +27,8 @@ pub(crate) struct Cli {
     #[arg(long, value_delimiter = ',', value_enum)]
     precision: Vec<Precision>,
 
-    /// Number of measured runs per configuration; the CSV contains their mean.
+    /// Number of measured runs per configuration, after one untimed warm-up
+    /// run; records contain their mean.
     #[arg(long, default_value_t = 1)]
     repetitions: usize,
 
@@ -58,7 +59,6 @@ impl Cli {
     pub(crate) fn into_plan(self) -> Result<BenchmarkPlan, String> {
         validate_cli(&self)?;
         let format = infer_output_format(&self.output)?;
-        let output = open_output(&self.output)?;
 
         let sizes = if self.sizes.is_empty() {
             DEFAULT_SIZES.to_vec()
@@ -87,6 +87,11 @@ impl Cli {
         } else {
             self.precision
         };
+
+        // Validate the resolved sweep before touching the filesystem, so a
+        // rejected plan never creates directories or an output file.
+        validate_static_threads(&kernels, &threads, &sizes)?;
+        let output = open_output(&self.output)?;
 
         Ok(BenchmarkPlan {
             sizes,
@@ -163,6 +168,26 @@ fn validate_cli(cli: &Cli) -> Result<(), String> {
     }
     if cli.threads.contains(&0) {
         return Err("all --threads values must be greater than zero".into());
+    }
+    Ok(())
+}
+
+/// `static-ikj` gives every worker at least one row, so a worker count above
+/// the smallest matrix dimension cannot be honored and is rejected up front.
+fn validate_static_threads(
+    kernels: &[KernelChoice],
+    threads: &[usize],
+    sizes: &[usize],
+) -> Result<(), String> {
+    if !kernels.contains(&KernelChoice::StaticIkj) {
+        return Ok(());
+    }
+    let max_threads = threads.iter().copied().max().unwrap_or(1);
+    let min_size = sizes.iter().copied().min().unwrap_or(usize::MAX);
+    if max_threads > min_size {
+        return Err(format!(
+            "static-ikj needs at least one row per thread; --threads {max_threads} exceeds --sizes {min_size}"
+        ));
     }
     Ok(())
 }
@@ -268,6 +293,31 @@ mod tests {
 
         assert_eq!(plan.precisions, [Precision::F16, Precision::F64]);
         fs::remove_file(output).expect("remove test output");
+    }
+
+    #[test]
+    fn static_threads_above_the_matrix_dimension_are_rejected_before_running() {
+        let output = temp_output("static-threads.csv");
+        let error = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--sizes"),
+            OsStr::new("8,64"),
+            OsStr::new("--threads"),
+            OsStr::new("4,16"),
+            OsStr::new("--kernel"),
+            OsStr::new("static-ikj"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect_err("more static threads than rows must be rejected");
+
+        assert!(error.contains("--threads 16 exceeds --sizes 8"));
+        assert!(
+            !output.exists(),
+            "a rejected plan must not create the output file"
+        );
     }
 
     #[test]

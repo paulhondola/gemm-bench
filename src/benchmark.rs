@@ -93,6 +93,11 @@ fn benchmark_inputs<T: Element>(n: usize) -> (Matrix<T>, Matrix<T>) {
     (lhs, rhs)
 }
 
+/// Returns the mean of `repetitions` timed runs.
+///
+/// Every arm first runs the kernel once untimed, after any pool is built, so
+/// one-time costs (the process's first Rayon call, a fresh pool's idle
+/// workers) stay out of the measured mean.
 fn measure<T: Element>(
     choice: KernelChoice,
     threads: usize,
@@ -106,18 +111,21 @@ fn measure<T: Element>(
     match choice {
         KernelChoice::Naive => {
             let kernel = NaiveGemm;
+            kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
                 total += time_kernel(&kernel, lhs, rhs, output);
             }
         }
         KernelChoice::Ikj => {
             let kernel = IkjGemm;
+            kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
                 total += time_kernel(&kernel, lhs, rhs, output);
             }
         }
         KernelChoice::Tiled => {
             let kernel = TiledGemm::new(block_size);
+            kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
                 total += time_kernel(&kernel, lhs, rhs, output);
             }
@@ -125,6 +133,7 @@ fn measure<T: Element>(
         KernelChoice::RayonIkj => {
             let pool = ThreadPoolBuilder::new().num_threads(threads).build()?;
             let kernel = RayonIkjGemm;
+            pool.install(|| kernel.compute(lhs, rhs, output));
             for _ in 0..repetitions {
                 let start = Instant::now();
                 pool.install(|| kernel.compute(black_box(lhs), black_box(rhs), black_box(output)));
@@ -135,6 +144,7 @@ fn measure<T: Element>(
         KernelChoice::RayonTiled => {
             let pool = ThreadPoolBuilder::new().num_threads(threads).build()?;
             let kernel = RayonTiledGemm::new(block_size);
+            pool.install(|| kernel.compute(lhs, rhs, output));
             for _ in 0..repetitions {
                 let start = Instant::now();
                 pool.install(|| kernel.compute(black_box(lhs), black_box(rhs), black_box(output)));
@@ -143,7 +153,8 @@ fn measure<T: Element>(
             }
         }
         KernelChoice::StaticIkj => {
-            let kernel = StaticIkjGemm::new(threads);
+            let kernel = StaticIkjGemm::new(threads)?;
+            kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
                 total += time_kernel(&kernel, lhs, rhs, output);
             }

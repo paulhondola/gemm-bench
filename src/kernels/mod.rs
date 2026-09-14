@@ -18,12 +18,15 @@ use crate::Matrix;
 
 /// A floating-point element type the kernels can multiply.
 ///
-/// `Default` supplies zero for clearing outputs and starting sums. The `f64`
-/// conversions let callers build inputs and compare results independently of
-/// precision.
+/// `Default` supplies zero for clearing outputs and starting sums. `EPSILON`
+/// and the `f64` conversions let callers build inputs and compare results
+/// independently of precision.
 pub trait Element:
     Copy + Default + Send + Sync + Add<Output = Self> + Mul<Output = Self> + AddAssign + 'static
 {
+    /// Machine epsilon of the element type, widened to `f64`.
+    const EPSILON: f64;
+
     fn from_f64(value: f64) -> Self;
 
     fn to_f64(self) -> f64;
@@ -33,6 +36,8 @@ macro_rules! impl_element {
     ($($float:ty),*) => {
         $(
             impl Element for $float {
+                const EPSILON: f64 = <$float>::EPSILON as f64;
+
                 fn from_f64(value: f64) -> Self {
                     value as $float
                 }
@@ -76,7 +81,7 @@ pub(crate) fn assert_gemm_dimensions<T>(lhs: &Matrix<T>, rhs: &Matrix<T>, output
 /// Multiplies contiguous rows using the `i-k-j` order.
 ///
 /// `output_rows` holds whole rows beginning at `first_row`; this form is
-/// shared by the Rayon and scoped-thread kernels, whose row slices are known
+/// shared by the Rayon and static-schedule kernels, whose row slices are known
 /// to be disjoint by construction.
 pub(crate) fn ikj_rows<T: Element>(
     lhs: &[T],
@@ -126,9 +131,13 @@ mod tests {
             .enumerate()
         {
             let (actual, expected) = (actual.to_f64(), expected.to_f64());
+            // Kernels may add the same terms in a different order (SIMD lanes,
+            // GPU fast-math). Measured drift is ~1.3 ε at n = 7 and ~5 ε at
+            // n = 256 for every precision, so 8 ε relative leaves headroom.
+            let tolerance = 8.0 * T::EPSILON * expected.abs().max(1.0);
             assert!(
-                (actual - expected).abs() <= 1e-9,
-                "element {index}: expected {expected}, got {actual}"
+                (actual - expected).abs() <= tolerance,
+                "element {index}: expected {expected}, got {actual} (tolerance {tolerance:e})"
             );
         }
     }
@@ -139,13 +148,18 @@ mod tests {
         let mut expected = Matrix::zeros(n, n);
         NaiveGemm.compute(&lhs, &rhs, &mut expected);
 
-        let kernels: Vec<Box<dyn GemmKernel<T>>> = vec![
+        let mut kernels: Vec<Box<dyn GemmKernel<T>>> = vec![
             Box::new(IkjGemm),
             Box::new(TiledGemm::new(3)),
             Box::new(RayonIkjGemm),
             Box::new(RayonTiledGemm::new(3)),
-            Box::new(StaticIkjGemm::new(3)),
         ];
+        // Every static thread count up to `n`, including uneven row splits.
+        for threads in 1..=n {
+            kernels.push(Box::new(
+                StaticIkjGemm::new(threads).expect("static thread pool should build"),
+            ));
+        }
 
         for kernel in kernels {
             let mut actual = Matrix::zeros(n, n);
