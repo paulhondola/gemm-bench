@@ -1,4 +1,13 @@
 /target
 
-# Output benchmark data
-data/
+
+# Python & UV artifacts
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# MacOS
+.DS_Store
+Icon?

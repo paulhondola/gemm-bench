@@ -132,3 +132,53 @@ cargo run --release -- \
 3. **Structured Export**:
    - The `--output` file extension automatically selects the format: `.csv` or `.json`.
    - Columns: `kernel, n, threads, precision, elapsed_ms, gflops`.
+
+---
+
+## Visualizations & Interactive Dashboard
+
+The repository includes a standalone visualization engine in [`scripts/visualize.py`](scripts/visualize.py) (zero third-party Python dependencies required; runs on standard Python 3.9+).
+
+### Interactive Dashboard & Benchmark Data
+
+- **Interactive Dashboard**: [`plots/dashboard.html`](plots/dashboard.html) (open directly in your browser with `open plots/dashboard.html` or view via [HTMLPreview](https://htmlpreview.github.io/?https://github.com/paulhondola/rayon-gemm/blob/main/plots/dashboard.html))
+- **Benchmark Dataset**: [`data/full_run.csv`](data/full_run.csv)
+
+### Generating Visualizations
+
+Run the visualization script against your benchmark CSV or JSON results:
+
+```sh
+# Generate both static SVG figures and the interactive HTML dashboard
+./scripts/visualize.py --input data/full_run.csv --output-dir plots/
+
+# Automatically open the dashboard in your default web browser
+./scripts/visualize.py --input data/full_run.csv --output-dir plots/ --open
+```
+
+### Benchmark Results & Visual Reports
+
+#### 1. Parallel Speedup Strong Scaling Grid
+Multi-panel strong scaling speedup ($S(p) = T_1 / T_p$) across worker threads for each matrix dimension $N \in [128, 256, 512, 1024, 2048]$ alongside ideal linear scaling ($y = x$):
+
+![Parallel Speedup Strong Scaling Grid](plots/figures/02_parallel_speedup_grid.svg)
+
+#### 2. Complete Peak Performance Landscape
+Log-scale comparison across all architectural tiers from scalar naive (~1 GFLOPS) to Apple Silicon MPS (>3,400 GFLOPS):
+
+![Peak Architectural Landscape](plots/figures/04_peak_landscape.svg)
+
+#### 3. Apple Silicon MPS vs. Multi-Core CPU
+Throughput gap and speedup multiplier of hardware GPU/AMX coprocessor over the fastest 10-core CPU kernel across matrix sizes $N$:
+
+![Apple Silicon MPS vs CPU Gap](plots/figures/05_mps_crossover.svg)
+
+#### 4. Single-Threaded Baseline: Cache Locality & SIMD
+Cache locality and SIMD autovectorization comparison between `naive-ijk`, `ikj`, and `tiled` (up to $32\times$ speedup purely from loop interchange):
+
+![Single-Threaded Algorithmic Baselines](plots/figures/01_serial_baseline.svg)
+
+#### 5. Multi-Core Parallel Efficiency
+Core utilization efficiency ($S(p) / p \times 100\%$) showing cache coherence contention and memory bandwidth saturation as thread counts scale:
+
+![Parallel Efficiency](plots/figures/03_parallel_efficiency.svg)
