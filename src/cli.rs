@@ -6,7 +6,7 @@ use std::{
 
 use clap::{Parser, ValueEnum};
 
-const DEFAULT_SIZES: [usize; 6] = [64, 128, 256, 512, 1024, 2048];
+const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 
 #[derive(Debug, Parser)]
 #[command(about = "Benchmark safe, row-major floating-point GEMM kernels")]
@@ -329,7 +329,7 @@ mod tests {
         .into_plan()
         .expect("default plan should be valid");
 
-        assert_eq!(plan.sizes, [64, 128, 256, 512, 1024, 2048]);
+        assert_eq!(plan.sizes, [64, 128, 256, 512, 1024, 2048, 4096]);
         assert!(plan.threads.contains(&1));
         assert_eq!(plan.kernels.first(), Some(&KernelChoice::Naive));
         #[cfg(target_os = "macos")]
@@ -503,7 +503,7 @@ mod tests {
         .expect("mps plan should be valid");
 
         assert_eq!(plan.kernels, [KernelChoice::Mps]);
-        assert_eq!(plan.total_configurations(), 6); // 6 default sizes * 1 precision * 1 config
+        assert_eq!(plan.total_configurations(), 7); // 7 default sizes * 1 precision * 1 config
         fs::remove_file(output).expect("remove test output");
     }
 

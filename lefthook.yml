@@ -3,7 +3,19 @@ pre-commit:
   commands:
     rustfmt:
       glob: "*.rs"
-      run: cargo fmt --all --check
+      run: cargo fmt --all
     clippy:
       glob: "*.rs"
       run: cargo clippy --all-targets --all-features -- -D warnings
+    cargo-check:
+      glob: "*.rs"
+      run: cargo test
+    ruff-check:
+      glob: "*.py"
+      run: uv run --project scripts ruff check --fix
+    ruff-format:
+      glob: "*.py"
+      run: uv run --project scripts ruff format
+    pytest:
+      glob: "*.py"
+      run: uv run --project scripts pytest
