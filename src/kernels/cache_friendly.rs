@@ -1,18 +1,18 @@
 use crate::Matrix;
 
-use super::{GemmKernel, assert_gemm_dimensions, ikj_rows};
+use super::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
 
 /// Sequential `i-k-j` GEMM with contiguous output and RHS accesses.
 pub struct IkjGemm;
 
-impl GemmKernel for IkjGemm {
+impl<T: Element> GemmKernel<T> for IkjGemm {
     fn name(&self) -> &'static str {
         "ikj"
     }
 
-    fn compute(&self, lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &mut Matrix<f32>) {
+    fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
-        output.as_mut_slice().fill(0.0);
+        output.as_mut_slice().fill(T::default());
         ikj_rows(
             lhs.as_slice(),
             rhs.as_slice(),

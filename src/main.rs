@@ -1,3 +1,5 @@
+#![feature(f16)]
+
 mod benchmark;
 mod cli;
 mod report;

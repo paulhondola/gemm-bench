@@ -1,0 +1,4 @@
+# Nightly is required for the `f16` primitive (rust-lang/rust#116909).
+[toolchain]
+channel = "nightly"
+components = ["clippy", "rustfmt"]

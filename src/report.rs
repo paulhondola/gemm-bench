@@ -38,6 +38,7 @@ struct TerminalBenchmarkRecord<'a> {
     kernel: &'a str,
     n: usize,
     threads: usize,
+    precision: &'a str,
     elapsed_ms: String,
     gflops: String,
 }
@@ -47,6 +48,7 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
         kernel: &record.kernel,
         n: record.n,
         threads: record.threads,
+        precision: record.precision,
         elapsed_ms: format!("{:.3}", record.elapsed_ms),
         gflops: format!("{:.3}", record.gflops),
     });
@@ -67,11 +69,14 @@ mod tests {
             kernel: "rayon-ikj".to_owned(),
             n: 256,
             threads: 4,
+            precision: "f32",
             elapsed_ms: 12.345_67,
             gflops: 2.5,
         }]);
 
         assert!(table.contains("kernel"));
+        assert!(table.contains("precision"));
+        assert!(table.contains("f32"));
         assert!(table.contains("elapsed_ms"));
         assert!(table.contains("rayon-ikj"));
         assert!(table.contains("12.346"));

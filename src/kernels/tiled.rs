@@ -1,9 +1,9 @@
 use crate::Matrix;
 
-use super::{GemmKernel, assert_gemm_dimensions};
+use super::{Element, GemmKernel, assert_gemm_dimensions};
 
-/// Sequential cache-blocked GEMM. A block size of 64 is a practical default
-/// for `f64`, while the CLI permits empirical tuning per target CPU.
+/// Sequential cache-blocked GEMM. A block size of 64 is a practical default,
+/// while the CLI permits empirical tuning per target CPU and precision.
 pub struct TiledGemm {
     block_size: usize,
 }
@@ -16,15 +16,15 @@ impl TiledGemm {
     }
 }
 
-impl GemmKernel for TiledGemm {
+impl<T: Element> GemmKernel<T> for TiledGemm {
     fn name(&self) -> &'static str {
         "tiled"
     }
 
-    fn compute(&self, lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &mut Matrix<f32>) {
+    fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();
-        output.as_mut_slice().fill(0.0);
+        output.as_mut_slice().fill(T::default());
 
         for ii in (0..n).step_by(self.block_size) {
             let i_end = (ii + self.block_size).min(n);

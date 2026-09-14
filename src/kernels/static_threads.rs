@@ -2,7 +2,7 @@ use std::thread;
 
 use crate::Matrix;
 
-use super::{GemmKernel, assert_gemm_dimensions, ikj_rows};
+use super::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
 
 /// Fixed, contiguous row chunks using scoped native threads.
 ///
@@ -20,15 +20,15 @@ impl StaticIkjGemm {
     }
 }
 
-impl GemmKernel for StaticIkjGemm {
+impl<T: Element> GemmKernel<T> for StaticIkjGemm {
     fn name(&self) -> &'static str {
         "static-ikj"
     }
 
-    fn compute(&self, lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &mut Matrix<f32>) {
+    fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();
-        output.as_mut_slice().fill(0.0);
+        output.as_mut_slice().fill(T::default());
         let rows_per_thread = n.div_ceil(self.threads);
         let lhs_data = lhs.as_slice();
         let rhs_data = rhs.as_slice();

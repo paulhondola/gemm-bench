@@ -2,7 +2,7 @@ use rayon::prelude::*;
 
 use crate::Matrix;
 
-use super::{GemmKernel, assert_gemm_dimensions, ikj_rows};
+use super::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
 
 /// Rayon work-stealing implementation of the contiguous `i-k-j` kernel.
 ///
@@ -11,15 +11,15 @@ use super::{GemmKernel, assert_gemm_dimensions, ikj_rows};
 /// ensuring that pool construction is outside the timed region.
 pub struct RayonIkjGemm;
 
-impl GemmKernel for RayonIkjGemm {
+impl<T: Element> GemmKernel<T> for RayonIkjGemm {
     fn name(&self) -> &'static str {
         "rayon-ikj"
     }
 
-    fn compute(&self, lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &mut Matrix<f32>) {
+    fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();
-        output.as_mut_slice().fill(0.0);
+        output.as_mut_slice().fill(T::default());
 
         output
             .as_mut_slice()
@@ -44,16 +44,16 @@ impl RayonTiledGemm {
     }
 }
 
-impl GemmKernel for RayonTiledGemm {
+impl<T: Element> GemmKernel<T> for RayonTiledGemm {
     fn name(&self) -> &'static str {
         "rayon-tiled"
     }
 
-    fn compute(&self, lhs: &Matrix<f32>, rhs: &Matrix<f32>, output: &mut Matrix<f32>) {
+    fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();
         let block_size = self.block_size;
-        output.as_mut_slice().fill(0.0);
+        output.as_mut_slice().fill(T::default());
 
         // Each task receives an integral group of output rows. `par_chunks`
         // proves those mutable groups are disjoint without pointer arithmetic.

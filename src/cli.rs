@@ -8,7 +8,7 @@ use clap::{Parser, ValueEnum};
 const DEFAULT_SIZES: [usize; 6] = [64, 128, 256, 512, 1024, 2048];
 
 #[derive(Debug, Parser)]
-#[command(about = "Benchmark safe, row-major f64 GEMM kernels")]
+#[command(about = "Benchmark safe, row-major floating-point GEMM kernels")]
 pub(crate) struct Cli {
     /// Matrix dimensions, as a comma-delimited list.
     #[arg(long, value_delimiter = ',')]
@@ -21,6 +21,10 @@ pub(crate) struct Cli {
     /// Kernel(s) to run. Omit to run every kernel.
     #[arg(long, value_delimiter = ',', value_enum)]
     kernel: Vec<KernelChoice>,
+
+    /// Element precision(s), as a comma-delimited list. Defaults to f32.
+    #[arg(long, value_delimiter = ',', value_enum)]
+    precision: Vec<Precision>,
 
     /// Number of measured runs per configuration; the CSV contains their mean.
     #[arg(long, default_value_t = 1)]
@@ -41,6 +45,7 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) sizes: Vec<usize>,
     pub(crate) threads: Vec<usize>,
     pub(crate) kernels: Vec<KernelChoice>,
+    pub(crate) precisions: Vec<Precision>,
     pub(crate) repetitions: usize,
     pub(crate) block_size: usize,
     pub(crate) output: PathBuf,
@@ -74,11 +79,17 @@ impl Cli {
         } else {
             self.kernel
         };
+        let precisions = if self.precision.is_empty() {
+            vec![Precision::F32]
+        } else {
+            self.precision
+        };
 
         Ok(BenchmarkPlan {
             sizes,
             threads,
             kernels,
+            precisions,
             repetitions: self.repetitions,
             block_size: self.block_size,
             output: self.output,
@@ -117,6 +128,23 @@ impl KernelChoice {
 
     pub(crate) fn uses_workers(self) -> bool {
         matches!(self, Self::RayonIkj | Self::RayonTiled | Self::StaticIkj)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum Precision {
+    F16,
+    F32,
+    F64,
+}
+
+impl Precision {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::F16 => "f16",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+        }
     }
 }
 
@@ -165,7 +193,9 @@ fn default_thread_counts() -> Vec<usize> {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{Cli, KernelChoice, OutputFormat, infer_output_format};
+    use clap::Parser;
+
+    use super::{Cli, KernelChoice, OutputFormat, Precision, infer_output_format};
 
     #[test]
     fn empty_sweeps_expand_to_defaults() {
@@ -173,6 +203,7 @@ mod tests {
             sizes: Vec::new(),
             threads: Vec::new(),
             kernel: Vec::new(),
+            precision: Vec::new(),
             repetitions: 1,
             block_size: 64,
             output: PathBuf::from("results.csv"),
@@ -184,7 +215,19 @@ mod tests {
         assert!(plan.threads.contains(&1));
         assert_eq!(plan.kernels.first(), Some(&KernelChoice::Naive));
         assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticIkj));
+        assert_eq!(plan.precisions, [Precision::F32]);
         assert_eq!(plan.format, OutputFormat::Csv);
+    }
+
+    #[test]
+    fn precision_flag_accepts_a_comma_delimited_sweep() {
+        let plan =
+            Cli::try_parse_from(["rayon-gemm", "--precision", "f16,f64", "--output", "r.csv"])
+                .expect("precision list should parse")
+                .into_plan()
+                .expect("plan should be valid");
+
+        assert_eq!(plan.precisions, [Precision::F16, Precision::F64]);
     }
 
     #[test]
