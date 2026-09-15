@@ -11,13 +11,6 @@ from .data import (
     SERIAL_KERNELS,
     BenchmarkData,
 )
-from .svg import (
-    generate_mps_crossover_svg,
-    generate_parallel_efficiency_svg,
-    generate_parallel_speedup_grid_svg,
-    generate_peak_landscape_svg,
-    generate_serial_baseline_svg,
-)
 
 __all__ = [
     "BenchmarkData",
@@ -26,10 +19,5 @@ __all__ = [
     "ACCELERATED_KERNELS",
     "COLOR_PALETTE",
     "KERNEL_DISPLAY_NAMES",
-    "generate_serial_baseline_svg",
-    "generate_parallel_speedup_grid_svg",
-    "generate_parallel_efficiency_svg",
-    "generate_peak_landscape_svg",
-    "generate_mps_crossover_svg",
     "generate_interactive_dashboard",
 ]

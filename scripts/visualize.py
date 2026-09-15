@@ -27,11 +27,6 @@ if str(SCRIPT_DIR) not in sys.path:
 from viz import (  # noqa: E402
     BenchmarkData,
     generate_interactive_dashboard,
-    generate_mps_crossover_svg,
-    generate_parallel_efficiency_svg,
-    generate_parallel_speedup_grid_svg,
-    generate_peak_landscape_svg,
-    generate_serial_baseline_svg,
 )
 
 
@@ -61,14 +56,6 @@ def main():
         help="Target precision to visualize ('f32', 'f16', 'f64', or 'all'; default: 'f32').",
     )
     parser.add_argument(
-        "--no-dashboard",
-        action="store_true",
-        help="Skip generating the interactive HTML dashboard.",
-    )
-    parser.add_argument(
-        "--no-svg", action="store_true", help="Skip generating standalone static SVG figures."
-    )
-    parser.add_argument(
         "--open",
         action="store_true",
         help="Open dashboard.html in the default web browser upon completion.",
@@ -86,29 +73,16 @@ def main():
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Generate Static SVG Figures
-    if not args.no_svg:
-        figures_dir = args.output_dir / "figures"
-        figures_dir.mkdir(parents=True, exist_ok=True)
-        print("Generating static vector figures...")
-        generate_serial_baseline_svg(filtered, figures_dir / "01_serial_baseline.svg")
-        generate_parallel_speedup_grid_svg(filtered, figures_dir / "02_parallel_speedup_grid.svg")
-        generate_parallel_efficiency_svg(filtered, figures_dir / "03_parallel_efficiency.svg")
-        generate_peak_landscape_svg(filtered, figures_dir / "04_peak_landscape.svg")
-        generate_mps_crossover_svg(filtered, figures_dir / "05_mps_crossover.svg")
-        print(f"  ✓ Saved 5 SVG figures to {figures_dir}/")
+    # 1. Generate Interactive HTML Dashboard
+    print("Generating interactive HTML dashboard...")
+    dashboard_path = args.output_dir / "dashboard.html"
+    generate_interactive_dashboard(filtered, dashboard_path)
+    print(f"  ✓ Saved interactive dashboard to {dashboard_path}")
 
-    # 2. Generate Interactive HTML Dashboard
-    if not args.no_dashboard:
-        print("Generating interactive HTML dashboard...")
-        dashboard_path = args.output_dir / "dashboard.html"
-        generate_interactive_dashboard(filtered, dashboard_path)
-        print(f"  ✓ Saved interactive dashboard to {dashboard_path}")
+    if args.open:
+        import webbrowser
 
-        if args.open:
-            import webbrowser
-
-            webbrowser.open(dashboard_path.as_uri())
+        webbrowser.open(dashboard_path.as_uri())
 
     print("\nVisualization generation complete!")
     print(
