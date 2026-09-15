@@ -36,8 +36,8 @@ pub(crate) struct Cli {
     #[arg(long, default_value_t = 64)]
     block_size: usize,
 
-    /// Destination for structured records. Use a .csv or .json extension;
-    /// missing parent directories are created.
+    /// Destination path prefix without extension (e.g. 'data/f16'). Both .csv
+    /// and .json files will be created; missing parent directories are created.
     #[arg(long)]
     output: PathBuf,
 
@@ -55,8 +55,8 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) precisions: Vec<Precision>,
     pub(crate) repetitions: usize,
     pub(crate) block_size: usize,
-    pub(crate) output: File,
-    pub(crate) format: OutputFormat,
+    pub(crate) csv_output: File,
+    pub(crate) json_output: File,
     pub(crate) no_progress: bool,
 }
 
@@ -82,7 +82,6 @@ impl BenchmarkPlan {
 impl Cli {
     pub(crate) fn into_plan(self) -> Result<BenchmarkPlan, String> {
         validate_cli(&self)?;
-        let format = infer_output_format(&self.output)?;
 
         let sizes = if self.sizes.is_empty() {
             DEFAULT_SIZES.to_vec()
@@ -123,7 +122,7 @@ impl Cli {
         // rejected plan never creates directories or an output file.
         validate_static_threads(&kernels, &threads, &sizes)?;
         validate_mps_precision(&kernels, &precisions)?;
-        let output = open_output(&self.output)?;
+        let (csv_output, json_output) = open_outputs(&self.output)?;
 
         Ok(BenchmarkPlan {
             sizes,
@@ -132,17 +131,11 @@ impl Cli {
             precisions,
             repetitions: self.repetitions,
             block_size: self.block_size,
-            output,
-            format,
+            csv_output,
+            json_output,
             no_progress: self.no_progress,
         })
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum OutputFormat {
-    Csv,
-    Json,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -252,23 +245,37 @@ fn validate_mps_precision(
     Ok(())
 }
 
-fn infer_output_format(path: &Path) -> Result<OutputFormat, String> {
-    match path.extension().and_then(OsStr::to_str) {
-        Some(extension) if extension.eq_ignore_ascii_case("csv") => Ok(OutputFormat::Csv),
-        Some(extension) if extension.eq_ignore_ascii_case("json") => Ok(OutputFormat::Json),
-        _ => Err(format!(
-            "unsupported output path '{}'; use a .csv or .json extension",
-            path.display()
-        )),
+fn validate_and_resolve_output_paths(path: &Path) -> Result<(PathBuf, PathBuf), String> {
+    if path.as_os_str().is_empty() || path.file_name().is_none() {
+        return Err("--output must include a destination prefix (e.g. 'data/f16')".into());
     }
+    if path.is_dir() {
+        return Err(format!(
+            "output path '{}' is an existing directory; --output must specify a destination prefix without extension (e.g. '{}/results')",
+            path.display(),
+            path.display()
+        ));
+    }
+    if let Some(ext) = path.extension().and_then(OsStr::to_str) {
+        return Err(format!(
+            "--output must not include a file extension (got '.{ext}'); specify the path prefix (e.g. '{}') to generate both .csv and .json files",
+            path.with_extension("").display()
+        ));
+    }
+
+    let csv_path = path.with_extension("csv");
+    let json_path = path.with_extension("json");
+    Ok((csv_path, json_path))
 }
 
-/// Creates missing parent directories and opens the output file before any
-/// benchmark runs, so an unwritable path fails immediately instead of after
-/// the sweep. The file is not truncated here: an existing result file keeps
-/// its contents until the new records are written.
-fn open_output(path: &Path) -> Result<File, String> {
-    if let Some(parent) = path.parent() {
+/// Creates missing parent directories and opens both output files (.csv and .json)
+/// before any benchmark runs, so an unwritable path fails immediately instead of
+/// after the sweep. Neither file is truncated here: existing result files keep
+/// their contents until new records are written.
+fn open_outputs(path: &Path) -> Result<(File, File), String> {
+    let (csv_path, json_path) = validate_and_resolve_output_paths(path)?;
+
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
                 "cannot create output directory '{}': {error}",
@@ -277,12 +284,21 @@ fn open_output(path: &Path) -> Result<File, String> {
         })?;
     }
 
-    OpenOptions::new()
+    let csv_file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(false)
-        .open(path)
-        .map_err(|error| format!("cannot open output file '{}': {error}", path.display()))
+        .open(&csv_path)
+        .map_err(|error| format!("cannot open output file '{}': {error}", csv_path.display()))?;
+
+    let json_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&json_path)
+        .map_err(|error| format!("cannot open output file '{}': {error}", json_path.display()))?;
+
+    Ok((csv_file, json_file))
 }
 
 fn default_thread_counts() -> Vec<usize> {
@@ -305,7 +321,7 @@ mod tests {
 
     use clap::Parser;
 
-    use super::{Cli, KernelChoice, OutputFormat, Precision, infer_output_format, open_output};
+    use super::{Cli, KernelChoice, Precision, open_outputs, validate_and_resolve_output_paths};
 
     /// A per-process path under the system temp directory, so tests never
     /// write into the repository and parallel test runs do not collide.
@@ -315,7 +331,7 @@ mod tests {
 
     #[test]
     fn empty_sweeps_expand_to_defaults() {
-        let output = temp_output("defaults.csv");
+        let output = temp_output("defaults");
         let plan = Cli {
             sizes: Vec::new(),
             threads: Vec::new(),
@@ -337,15 +353,15 @@ mod tests {
         #[cfg(not(target_os = "macos"))]
         assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticTiled));
         assert_eq!(plan.precisions, [Precision::F32]);
-        assert_eq!(plan.format, OutputFormat::Csv);
         assert!(!plan.no_progress);
         assert!(plan.total_configurations() > 0);
-        fs::remove_file(output).expect("remove test output");
+        let _ = fs::remove_file(output.with_extension("csv"));
+        let _ = fs::remove_file(output.with_extension("json"));
     }
 
     #[test]
     fn precision_flag_accepts_a_comma_delimited_sweep() {
-        let output = temp_output("precision.csv");
+        let output = temp_output("precision");
         let plan = Cli::try_parse_from([
             OsStr::new("rayon-gemm"),
             OsStr::new("--precision"),
@@ -358,12 +374,13 @@ mod tests {
         .expect("plan should be valid");
 
         assert_eq!(plan.precisions, [Precision::F16, Precision::F64]);
-        fs::remove_file(output).expect("remove test output");
+        let _ = fs::remove_file(output.with_extension("csv"));
+        let _ = fs::remove_file(output.with_extension("json"));
     }
 
     #[test]
     fn static_threads_above_the_matrix_dimension_are_rejected_before_running() {
-        let output = temp_output("static-threads.csv");
+        let output = temp_output("static-threads");
         let error = Cli::try_parse_from([
             OsStr::new("rayon-gemm"),
             OsStr::new("--sizes"),
@@ -381,41 +398,64 @@ mod tests {
 
         assert!(error.contains("--threads 16 exceeds --sizes 8"));
         assert!(
-            !output.exists(),
+            !output.with_extension("csv").exists(),
+            "a rejected plan must not create the output file"
+        );
+        assert!(
+            !output.with_extension("json").exists(),
             "a rejected plan must not create the output file"
         );
     }
 
     #[test]
-    fn output_format_is_inferred_from_a_supported_extension() {
-        assert_eq!(
-            infer_output_format(PathBuf::from("results.CSV").as_path())
-                .expect("CSV should be supported"),
-            OutputFormat::Csv
-        );
-        assert_eq!(
-            infer_output_format(PathBuf::from("results.json").as_path())
-                .expect("JSON should be supported"),
-            OutputFormat::Json
-        );
+    fn output_with_extension_is_rejected() {
+        let error = validate_and_resolve_output_paths(PathBuf::from("results.csv").as_path())
+            .expect_err("extension should be rejected");
+        assert!(error.contains("must not include a file extension"));
+
+        let error = validate_and_resolve_output_paths(PathBuf::from("data/f16.json").as_path())
+            .expect_err("extension should be rejected");
+        assert!(error.contains("must not include a file extension"));
     }
 
     #[test]
-    fn unsupported_output_extensions_are_rejected_before_running() {
-        let error = infer_output_format(PathBuf::from("results.toml").as_path())
-            .expect_err("unsupported extension must be rejected");
+    fn output_as_existing_directory_is_rejected() {
+        let dir = temp_output("existing_dir");
+        fs::create_dir_all(&dir).expect("create test dir");
 
-        assert!(error.contains(".csv or .json"));
+        let error = validate_and_resolve_output_paths(&dir)
+            .expect_err("existing directory must be rejected");
+        assert!(error.contains("is an existing directory"));
+
+        fs::remove_dir_all(dir).expect("remove test dir");
+    }
+
+    #[test]
+    fn output_creates_both_csv_and_json_files() {
+        let output = temp_output("both_files");
+        let (csv_file, json_file) = open_outputs(&output).expect("both files should open");
+        drop(csv_file);
+        drop(json_file);
+
+        assert!(output.with_extension("csv").is_file());
+        assert!(output.with_extension("json").is_file());
+
+        let _ = fs::remove_file(output.with_extension("csv"));
+        let _ = fs::remove_file(output.with_extension("json"));
     }
 
     #[test]
     fn missing_output_directories_are_created_before_running() {
         let root = temp_output("nested");
-        let output = root.join("a/b/results.csv");
+        let output = root.join("a/b/results");
 
-        open_output(&output).expect("missing parent directories should be created");
+        let (csv_file, json_file) =
+            open_outputs(&output).expect("missing parent directories should be created");
+        drop(csv_file);
+        drop(json_file);
 
-        assert!(output.is_file());
+        assert!(output.with_extension("csv").is_file());
+        assert!(output.with_extension("json").is_file());
         fs::remove_dir_all(root).expect("remove test directories");
     }
 
@@ -424,7 +464,7 @@ mod tests {
         let blocker = temp_output("blocker");
         fs::write(&blocker, b"").expect("create a regular file");
 
-        let error = open_output(&blocker.join("results.csv"))
+        let error = open_outputs(&blocker.join("results"))
             .expect_err("a regular file cannot be a parent directory");
 
         assert!(error.contains("output directory"));
@@ -433,21 +473,31 @@ mod tests {
 
     #[test]
     fn existing_output_is_not_truncated_until_records_are_written() {
-        let output = temp_output("existing.csv");
-        fs::write(&output, b"previous results").expect("seed an existing output");
+        let output = temp_output("existing");
+        let csv_path = output.with_extension("csv");
+        let json_path = output.with_extension("json");
+        fs::write(&csv_path, b"previous csv").expect("seed existing csv");
+        fs::write(&json_path, b"previous json").expect("seed existing json");
 
-        open_output(&output).expect("existing output should open");
+        let (csv_file, json_file) = open_outputs(&output).expect("existing output should open");
+        drop(csv_file);
+        drop(json_file);
 
         assert_eq!(
-            fs::read(&output).expect("read existing output"),
-            b"previous results"
+            fs::read(&csv_path).expect("read existing output"),
+            b"previous csv"
         );
-        fs::remove_file(output).expect("remove test output");
+        assert_eq!(
+            fs::read(&json_path).expect("read existing output"),
+            b"previous json"
+        );
+        let _ = fs::remove_file(csv_path);
+        let _ = fs::remove_file(json_path);
     }
 
     #[test]
     fn no_progress_flag_is_parsed() {
-        let output = temp_output("no_progress.csv");
+        let output = temp_output("no_progress");
         let plan = Cli::try_parse_from([
             OsStr::new("rayon-gemm"),
             OsStr::new("--no-progress"),
@@ -459,12 +509,13 @@ mod tests {
         .expect("plan should be valid");
 
         assert!(plan.no_progress);
-        fs::remove_file(output).expect("remove test output");
+        let _ = fs::remove_file(output.with_extension("csv"));
+        let _ = fs::remove_file(output.with_extension("json"));
     }
 
     #[test]
     fn total_configurations_counts_worker_and_single_thread_kernels_correctly() {
-        let output = temp_output("count.csv");
+        let output = temp_output("count");
         let plan = Cli::try_parse_from([
             OsStr::new("rayon-gemm"),
             OsStr::new("--sizes"),
@@ -484,13 +535,14 @@ mod tests {
 
         // 2 precisions * 2 sizes * (1 for naive + 3 for rayon-ikj) = 2 * 2 * 4 = 16
         assert_eq!(plan.total_configurations(), 16);
-        fs::remove_file(output).expect("remove test output");
+        let _ = fs::remove_file(output.with_extension("csv"));
+        let _ = fs::remove_file(output.with_extension("json"));
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn mps_parses_as_a_kernel_choice() {
-        let output = temp_output("mps.csv");
+        let output = temp_output("mps");
         let plan = Cli::try_parse_from([
             OsStr::new("rayon-gemm"),
             OsStr::new("--kernel"),
@@ -504,13 +556,14 @@ mod tests {
 
         assert_eq!(plan.kernels, [KernelChoice::Mps]);
         assert_eq!(plan.total_configurations(), 7); // 7 default sizes * 1 precision * 1 config
-        fs::remove_file(output).expect("remove test output");
+        let _ = fs::remove_file(output.with_extension("csv"));
+        let _ = fs::remove_file(output.with_extension("json"));
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn mps_with_f64_precision_is_rejected_before_running() {
-        let output = temp_output("mps_f64.csv");
+        let output = temp_output("mps_f64");
         let error = Cli::try_parse_from([
             OsStr::new("rayon-gemm"),
             OsStr::new("--kernel"),
@@ -525,6 +578,7 @@ mod tests {
         .expect_err("mps with f64 must be rejected");
 
         assert!(error.contains("f64 is not supported by Metal Performance Shaders"));
-        assert!(!output.exists());
+        assert!(!output.with_extension("csv").exists());
+        assert!(!output.with_extension("json").exists());
     }
 }
