@@ -2,7 +2,8 @@
  * Client-Side Performance Dashboard Logic
  * ========================================
  * Uses Plotly.js to render interactive charts for serial baselines,
- * parallel speedup grids, Amdahl efficiency, and Apple Silicon MPS comparisons.
+ * parallel speedup grids, Amdahl efficiency, multi-precision comparison (f16/f32/f64),
+ * and Apple Silicon MPS acceleration.
  */
 
 const SERIAL_KERNELS = new Set(["naive-ijk", "ikj", "tiled"]);
@@ -21,16 +22,28 @@ const COLORS = {
   "ideal": "#94a3b8"
 };
 
+const PRECISION_COLORS = {
+  "f16": "#d946ef",  // Fuchsia
+  "f32": "#38bdf8",  // Cyan / Sky blue
+  "f64": "#f59e0b"   // Amber
+};
+
 const SIZES = [...new Set(RAW_RECORDS.map(r => r.n))].sort((a, b) => a - b);
 const THREADS = [...new Set(RAW_RECORDS.map(r => r.threads))].sort((a, b) => a - b);
+const PRECISIONS = [...new Set(RAW_RECORDS.map(r => r.precision))].sort();
 
-function getRecord(kernel, n, threads) {
-  return RAW_RECORDS.find(r => r.kernel === kernel && r.n === n && r.threads === threads);
+let activePrecision = "all";
+
+function getRecord(kernel, n, threads, precision) {
+  const targetPrec = precision || (activePrecision === "all" ? "f32" : activePrecision);
+  return RAW_RECORDS.find(
+    r => r.kernel === kernel && r.n === n && r.threads === threads && r.precision === targetPrec
+  );
 }
 
-function getSpeedup(kernel, n, threads) {
-  const base = getRecord(kernel, n, 1);
-  const curr = getRecord(kernel, n, threads);
+function getSpeedup(kernel, n, threads, precision) {
+  const base = getRecord(kernel, n, 1, precision);
+  const curr = getRecord(kernel, n, threads, precision);
   if (base && curr && curr.elapsed_ms > 0) {
     return base.elapsed_ms / curr.elapsed_ms;
   }
@@ -42,7 +55,10 @@ function switchTab(tabId) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
-  const targetBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.getAttribute('onclick').includes(tabId));
+  const targetBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => {
+    const attr = btn.getAttribute('onclick');
+    return attr && attr.includes(tabId);
+  });
   if (targetBtn) targetBtn.classList.add('active');
 
   const targetContent = document.getElementById(tabId);
@@ -57,6 +73,113 @@ function switchTab(tabId) {
       });
     }
   }, 40);
+}
+
+// Global Precision Filter Pill Selection
+function selectGlobalPrecision(prec) {
+  activePrecision = prec;
+  document.querySelectorAll('#precisionPills .pill-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.prec === prec);
+  });
+
+  const badge = document.getElementById('gridActivePrecisionBadge');
+  if (badge) {
+    badge.textContent = prec === 'all'
+      ? 'Showing: All Precisions (Default f32 for single-precision views)'
+      : `Showing: ${prec.toUpperCase()} Precision`;
+  }
+
+  updateKpisForPrecision(prec);
+
+  renderParallelGrid();
+  renderParallelEfficiency();
+  renderSerialBaseline();
+  renderPeakLandscape();
+  renderSchedulerShootout();
+  renderMpsGap();
+
+  const tablePrec = document.getElementById('tablePrecFilter');
+  if (tablePrec) {
+    tablePrec.value = prec;
+    renderTable();
+  }
+}
+
+function updateKpisForPrecision(prec) {
+  const records = prec === "all" ? RAW_RECORDS : RAW_RECORDS.filter(r => r.precision === prec);
+  if (records.length === 0) return;
+
+  // MPS KPI
+  const mpsRecords = records.filter(r => r.kernel === "mps");
+  const mpsVal = document.getElementById("kpi-mps-val");
+  const mpsMeta = document.getElementById("kpi-mps-meta");
+  if (mpsRecords.length > 0) {
+    const bestMps = mpsRecords.reduce((max, r) => r.gflops > max.gflops ? r : max, mpsRecords[0]);
+    if (mpsVal) mpsVal.innerHTML = `${Math.round(bestMps.gflops).toLocaleString()} <span>GFLOPS</span>`;
+    if (mpsMeta) mpsMeta.textContent = `Apple Silicon MPS (${bestMps.precision})`;
+  } else {
+    if (mpsVal) mpsVal.innerHTML = "N/A";
+    if (mpsMeta) mpsMeta.textContent = `MPS not supported in ${prec}`;
+  }
+
+  // CPU KPI
+  const cpuRecords = records.filter(r => !ACCELERATED_KERNELS.has(r.kernel));
+  const cpuVal = document.getElementById("kpi-cpu-val");
+  const cpuMeta = document.getElementById("kpi-cpu-meta");
+  if (cpuRecords.length > 0) {
+    const bestCpu = cpuRecords.reduce((max, r) => r.gflops > max.gflops ? r : max, cpuRecords[0]);
+    if (cpuVal) cpuVal.innerHTML = `${Math.round(bestCpu.gflops).toLocaleString()} <span>GFLOPS</span>`;
+    if (cpuMeta) cpuMeta.textContent = `${bestCpu.kernel} (${bestCpu.precision}) @ ${bestCpu.threads}T`;
+  }
+
+  // Max Parallel Speedup
+  let maxSp = 1.0;
+  PARALLEL_KERNELS.forEach(k => {
+    SIZES.forEach(n => {
+      THREADS.forEach(t => {
+        const precsToTest = prec === "all" ? PRECISIONS : [prec];
+        precsToTest.forEach(p => {
+          const sp = getSpeedup(k, n, t, p);
+          if (sp && sp > maxSp) maxSp = sp;
+        });
+      });
+    });
+  });
+  const parVal = document.getElementById("kpi-parallel-val");
+  if (parVal) parVal.textContent = `${maxSp.toFixed(2)}x`;
+
+  // Max Cache Speedup
+  let maxCacheSp = 1.0;
+  SIZES.forEach(n => {
+    const precsToTest = prec === "all" ? PRECISIONS : [prec];
+    precsToTest.forEach(p => {
+      const naive = getRecord("naive-ijk", n, 1, p);
+      const ikj = getRecord("ikj", n, 1, p);
+      if (naive && ikj && ikj.elapsed_ms > 0) {
+        const sp = naive.elapsed_ms / ikj.elapsed_ms;
+        if (sp > maxCacheSp) maxCacheSp = sp;
+      }
+    });
+  });
+  const cacheVal = document.getElementById("kpi-cache-val");
+  if (cacheVal) cacheVal.textContent = `${maxCacheSp.toFixed(1)}x`;
+
+  // f16 vs f32 Speedup
+  let maxF16Sp = 1.0;
+  ["naive-ijk", "ikj", "tiled", "rayon-ikj", "rayon-tiled", "static-ikj", "static-tiled", "mps"].forEach(k => {
+    SIZES.forEach(n => {
+      THREADS.forEach(t => {
+        const f32Rec = getRecord(k, n, t, "f32");
+        const f16Rec = getRecord(k, n, t, "f16");
+        if (f32Rec && f16Rec && f16Rec.elapsed_ms > 0) {
+          const sp = f32Rec.elapsed_ms / f16Rec.elapsed_ms;
+          if (sp > maxF16Sp) maxF16Sp = sp;
+        }
+      });
+    });
+  });
+  const f16Val = document.getElementById("kpi-f16-val");
+  if (f16Val) f16Val.textContent = `${maxF16Sp.toFixed(2)}x`;
 }
 
 // 1. Parallel Speedup Grid Chart
@@ -83,6 +206,7 @@ function renderParallelGrid() {
 
   const data = [];
   const maxThread = Math.max(...THREADS);
+  const precToUse = activePrecision === "all" ? "f32" : activePrecision;
 
   gridSizes.forEach((n, idx) => {
     const axisSuffix = idx === 0 ? '' : (idx + 1);
@@ -109,12 +233,14 @@ function renderParallelGrid() {
       const textVals = [];
 
       THREADS.forEach(t => {
-        const sp = getSpeedup(k, n, t);
-        const rec = getRecord(k, n, t);
+        const sp = getSpeedup(k, n, t, precToUse);
+        const rec = getRecord(k, n, t, precToUse);
         if (sp !== null && rec) {
           xVals.push(t);
           yVals.push(sp);
-          textVals.push(`<b>${k}</b><br>N: ${n}<br>Threads: ${t}<br>Speedup: ${sp.toFixed(2)}x<br>Time: ${rec.elapsed_ms.toFixed(3)} ms<br>GFLOPS: ${rec.gflops.toFixed(1)}`);
+          textVals.push(
+            `<b>${k} (${rec.precision})</b><br>N: ${n}<br>Threads: ${t}<br>Speedup: ${sp.toFixed(2)}x<br>Time: ${rec.elapsed_ms.toFixed(3)} ms<br>GFLOPS: ${rec.gflops.toFixed(1)}`
+          );
         }
       });
 
@@ -135,8 +261,8 @@ function renderParallelGrid() {
       }
     });
 
-    // MPS callout trace if exists
-    const mpsRec = getRecord("mps", n, 1);
+    // MPS callout trace if exists for this precision
+    const mpsRec = getRecord("mps", n, 1, precToUse);
     if (mpsRec) {
       data.push({
         x: [maxThread],
@@ -182,10 +308,308 @@ function renderParallelGrid() {
   Plotly.newPlot('chart-parallel-grid', data, layout, { responsive: true });
 }
 
-// 2. Parallel Efficiency Chart
-function renderParallelEfficiency() {
-  const targetSizes = [512, 1024, 2048].filter(s => SIZES.includes(s));
+// 2. Precision Comparison Tab Logic
+function initPrecisionControls() {
+  const select = document.getElementById("precisionSizeSelect");
+  if (!select) return;
+
+  select.innerHTML = "";
+  const optPeak = document.createElement("option");
+  optPeak.value = "peak";
+  optPeak.textContent = "Peak Across All Matrix Dimensions";
+  select.appendChild(optPeak);
+
+  SIZES.forEach(n => {
+    const opt = document.createElement("option");
+    opt.value = n;
+    opt.textContent = `N = ${n} × ${n}`;
+    if (n === 2048 || n === 1024) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+function renderPrecisionThroughputChart() {
+  const select = document.getElementById("precisionSizeSelect");
+  const selectedSize = select ? select.value : "peak";
+
+  const kernels = ["naive-ijk", "ikj", "tiled", "rayon-ikj", "rayon-tiled", "static-ikj", "static-tiled", "mps"];
+  const precisionsToPlot = ["f16", "f32", "f64"].filter(p => PRECISIONS.includes(p));
+
   const data = [];
+
+  precisionsToPlot.forEach(p => {
+    const xVals = [];
+    const yVals = [];
+    const textVals = [];
+
+    kernels.forEach(k => {
+      let rec = null;
+      if (selectedSize === "peak") {
+        const matches = RAW_RECORDS.filter(r => r.kernel === k && r.precision === p);
+        if (matches.length > 0) {
+          rec = matches.reduce((max, r) => r.gflops > max.gflops ? r : max, matches[0]);
+        }
+      } else {
+        const nVal = parseInt(selectedSize, 10);
+        const matches = RAW_RECORDS.filter(r => r.kernel === k && r.n === nVal && r.precision === p);
+        if (matches.length > 0) {
+          rec = matches.reduce((max, r) => r.gflops > max.gflops ? r : max, matches[0]);
+        }
+      }
+
+      if (rec) {
+        xVals.push(k);
+        yVals.push(rec.gflops);
+        textVals.push(
+          `<b>${k} (${p})</b><br>Throughput: ${rec.gflops.toFixed(1)} GFLOPS<br>Time: ${rec.elapsed_ms.toFixed(3)} ms<br>N: ${rec.n}<br>Threads: ${rec.threads}`
+        );
+      }
+    });
+
+    if (xVals.length > 0) {
+      data.push({
+        x: xVals,
+        y: yVals,
+        type: 'bar',
+        name: `${p.toUpperCase()} (${p === 'f16' ? 'Half' : p === 'f32' ? 'Single' : 'Double'})`,
+        marker: { color: PRECISION_COLORS[p] },
+        text: textVals,
+        hoverinfo: 'text'
+      });
+    }
+  });
+
+  const subtitleText = selectedSize === "peak" ? "Peak Configuration across Matrix Sizes" : `Matrix Dimension N = ${selectedSize} × ${selectedSize}`;
+
+  const layout = {
+    barmode: 'group',
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: '#161d24',
+    margin: { t: 40, b: 60, l: 60, r: 30 },
+    font: { family: '-apple-system, BlinkMacSystemFont, Segoe UI', color: '#94a3b8' },
+    xaxis: { title: `Kernel (${subtitleText})`, gridcolor: '#222b35' },
+    yaxis: { title: 'Throughput (GFLOPS)', gridcolor: '#222b35', rangemode: 'tozero' },
+    legend: { orientation: 'h', x: 0, y: 1.1, font: { color: '#e2e8f0' } }
+  };
+
+  Plotly.newPlot('chart-precision-bars', data, layout, { responsive: true });
+}
+
+function renderPrecisionSpeedupChart() {
+  const data = [];
+
+  // 1.0x Parity Line
+  data.push({
+    x: [SIZES[0], SIZES[SIZES.length - 1]],
+    y: [1.0, 1.0],
+    mode: 'lines',
+    line: { dash: 'dash', color: '#64748b', width: 1.5 },
+    name: '1.0x Parity (f32)',
+    hoverinfo: 'none'
+  });
+
+  // 2.0x Theoretical Speedup Line
+  data.push({
+    x: [SIZES[0], SIZES[SIZES.length - 1]],
+    y: [2.0, 2.0],
+    mode: 'lines',
+    line: { dash: 'dot', color: '#94a3b8', width: 1.5 },
+    name: '2.0x Theoretical Vector Packing',
+    hoverinfo: 'none'
+  });
+
+  const kernelsToCompare = [
+    { k: "rayon-ikj", name: "Rayon ikj (f16 vs f32)", color: "#38bdf8", isF16: true },
+    { k: "rayon-tiled", name: "Rayon Tiled (f16 vs f32)", color: "#818cf8", isF16: true },
+    { k: "mps", name: "Apple MPS (f16 vs f32)", color: "#2ecc71", isF16: true },
+    { k: "rayon-ikj", name: "Rayon ikj (f64 vs f32)", color: "#f59e0b", isF16: false },
+    { k: "rayon-tiled", name: "Rayon Tiled (f64 vs f32)", color: "#ea580c", isF16: false }
+  ];
+
+  kernelsToCompare.forEach(item => {
+    const xVals = [];
+    const yVals = [];
+    const textVals = [];
+
+    SIZES.forEach(n => {
+      const f32Matches = RAW_RECORDS.filter(r => r.kernel === item.k && r.n === n && r.precision === "f32");
+      const targetMatches = RAW_RECORDS.filter(
+        r => r.kernel === item.k && r.n === n && r.precision === (item.isF16 ? "f16" : "f64")
+      );
+
+      if (f32Matches.length > 0 && targetMatches.length > 0) {
+        const peakF32 = f32Matches.reduce((max, r) => r.gflops > max.gflops ? r : max, f32Matches[0]);
+        const peakTarget = targetMatches.reduce((max, r) => r.gflops > max.gflops ? r : max, targetMatches[0]);
+
+        if (peakTarget.elapsed_ms > 0 && peakF32.elapsed_ms > 0) {
+          const ratio = peakF32.elapsed_ms / peakTarget.elapsed_ms; // >1 means target is faster than f32
+          xVals.push(n);
+          yVals.push(ratio);
+          textVals.push(
+            `<b>${item.name}</b><br>Matrix N: ${n}<br>Ratio: ${ratio.toFixed(2)}x<br>` +
+            `f32 Time: ${peakF32.elapsed_ms.toFixed(2)} ms (${peakF32.gflops.toFixed(1)} GFLOPS)<br>` +
+            `${item.isF16 ? 'f16' : 'f64'} Time: ${peakTarget.elapsed_ms.toFixed(2)} ms (${peakTarget.gflops.toFixed(1)} GFLOPS)`
+          );
+        }
+      }
+    });
+
+    if (xVals.length > 0) {
+      data.push({
+        x: xVals,
+        y: yVals,
+        mode: 'lines+markers',
+        name: item.name,
+        line: { color: item.color, width: item.isF16 ? 2.5 : 2, dash: item.isF16 ? 'solid' : 'dash' },
+        marker: { size: 6 },
+        text: textVals,
+        hoverinfo: 'text'
+      });
+    }
+  });
+
+  const layout = {
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: '#161d24',
+    margin: { t: 30, b: 60, l: 60, r: 30 },
+    font: { family: '-apple-system, BlinkMacSystemFont, Segoe UI', color: '#94a3b8' },
+    xaxis: { title: 'Matrix Dimension (N)', type: 'log', gridcolor: '#222b35', tickvals: SIZES },
+    yaxis: { title: 'Speedup Factor vs f32 (T(f32) / T(p))', gridcolor: '#222b35', rangemode: 'tozero' },
+    legend: { orientation: 'h', x: 0, y: 1.15, font: { color: '#e2e8f0', size: 10 } }
+  };
+
+  Plotly.newPlot('chart-precision-speedup', data, layout, { responsive: true });
+}
+
+function renderPrecisionEnvelopeChart() {
+  const data = [];
+
+  // Plot peak curves for CPU and MPS across precisions
+  PRECISIONS.forEach(p => {
+    // Best CPU
+    const cpuX = [];
+    const cpuY = [];
+    const cpuText = [];
+
+    // Best MPS
+    const mpsX = [];
+    const mpsY = [];
+    const mpsText = [];
+
+    SIZES.forEach(n => {
+      const cpuMatches = RAW_RECORDS.filter(
+        r => !ACCELERATED_KERNELS.has(r.kernel) && r.n === n && r.precision === p
+      );
+      if (cpuMatches.length > 0) {
+        const peakCpu = cpuMatches.reduce((max, r) => r.gflops > max.gflops ? r : max, cpuMatches[0]);
+        cpuX.push(n);
+        cpuY.push(peakCpu.gflops);
+        cpuText.push(
+          `<b>Peak CPU (${p})</b><br>N: ${n}<br>Kernel: ${peakCpu.kernel}<br>Throughput: ${peakCpu.gflops.toFixed(1)} GFLOPS<br>Threads: ${peakCpu.threads}`
+        );
+      }
+
+      const mpsRec = RAW_RECORDS.find(r => r.kernel === "mps" && r.n === n && r.precision === p);
+      if (mpsRec) {
+        mpsX.push(n);
+        mpsY.push(mpsRec.gflops);
+        mpsText.push(
+          `<b>Apple MPS (${p})</b><br>N: ${n}<br>Throughput: ${mpsRec.gflops.toFixed(1)} GFLOPS<br>Time: ${mpsRec.elapsed_ms.toFixed(3)} ms`
+        );
+      }
+    });
+
+    if (cpuX.length > 0) {
+      data.push({
+        x: cpuX,
+        y: cpuY,
+        mode: 'lines+markers',
+        name: `Peak CPU (${p})`,
+        line: { color: PRECISION_COLORS[p], width: 2 },
+        marker: { size: 6 },
+        text: cpuText,
+        hoverinfo: 'text'
+      });
+    }
+
+    if (mpsX.length > 0) {
+      data.push({
+        x: mpsX,
+        y: mpsY,
+        mode: 'lines+markers',
+        name: `Apple MPS (${p})`,
+        line: { color: p === 'f16' ? '#22c55e' : '#10b981', width: 3, dash: p === 'f16' ? 'solid' : 'dot' },
+        marker: { size: 7 },
+        text: mpsText,
+        hoverinfo: 'text'
+      });
+    }
+  });
+
+  const layout = {
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: '#161d24',
+    margin: { t: 30, b: 60, l: 60, r: 30 },
+    font: { family: '-apple-system, BlinkMacSystemFont, Segoe UI', color: '#94a3b8' },
+    xaxis: { title: 'Matrix Dimension (N)', type: 'log', gridcolor: '#222b35', tickvals: SIZES },
+    yaxis: { title: 'Peak Throughput (GFLOPS, Log Scale)', type: 'log', gridcolor: '#222b35' },
+    legend: { orientation: 'h', x: 0, y: 1.15, font: { color: '#e2e8f0', size: 10 } }
+  };
+
+  Plotly.newPlot('chart-precision-envelope', data, layout, { responsive: true });
+}
+
+function renderPrecisionSummaryTable() {
+  const tbody = document.querySelector("#precisionSummaryTable tbody");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+  const kernels = ["naive-ijk", "ikj", "tiled", "rayon-ikj", "rayon-tiled", "static-ikj", "static-tiled", "mps"];
+
+  kernels.forEach(k => {
+    const f16Matches = RAW_RECORDS.filter(r => r.kernel === k && r.precision === "f16");
+    const f32Matches = RAW_RECORDS.filter(r => r.kernel === k && r.precision === "f32");
+    const f64Matches = RAW_RECORDS.filter(r => r.kernel === k && r.precision === "f64");
+
+    const peakF16 = f16Matches.length > 0 ? f16Matches.reduce((max, r) => r.gflops > max.gflops ? r : max, f16Matches[0]) : null;
+    const peakF32 = f32Matches.length > 0 ? f32Matches.reduce((max, r) => r.gflops > max.gflops ? r : max, f32Matches[0]) : null;
+    const peakF64 = f64Matches.length > 0 ? f64Matches.reduce((max, r) => r.gflops > max.gflops ? r : max, f64Matches[0]) : null;
+
+    let catBadge = '<span class="badge badge-serial">Serial</span>';
+    if (PARALLEL_KERNELS.has(k)) catBadge = '<span class="badge badge-parallel">Parallel</span>';
+    else if (ACCELERATED_KERNELS.has(k)) catBadge = '<span class="badge badge-mps">MPS</span>';
+
+    const f16Sp = (peakF16 && peakF32 && peakF32.gflops > 0) ? `${(peakF16.gflops / peakF32.gflops).toFixed(2)}x` : "—";
+    const f64Pen = (peakF64 && peakF32 && peakF32.gflops > 0) ? `${(peakF64.gflops / peakF32.gflops).toFixed(2)}x` : "—";
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td style="font-weight:600; color:#f8fafc;">${k}</td>
+      <td style="text-align:left;">${catBadge}</td>
+      <td style="font-weight:600; color:#e879f9;">${peakF16 ? peakF16.gflops.toFixed(1) : '—'}</td>
+      <td style="font-weight:600; color:#38bdf8;">${peakF32 ? peakF32.gflops.toFixed(1) : '—'}</td>
+      <td style="font-weight:600; color:#fbbf24;">${peakF64 ? peakF64.gflops.toFixed(1) : '—'}</td>
+      <td style="font-weight:600; color:#86efac;">${f16Sp}</td>
+      <td style="color:#cbd5e1;">${f64Pen}</td>
+      <td style="color:#94a3b8; font-size:12px;">f16: 32MB | f32: 64MB | f64: 128MB</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderPrecisionComparison() {
+  initPrecisionControls();
+  renderPrecisionThroughputChart();
+  renderPrecisionSpeedupChart();
+  renderPrecisionEnvelopeChart();
+  renderPrecisionSummaryTable();
+}
+
+// 3. Parallel Efficiency Chart
+function renderParallelEfficiency() {
+  const targetSizes = [512, 1024, 2048, 4096].filter(s => SIZES.includes(s));
+  const data = [];
+  const precToUse = activePrecision === "all" ? "f32" : activePrecision;
 
   // 100% threshold line
   data.push({
@@ -204,12 +628,14 @@ function renderParallelEfficiency() {
       const textVals = [];
 
       THREADS.forEach(t => {
-        const sp = getSpeedup(k, n, t);
+        const sp = getSpeedup(k, n, t, precToUse);
         if (sp !== null) {
           const eff = (sp / t) * 100;
           xVals.push(t);
           yVals.push(eff);
-          textVals.push(`<b>${k} (N=${n})</b><br>Threads: ${t}<br>Efficiency: ${eff.toFixed(1)}%<br>Speedup: ${sp.toFixed(2)}x`);
+          textVals.push(
+            `<b>${k} (${precToUse}, N=${n})</b><br>Threads: ${t}<br>Efficiency: ${eff.toFixed(1)}%<br>Speedup: ${sp.toFixed(2)}x`
+          );
         }
       });
 
@@ -240,20 +666,24 @@ function renderParallelEfficiency() {
   Plotly.newPlot('chart-parallel-efficiency', data, layout, { responsive: true });
 }
 
-// 3. Serial Baseline Chart
+// 4. Serial Baseline Chart
 function renderSerialBaseline() {
   const data = [];
+  const precToUse = activePrecision === "all" ? "f32" : activePrecision;
+
   ["naive-ijk", "ikj", "tiled"].forEach(k => {
     const xVals = [];
     const yVals = [];
     const textVals = [];
 
     SIZES.forEach(n => {
-      const rec = getRecord(k, n, 1);
+      const rec = getRecord(k, n, 1, precToUse);
       if (rec) {
         xVals.push(`N=${n}`);
         yVals.push(rec.gflops);
-        textVals.push(`<b>${k}</b><br>N: ${n}<br>GFLOPS: ${rec.gflops.toFixed(2)}<br>Time: ${rec.elapsed_ms.toFixed(2)} ms`);
+        textVals.push(
+          `<b>${k} (${rec.precision})</b><br>N: ${n}<br>GFLOPS: ${rec.gflops.toFixed(2)}<br>Time: ${rec.elapsed_ms.toFixed(2)} ms`
+        );
       }
     });
 
@@ -262,7 +692,7 @@ function renderSerialBaseline() {
         x: xVals,
         y: yVals,
         type: 'bar',
-        name: k,
+        name: `${k} (${precToUse})`,
         marker: { color: COLORS[k] },
         text: textVals,
         hoverinfo: 'text'
@@ -276,7 +706,7 @@ function renderSerialBaseline() {
     plot_bgcolor: '#161d24',
     margin: { t: 30, b: 60, l: 60, r: 30 },
     font: { family: '-apple-system, BlinkMacSystemFont, Segoe UI', color: '#94a3b8' },
-    xaxis: { title: 'Matrix Dimension (N)', gridcolor: '#222b35' },
+    xaxis: { title: `Matrix Dimension (N) [${precToUse.toUpperCase()}]`, gridcolor: '#222b35' },
     yaxis: { title: 'Throughput (GFLOPS)', gridcolor: '#222b35', rangemode: 'tozero' },
     legend: { orientation: 'h', x: 0, y: 1.1, font: { color: '#e2e8f0' } }
   };
@@ -284,9 +714,11 @@ function renderSerialBaseline() {
   Plotly.newPlot('chart-serial-baseline', data, layout, { responsive: true });
 }
 
-// 4. Peak Landscape Chart
+// 5. Peak Landscape Chart
 function renderPeakLandscape() {
   const data = [];
+  const precToUse = activePrecision === "all" ? null : activePrecision;
+
   const kernelsToPlot = [
     { k: "naive-ijk", name: "Naive (1T)", style: "dash" },
     { k: "ikj", name: "Contiguous ikj (1T)", style: "solid" },
@@ -303,12 +735,16 @@ function renderPeakLandscape() {
     const textVals = [];
 
     SIZES.forEach(n => {
-      const matches = RAW_RECORDS.filter(r => r.kernel === item.k && r.n === n);
+      const matches = RAW_RECORDS.filter(
+        r => r.kernel === item.k && r.n === n && (precToUse === null || r.precision === precToUse)
+      );
       if (matches.length > 0) {
         const peak = matches.reduce((max, r) => r.gflops > max.gflops ? r : max, matches[0]);
         xVals.push(n);
         yVals.push(peak.gflops);
-        textVals.push(`<b>${item.name}</b><br>N: ${n}<br>Peak GFLOPS: ${peak.gflops.toFixed(1)}<br>Threads: ${peak.threads}<br>Time: ${peak.elapsed_ms.toFixed(2)} ms`);
+        textVals.push(
+          `<b>${item.name}</b><br>N: ${n}<br>Peak GFLOPS: ${peak.gflops.toFixed(1)}<br>Threads: ${peak.threads}<br>Precision: ${peak.precision}<br>Time: ${peak.elapsed_ms.toFixed(2)} ms`
+        );
       }
     });
 
@@ -343,13 +779,14 @@ function renderPeakLandscape() {
   Plotly.newPlot('chart-peak-landscape', data, layout, { responsive: true });
 }
 
-// 5. Scheduler Shootout Charts
+// 6. Scheduler Shootout Charts
 function renderSchedulerComparison(containerId, rayonKernel, staticKernel, label) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
   const data = [];
-  let targetSizes = [512, 1024, 2048].filter(s => SIZES.includes(s));
+  const precToUse = activePrecision === "all" ? "f32" : activePrecision;
+  let targetSizes = [512, 1024, 2048, 4096].filter(s => SIZES.includes(s));
   if (targetSizes.length === 0) {
     targetSizes = SIZES.slice(-3);
   }
@@ -360,14 +797,14 @@ function renderSchedulerComparison(containerId, rayonKernel, staticKernel, label
     const textVals = [];
 
     THREADS.forEach(t => {
-      const rayonRec = getRecord(rayonKernel, n, t);
-      const staticRec = getRecord(staticKernel, n, t);
+      const rayonRec = getRecord(rayonKernel, n, t, precToUse);
+      const staticRec = getRecord(staticKernel, n, t, precToUse);
       if (rayonRec && staticRec && staticRec.elapsed_ms > 0 && rayonRec.elapsed_ms > 0) {
         const ratio = staticRec.elapsed_ms / rayonRec.elapsed_ms;
         xVals.push(t);
         yVals.push(ratio);
         textVals.push(
-          `<b>${label} (N=${n}, Threads=${t})</b><br>` +
+          `<b>${label} (${precToUse}, N=${n}, Threads=${t})</b><br>` +
           `Rayon Time: ${rayonRec.elapsed_ms.toFixed(2)} ms (${rayonRec.gflops.toFixed(1)} GFLOPS)<br>` +
           `Static Time: ${staticRec.elapsed_ms.toFixed(2)} ms (${staticRec.gflops.toFixed(1)} GFLOPS)<br>` +
           `Speed Ratio (Static / Rayon): ${ratio.toFixed(2)}x`
@@ -392,10 +829,7 @@ function renderSchedulerComparison(containerId, rayonKernel, staticKernel, label
     container.innerHTML = `
       <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 320px; color: #94a3b8; text-align: center;">
         <p style="font-size: 15px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px;">
-          No benchmark records found for ${staticKernel}
-        </p>
-        <p style="font-size: 13px; color: #64748b; max-width: 480px;">
-          Run benchmarks with <code>--kernel ${rayonKernel},${staticKernel}</code> to generate scheduler shootout comparison curves.
+          No benchmark records found for ${staticKernel} in ${precToUse}
         </p>
       </div>`;
     return;
@@ -428,23 +862,11 @@ function renderSchedulerShootout() {
   renderSchedulerComparison('chart-scheduler-tiled', 'rayon-tiled', 'static-tiled', '2D Cache-Tiled');
 }
 
-// 6. MPS Gap Chart
+// 7. Apple Silicon MPS vs CPU Acceleration Gap Chart
 function renderMpsGap() {
-  const xVals = [];
-  const yVals = [];
-  const textVals = [];
-
-  SIZES.forEach(n => {
-    const mpsRec = getRecord("mps", n, 1);
-    const cpuMatches = RAW_RECORDS.filter(r => PARALLEL_KERNELS.has(r.kernel) && r.n === n);
-    if (mpsRec && cpuMatches.length > 0) {
-      const bestCpu = cpuMatches.reduce((max, r) => r.gflops > max.gflops ? r : max, cpuMatches[0]);
-      const ratio = bestCpu.elapsed_ms / mpsRec.elapsed_ms;
-      xVals.push(n);
-      yVals.push(ratio);
-      textVals.push(`<b>Matrix N = ${n}</b><br>MPS: ${mpsRec.gflops.toFixed(1)} GFLOPS (${mpsRec.elapsed_ms.toFixed(2)} ms)<br>Best CPU (${bestCpu.kernel}, ${bestCpu.threads}T): ${bestCpu.gflops.toFixed(1)} GFLOPS (${bestCpu.elapsed_ms.toFixed(2)} ms)<br><b>MPS Speedup: ${ratio.toFixed(2)}x</b>`);
-    }
-  });
+  const precisionsToShow = activePrecision === "all"
+    ? ["f16", "f32"].filter(p => PRECISIONS.includes(p))
+    : [activePrecision].filter(p => p === "f16" || p === "f32");
 
   const data = [
     {
@@ -454,21 +876,50 @@ function renderMpsGap() {
       line: { dash: 'dash', color: '#e2e8f0', width: 1.5 },
       name: '1.0x Parity Threshold',
       hoverinfo: 'none'
-    },
-    {
-      x: xVals,
-      y: yVals,
-      mode: 'lines+markers+text',
-      line: { color: COLORS.mps, width: 3 },
-      marker: { size: 8, color: COLORS.mps },
-      text: yVals.map(v => `${v.toFixed(1)}x`),
-      textposition: 'top center',
-      textfont: { color: '#86efac', size: 11, weight: 'bold' },
-      hovertext: textVals,
-      hoverinfo: 'text',
-      name: 'MPS Speedup vs Best CPU'
     }
   ];
+
+  precisionsToShow.forEach(p => {
+    const xVals = [];
+    const yVals = [];
+    const textVals = [];
+
+    SIZES.forEach(n => {
+      const mpsRec = RAW_RECORDS.find(r => r.kernel === "mps" && r.n === n && r.precision === p);
+      const cpuMatches = RAW_RECORDS.filter(
+        r => PARALLEL_KERNELS.has(r.kernel) && r.n === n && r.precision === p
+      );
+      if (mpsRec && cpuMatches.length > 0) {
+        const bestCpu = cpuMatches.reduce((max, r) => r.gflops > max.gflops ? r : max, cpuMatches[0]);
+        const ratio = bestCpu.elapsed_ms / mpsRec.elapsed_ms;
+        xVals.push(n);
+        yVals.push(ratio);
+        textVals.push(
+          `<b>Matrix N = ${n} (${p})</b><br>` +
+          `MPS: ${mpsRec.gflops.toFixed(1)} GFLOPS (${mpsRec.elapsed_ms.toFixed(2)} ms)<br>` +
+          `Best CPU (${bestCpu.kernel}, ${bestCpu.threads}T): ${bestCpu.gflops.toFixed(1)} GFLOPS (${bestCpu.elapsed_ms.toFixed(2)} ms)<br>` +
+          `<b>MPS Speedup: ${ratio.toFixed(2)}x</b>`
+        );
+      }
+    });
+
+    if (xVals.length > 0) {
+      const lineColor = p === "f16" ? "#d946ef" : "#2ecc71";
+      data.push({
+        x: xVals,
+        y: yVals,
+        mode: 'lines+markers+text',
+        line: { color: lineColor, width: 3 },
+        marker: { size: 8, color: lineColor },
+        text: yVals.map(v => `${v.toFixed(1)}x`),
+        textposition: 'top center',
+        textfont: { color: p === "f16" ? '#e879f9' : '#86efac', size: 11, weight: 'bold' },
+        hovertext: textVals,
+        hoverinfo: 'text',
+        name: `MPS Speedup vs Best CPU (${p})`
+      });
+    }
+  });
 
   const layout = {
     paper_bgcolor: 'rgba(0,0,0,0)',
@@ -483,7 +934,7 @@ function renderMpsGap() {
   Plotly.newPlot('chart-mps-gap', data, layout, { responsive: true });
 }
 
-// 7. Interactive Sortable Data Table
+// 8. Interactive Sortable Data Table & CSV Export
 let tableRecords = [];
 let currentSortField = "gflops";
 let currentSortDir = "desc";
@@ -496,7 +947,7 @@ function getCategory(kernel) {
 
 function initTableData() {
   tableRecords = RAW_RECORDS.map(r => {
-    const sp = getSpeedup(r.kernel, r.n, r.threads);
+    const sp = getSpeedup(r.kernel, r.n, r.threads, r.precision);
     return {
       ...r,
       category: getCategory(r.kernel),
@@ -559,13 +1010,29 @@ function updateSortUI() {
   }
 }
 
+function getFilteredTableRecords() {
+  const query = (document.getElementById("tableSearch")?.value || "").toLowerCase().trim();
+  const precFilter = document.getElementById("tablePrecFilter")?.value || "all";
+  const catFilter = document.getElementById("tableCatFilter")?.value || "all";
+
+  return tableRecords.filter(r => {
+    if (precFilter !== "all" && r.precision !== precFilter) return false;
+    if (catFilter !== "all" && r.category !== catFilter) return false;
+    if (query) {
+      const rowText = `${r.kernel} ${r.category} ${r.n} ${r.threads} ${r.precision} ${r.elapsed_ms} ${r.gflops}`.toLowerCase();
+      if (!rowText.includes(query)) return false;
+    }
+    return true;
+  });
+}
+
 function renderTable() {
   const tbody = document.querySelector("#benchmarkTable tbody");
   if (!tbody) return;
 
-  const query = (document.getElementById("tableSearch")?.value || "").toLowerCase().trim();
+  const filtered = getFilteredTableRecords();
 
-  const sorted = [...tableRecords].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     const valA = a[currentSortField];
     const valB = b[currentSortField];
 
@@ -581,14 +1048,12 @@ function renderTable() {
   tbody.innerHTML = "";
 
   sorted.forEach(r => {
-    const rowText = `${r.kernel} ${r.category} ${r.n} ${r.threads} ${r.precision} ${r.elapsed_ms} ${r.gflops}`.toLowerCase();
-    if (query && !rowText.includes(query)) return;
-
     const tr = document.createElement("tr");
     let catBadge = '<span class="badge badge-serial">Serial</span>';
     if (r.category === "parallel") catBadge = '<span class="badge badge-parallel">Parallel</span>';
     else if (r.category === "mps") catBadge = '<span class="badge badge-mps">MPS</span>';
 
+    const precBadge = `<span class="badge badge-${r.precision}">${r.precision}</span>`;
     const spText = r.speedup > 0 ? `${r.speedup.toFixed(2)}x` : "-";
 
     tr.innerHTML = `
@@ -596,7 +1061,7 @@ function renderTable() {
       <td style="text-align:left;">${catBadge}</td>
       <td>${r.n}</td>
       <td>${r.threads}</td>
-      <td>${r.precision}</td>
+      <td>${precBadge}</td>
       <td>${r.elapsed_ms.toFixed(3)}</td>
       <td style="font-weight:600; color:#38bdf8;">${r.gflops.toFixed(2)}</td>
       <td>${spText}</td>
@@ -609,15 +1074,51 @@ function filterTable() {
   renderTable();
 }
 
+function exportTableToCSV() {
+  const records = getFilteredTableRecords();
+  if (records.length === 0) {
+    alert("No records to export with current filters.");
+    return;
+  }
+
+  const headers = ["kernel", "category", "n", "threads", "precision", "elapsed_ms", "gflops", "speedup_vs_t1"];
+  const rows = records.map(r => [
+    r.kernel,
+    r.category,
+    r.n,
+    r.threads,
+    r.precision,
+    r.elapsed_ms.toFixed(4),
+    r.gflops.toFixed(2),
+    r.speedup > 0 ? r.speedup.toFixed(2) : ""
+  ]);
+
+  const csvContent = [
+    headers.join(","),
+    ...rows.map(row => row.join(","))
+  ].join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `rayon_gemm_benchmarks_${activePrecision}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 // Initialize on DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
+  initTableData();
   renderParallelGrid();
+  renderPrecisionComparison();
   renderParallelEfficiency();
   renderSerialBaseline();
   renderPeakLandscape();
   renderSchedulerShootout();
   renderMpsGap();
-  initTableData();
   updateSortUI();
   renderTable();
 });

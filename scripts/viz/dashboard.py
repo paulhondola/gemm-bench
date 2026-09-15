@@ -35,37 +35,52 @@ def generate_interactive_dashboard(
     # Compute KPI statistics
     mps_peaks = [r for r in data.records if r["kernel"] == "mps"]
     max_mps_gflops = max((r["gflops"] for r in mps_peaks), default=0.0)
+    best_mps = max(mps_peaks, key=lambda x: x["gflops"], default=None)
+    mps_prec_label = f"MPS ({best_mps['precision']})" if best_mps else "Apple Silicon MPS"
 
     cpu_peaks = [r for r in data.records if r["kernel"] not in ACCELERATED_KERNELS]
     best_cpu = max(cpu_peaks, key=lambda x: x["gflops"], default=None)
     max_cpu_gflops = best_cpu["gflops"] if best_cpu else 0.0
-    best_cpu_kernel = best_cpu["kernel"] if best_cpu else "N/A"
+    best_cpu_kernel = f"{best_cpu['kernel']} ({best_cpu['precision']})" if best_cpu else "N/A"
 
     max_parallel_sp = 1.0
     for k in PARALLEL_KERNELS:
-        for n in data.sizes:
-            for t in data.threads:
-                sp = data.get_speedup(k, n, t)
-                if sp and sp > max_parallel_sp:
-                    max_parallel_sp = sp
+        for p in data.precisions:
+            for n in data.sizes:
+                for t in data.threads:
+                    sp = data.get_speedup(k, n, t, precision=p)
+                    if sp and sp > max_parallel_sp:
+                        max_parallel_sp = sp
 
     max_cache_sp = 1.0
-    for n in data.sizes:
-        naive = data.get_record("naive-ijk", n, 1)
-        ikj = data.get_record("ikj", n, 1)
-        if naive and ikj and ikj["elapsed_ms"] > 0:
-            sp = naive["elapsed_ms"] / ikj["elapsed_ms"]
-            if sp > max_cache_sp:
-                max_cache_sp = sp
+    for p in data.precisions:
+        for n in data.sizes:
+            naive = data.get_record("naive-ijk", n, 1, precision=p)
+            ikj = data.get_record("ikj", n, 1, precision=p)
+            if naive and ikj and ikj["elapsed_ms"] > 0:
+                sp = naive["elapsed_ms"] / ikj["elapsed_ms"]
+                if sp > max_cache_sp:
+                    max_cache_sp = sp
+
+    # Compute max f16 speedup over f32
+    max_f16_sp = 1.0
+    for k in data.kernels:
+        for n in data.sizes:
+            for t in data.threads:
+                sp = data.get_precision_speedup(k, n, t, target_prec="f16", base_prec="f32")
+                if sp and sp > max_f16_sp:
+                    max_f16_sp = sp
 
     # Template replacement for KPI cards and metadata
     rendered = html_template
     rendered = rendered.replace("{{PAGE_TITLE}}", page_title)
     rendered = rendered.replace("{{PEAK_MPS_GFLOPS}}", f"{max_mps_gflops:,.0f}")
+    rendered = rendered.replace("{{PEAK_MPS_META}}", mps_prec_label)
     rendered = rendered.replace("{{PEAK_CPU_GFLOPS}}", f"{max_cpu_gflops:,.0f}")
     rendered = rendered.replace("{{PEAK_CPU_KERNEL}}", best_cpu_kernel)
     rendered = rendered.replace("{{MAX_PARALLEL_SPEEDUP}}", f"{max_parallel_sp:.2f}")
     rendered = rendered.replace("{{MAX_CACHE_SPEEDUP}}", f"{max_cache_sp:.1f}")
+    rendered = rendered.replace("{{MAX_F16_SPEEDUP}}", f"{max_f16_sp:.2f}")
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     with open(dest, "w", encoding="utf-8") as f:

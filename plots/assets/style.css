@@ -322,3 +322,127 @@ table.data-table th.sorted-active .sort-icon {
 .badge-serial { background: rgba(230, 126, 34, 0.2); color: #f39c12; }
 .badge-parallel { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
 .badge-mps { background: rgba(46, 204, 113, 0.2); color: #2ecc71; }
+.badge-f16 { background: rgba(217, 70, 239, 0.2); color: #e879f9; }
+.badge-f32 { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+.badge-f64 { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+
+/* Header Controls & Filter Pills */
+.header-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.pill-group {
+  display: flex;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.pill-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.pill-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.pill-btn.active {
+  background: var(--accent);
+  color: #0f172a;
+}
+
+.badges-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Card Header Flex & Controls */
+.card-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.card-badge-info {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  padding: 4px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.btn-export {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: var(--accent);
+  font-size: 13px;
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
+.btn-export:hover {
+  background: var(--accent);
+  color: #0f172a;
+  border-color: var(--accent);
+}
+

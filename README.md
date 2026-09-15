@@ -143,16 +143,19 @@ The repository includes a standalone visualization engine in [`scripts/visualize
 ### Interactive Dashboard & Benchmark Data
 
 - **Interactive Dashboard**: [`plots/dashboard.html`](plots/dashboard.html) (open directly in your browser with `open plots/dashboard.html` or view via [HTMLPreview](https://htmlpreview.github.io/?https://github.com/paulhondola/rayon-gemm/blob/main/plots/dashboard.html))
-- **Benchmark Dataset**: [`data/f32_full_run.csv`](data/full_run.csv)
+- **Benchmark Datasets**: [`data/f16_full_run.csv`](data/f16_full_run.csv), [`data/f32_full_run.csv`](data/f32_full_run.csv), and [`data/f64_full_run.csv`](data/f64_full_run.csv)
 
 ### Generating Visualizations
 
 Run the visualization script against your benchmark CSV or JSON results:
 
 ```sh
-# Generate interactive HTML dashboard
-./scripts/visualize.py --input data/f32_full_run.csv --output-dir plots/
+# Generate interactive HTML dashboard (auto-discovers f16, f32, and f64 runs)
+./scripts/visualize.py --output-dir plots/
+
+# Or specify custom benchmark input files
+./scripts/visualize.py --input data/f16_full_run.csv data/f32_full_run.csv data/f64_full_run.csv --output-dir plots/
 
 # Automatically open the dashboard in your default web browser
-./scripts/visualize.py --input data/f32_full_run.csv --output-dir plots/ --open
+./scripts/visualize.py --open
 ```

@@ -3,21 +3,21 @@
 rayon-gemm Benchmark Visualization CLI
 ======================================
 
-Parses benchmark results (CSV / JSON) and generates:
-1. Publication-quality vector (SVG) figures cleanly separating serial and
-   parallel benchmarks, including a multi-panel parallel speedup grid.
-2. An interactive, standalone HTML dashboard with Plotly charts, tabs, dark mode,
-   and detailed performance metrics.
+Parses benchmark results (CSV / JSON) and generates an interactive, standalone HTML
+dashboard with Plotly charts, tabs, multi-precision comparison (f16 / f32 / f64),
+dark mode, and detailed performance metrics.
 
 Usage:
-    ./scripts/visualize.py --input data/full_run.csv --output-dir plots/
-    ./scripts/visualize.py --open
+    ./scripts/visualize.py
+    ./scripts/visualize.py --input data/f16_full_run.csv data/f32_full_run.csv data/f64_full_run.csv
+    ./scripts/visualize.py --input data/ --output-dir plots/ --open
 """
 
 import argparse
 import os
 import sys
 from pathlib import Path
+from typing import List
 
 # Add script directory to sys.path so 'viz' package is importable
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -30,6 +30,29 @@ from viz import (  # noqa: E402
 )
 
 
+def discover_default_inputs() -> List[Path]:
+    """Finds benchmark datasets in data/ if no input argument is provided."""
+    data_dir = Path("data")
+    if not data_dir.exists():
+        return []
+
+    # Prefer individual precision runs
+    preferred = [
+        data_dir / "f16_full_run.csv",
+        data_dir / "f32_full_run.csv",
+        data_dir / "f64_full_run.csv",
+    ]
+    existing = [p for p in preferred if p.exists()]
+    if existing:
+        return existing
+
+    # Fallback to any CSV or JSON in data/
+    candidates = sorted(
+        f for f in data_dir.iterdir() if f.is_file() and f.suffix.lower() in {".csv", ".json"}
+    )
+    return candidates
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Performance visualization engine for rayon-gemm benchmarks."
@@ -37,23 +60,25 @@ def main():
     parser.add_argument(
         "--input",
         "-i",
+        nargs="*",
         type=Path,
-        default=Path("data/full_run.csv"),
-        help="Path to benchmark CSV or JSON results file (default: data/full_run.csv).",
+        default=None,
+        help="Path(s) to benchmark CSV or JSON files, or directory containing results "
+        "(default: discovers data/f16_full_run.csv, data/f32_full_run.csv, data/f64_full_run.csv).",
     )
     parser.add_argument(
         "--output-dir",
         "-o",
         type=Path,
         default=Path("plots"),
-        help="Destination directory for generated plots and dashboard (default: plots).",
+        help="Destination directory for generated dashboard (default: plots).",
     )
     parser.add_argument(
         "--precision",
         "-p",
         type=str,
-        default="f32",
-        help="Target precision to visualize ('f32', 'f16', 'f64', or 'all'; default: 'f32').",
+        default="all",
+        help="Target precision to visualize ('all', 'f32', 'f16', 'f64'; default: 'all').",
     )
     parser.add_argument(
         "--open",
@@ -63,17 +88,23 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.input.exists():
-        print(f"Error: Input file '{args.input}' not found.", file=sys.stderr)
-        sys.exit(1)
+    input_paths = args.input
+    if not input_paths:
+        input_paths = discover_default_inputs()
+        if not input_paths:
+            print(
+                "Error: No benchmark input files specified and none found in 'data/'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    print(f"Loading benchmark results from {args.input}...")
-    data = BenchmarkData.load(args.input)
+    print(f"Loading benchmark results from: {', '.join(str(p) for p in input_paths)}...")
+    data = BenchmarkData.load(input_paths)
     filtered = data.filter(args.precision)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Generate Interactive HTML Dashboard
+    # Generate Interactive HTML Dashboard
     print("Generating interactive HTML dashboard...")
     dashboard_path = args.output_dir / "dashboard.html"
     generate_interactive_dashboard(filtered, dashboard_path)

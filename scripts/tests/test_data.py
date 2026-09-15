@@ -131,3 +131,38 @@ def test_kernel_classification():
 
     assert "mps" in ACCELERATED_KERNELS
     assert "naive-mps" not in ACCELERATED_KERNELS
+
+
+def test_load_multiple_files(tmp_path: Path):
+    f1 = tmp_path / "f16.csv"
+    f1.write_text("kernel,n,threads,precision,elapsed_ms,gflops\nikj,64,1,f16,0.02,20.0\n")
+    f2 = tmp_path / "f32.csv"
+    f2.write_text("kernel,n,threads,precision,elapsed_ms,gflops\nikj,64,1,f32,0.04,10.0\n")
+
+    data = BenchmarkData.load([f1, f2])
+    assert len(data.records) == 2
+    assert "f16" in data.precisions
+    assert "f32" in data.precisions
+
+
+def test_load_directory(tmp_path: Path):
+    d = tmp_path / "bench_dir"
+    d.mkdir()
+    (d / "run1.csv").write_text(
+        "kernel,n,threads,precision,elapsed_ms,gflops\nikj,64,1,f16,0.02,20.0\n"
+    )
+    (d / "run2.csv").write_text(
+        "kernel,n,threads,precision,elapsed_ms,gflops\nikj,64,1,f32,0.04,10.0\n"
+    )
+
+    data = BenchmarkData.load(d)
+    assert len(data.records) == 2
+    assert {"f16", "f32"} == set(data.precisions)
+
+
+def test_precision_speedup(sample_csv: Path):
+    data = BenchmarkData.load(sample_csv)
+    # ikj @ 64x64: f32 elapsed_ms = 0.05, f16 elapsed_ms = 0.03 -> speedup = 0.05 / 0.03
+    sp = data.get_precision_speedup("ikj", 64, 1, target_prec="f16", base_prec="f32")
+    assert sp is not None
+    assert sp == pytest.approx(0.05 / 0.03, rel=1e-2)

@@ -13,11 +13,14 @@ uv sync
 ### 2. Run the Visualization CLI
 From the repository root:
 ```sh
-# Run CLI directly
-./scripts/visualize.py --input data/full_run.csv --output-dir plots/
+# Auto-discovers data/f16_full_run.csv, data/f32_full_run.csv, and data/f64_full_run.csv
+./scripts/visualize.py --output-dir plots/
 
-# Or via uv
-uv run --project scripts visualize --input data/full_run.csv --output-dir plots/
+# Or specify benchmark input files explicitly
+./scripts/visualize.py --input data/f16_full_run.csv data/f32_full_run.csv data/f64_full_run.csv --output-dir plots/
+
+# Open dashboard in browser upon completion
+./scripts/visualize.py --open
 ```
 
 ### 3. Run Tests
