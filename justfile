@@ -8,8 +8,11 @@ dev:
     cd web && bun dev
 
 build:
-    cargo run --release --manifest-path benchmark/Cargo.toml
+    cargo build --release --manifest-path benchmark/Cargo.toml
     cd web && bun run build
+
+test:
+    cargo test --manifest-path benchmark/Cargo.toml
 
 lint:
     cargo fmt --manifest-path benchmark/Cargo.toml
