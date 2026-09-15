@@ -19,3 +19,6 @@ pre-commit:
     pytest:
       glob: "*.py"
       run: uv run --project scripts pytest
+    frontend-typecheck:
+      glob: "frontend/src/**/*.{ts,tsx}"
+      run: npm run --prefix frontend typecheck
