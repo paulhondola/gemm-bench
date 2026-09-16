@@ -35,7 +35,7 @@ The `mps` GPU kernel requires macOS on Apple Silicon. Everything else runs on an
 ```sh
 git clone https://github.com/paulhondola/rayon-gemm.git
 cd rayon-gemm
-(cd web && bun install)   # one-time: install dashboard dependencies
+just build                # install and build all dependencies
 just test                 # run the benchmark crate's test suite
 just bench --sizes 256,512 --kernel ikj,rayon-ikj --output results
 just dev                  # start the dashboard dev server
@@ -53,7 +53,7 @@ Run `just` with no arguments to list every recipe.
 | `just build` | `cargo build --release` for `benchmark/`, then `bun run build` in `web/` | Produce the optimized benchmark binary (`benchmark/target/release/rayon-gemm`) and the static dashboard (`web/dist/`). |
 | `just dev` | `bun dev` in `web/` | Start the Vite dev server with hot reload for the dashboard. |
 | `just test` | `cargo test --manifest-path benchmark/Cargo.toml` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests. |
-| `just lint` | `cargo fmt` for `benchmark/`, then `bun run lint` (Biome) in `web/` | **Rewrite** Rust formatting in place and report Biome lint/format issues. Use `bun run lint:fix` in `web/` to apply Biome fixes. |
+| `just lint` | `cargo fmt` for `benchmark/`, then `bun run lint` (Biome) in `web/`
 | `just check` | `cargo clippy --all-targets -- -D warnings` for `benchmark/`, then `bun run typecheck` (`tsc --noEmit`) in `web/` | Run the static checks that CI enforces, without modifying files. For Svelte component type checking, run `bun run check` in `web/`. |
 
 ---

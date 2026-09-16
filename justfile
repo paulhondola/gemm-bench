@@ -16,7 +16,7 @@ test:
 
 lint:
     cargo fmt --manifest-path benchmark/Cargo.toml
-    cd web && bun run lint
+    cd web && bun run lint:fix
 
 check:
     cargo clippy --manifest-path benchmark/Cargo.toml --all-targets -- -D warnings
