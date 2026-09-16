@@ -1,77 +1,112 @@
 # rayon-gemm
 
-High-performance, safe Rust benchmarks for dense, row-major square matrix multiplication ($C = A \times B$) across CPU and Apple Silicon GPU backends at `f16`, `f32`, and `f64` precisions.
+High-performance, safe Rust benchmarks for dense, row-major square matrix multiplication ($C = A \times B$) across CPU and Apple Silicon GPU backends at `f16`, `f32`, and `f64` precisions, with a web dashboard for exploring the results.
 
 ---
 
-## What It Does
+## Repository Layout
 
-`rayon-gemm` measures and compares matrix multiplication performance across multiple architectural approaches, memory access patterns, and execution backends:
+| Path | Contents |
+| :--- | :--- |
+| [`benchmark/`](benchmark) | Rust crate `rayon-gemm`: the GEMM kernels and the benchmark CLI that produces the data. |
+| [`web/`](web) | Bun + Vite + Svelte + TypeScript dashboard that visualizes the data. Deployed to GitHub Pages. |
+| [`data/`](data) | Recorded benchmark runs (`f16`, `f32`, `f64`), each as `.csv` and `.json`. |
+| [`justfile`](justfile) | Task runner for every build, run, lint, and check command. |
+| [`lefthook.yml`](lefthook.yml) | Pre-commit hooks for both halves of the repo. |
+| [`.github/workflows/`](.github/workflows) | CI (`ci.yml`) and dashboard deployment (`deploy.yml`). |
 
-### 1. CPU Kernels
+---
+
+## Prerequisites
+
+| Tool | Needed for | Install |
+| :--- | :--- | :--- |
+| [rustup](https://rustup.rs) | `benchmark/` | The pinned [`rust-toolchain.toml`](rust-toolchain.toml) selects **nightly** (with `clippy` and `rustfmt`) automatically, because the `f16` primitive (`#![feature(f16)]`) is not yet stable. |
+| [just](https://github.com/casey/just) | All commands below | `brew install just` |
+| [Bun](https://bun.sh) | `web/` | `curl -fsSL https://bun.sh/install \| bash` |
+| [lefthook](https://github.com/evilmartians/lefthook) | Optional pre-commit hooks | `brew install lefthook`, then `lefthook install` |
+
+The `mps` GPU kernel requires macOS on Apple Silicon. Everything else runs on any platform supported by Rust nightly. On AArch64 CPUs with FP16 support (such as the Apple M series), `f16` arithmetic compiles to native half-precision instructions.
+
+---
+
+## Quick Start
+
+```sh
+git clone https://github.com/paulhondola/rayon-gemm.git
+cd rayon-gemm
+(cd web && bun install)   # one-time: install dashboard dependencies
+just test                 # run the benchmark crate's test suite
+just bench --sizes 256,512 --kernel ikj,rayon-ikj --output results
+just dev                  # start the dashboard dev server
+```
+
+---
+
+## Commands
+
+Run `just` with no arguments to list every recipe.
+
+| Command | What it runs | Use it to |
+| :--- | :--- | :--- |
+| `just bench [ARGS]` | `cargo run --release --manifest-path benchmark/Cargo.toml -- [ARGS]` | Run a benchmark sweep. Every argument is forwarded to the CLI (see [CLI Options](#cli-options)). `--output` is required. |
+| `just build` | `cargo build --release` for `benchmark/`, then `bun run build` in `web/` | Produce the optimized benchmark binary (`benchmark/target/release/rayon-gemm`) and the static dashboard (`web/dist/`). |
+| `just dev` | `bun dev` in `web/` | Start the Vite dev server with hot reload for the dashboard. |
+| `just test` | `cargo test --manifest-path benchmark/Cargo.toml` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests. |
+| `just lint` | `cargo fmt` for `benchmark/`, then `bun run lint` (Biome) in `web/` | **Rewrite** Rust formatting in place and report Biome lint/format issues. Use `bun run lint:fix` in `web/` to apply Biome fixes. |
+| `just check` | `cargo clippy --all-targets -- -D warnings` for `benchmark/`, then `bun run typecheck` (`tsc --noEmit`) in `web/` | Run the static checks that CI enforces, without modifying files. For Svelte component type checking, run `bun run check` in `web/`. |
+
+---
+
+## Benchmark Kernels
+
+### CPU
 
 | Kernel | Algorithm / Strategy | Key Characteristics |
 | :--- | :--- | :--- |
 | `naive-ijk` | Canonical 3-loop order ($i \to j \to k$) | Column-strided access into matrix $B$; poor cache locality; baseline reference. |
 | `ikj` | Loop interchange ($i \to k \to j$) | Row-wise contiguous streaming in $B$ and $C$; autovectorizes with SIMD instructions. |
-| `tiled` | 2D Cache blocking ($B \times B$ tiles) | Partitions working sets into tiles sized for CPU L1/L2 data caches. |
+| `tiled` | 2D cache blocking ($B \times B$ tiles) | Partitions working sets into tiles sized for CPU L1/L2 data caches. |
 | `rayon-ikj` | Rayon work-stealing parallel iterator | Dynamically distributes row chunks across a Rayon worker thread pool with `ikj` compute. |
 | `rayon-tiled` | Rayon parallel 2D tiled iterator | Work-stealing scheduling over 2D matrix tiles. |
 | `static-ikj` | OpenMP-style persistent thread pool | Partitions contiguous row chunks evenly across dedicated threads, eliminating work-stealing overhead. |
 | `static-tiled` | OpenMP-style thread pool with 2D blocking | Combines deterministic row partitioning on a persistent thread pool with L1/L2 cache-blocked compute. |
 
-### 2. Apple Silicon GPU Kernels (Metal & MPS)
+### Apple Silicon GPU (macOS only)
 
-On macOS / Apple Silicon devices, `rayon-gemm` benchmarks unified zero-copy GPU matrix multiplication using Apple's production-grade accelerated BLAS implementation:
-
-* **Metal Performance Shaders (MPS / Hardware Library)**:
-  - Leverages `MPSMatrixMultiplication` from the `MetalPerformanceShaders` framework.
-  - Directly engages Apple Silicon matrix coprocessors (AMX) and GPU hardware execution units for near-peak theoretical TFLOPS.
+| Kernel | Backend | Key Characteristics |
+| :--- | :--- | :--- |
+| `mps` | `MPSMatrixMultiplication` (Metal Performance Shaders) | Runs on the GPU through unified-memory (`StorageModeShared`) buffers. Supports `f16` and `f32`; Apple GPUs have no `f64`. The timed region is GPU execution only (`commit` → `waitUntilCompleted`); buffer copies and command encoding are excluded. MPS does **not** use the AMX matrix coprocessor, which is only reachable from the CPU through Accelerate. |
 
 ---
 
-## Prerequisites & Installation
+## Running Benchmarks
 
-The benchmark suite requires **Rust Nightly** because the `f16` primitive type (`#![feature(f16)]`) is not yet stabilized. On AArch64 CPUs with FP16 support (such as Apple Silicon M-series), `f16` operations compile to native hardware half-precision instructions.
+### Default Sweep
 
-1. Install the nightly toolchain:
-   ```sh
-   rustup toolchain install nightly
-   ```
-   *(Note: The repository includes a `rust-toolchain.toml` that automatically selects the appropriate toolchain).*
-
-2. Build the project in release mode:
-   ```sh
-   cargo build --release
-   ```
-
----
-
-## Usage & Run Commands
-
-### 1. Default Benchmark Sweep
-
-Running without flags performs a full sweep across all default sizes (`64, 128, 256, 512, 1024, 2048`), all CPU kernels and Apple Silicon GPU kernels (`mps` on macOS), and powers-of-two thread counts up to `available_parallelism()` at `f32` precision:
+Without flags, a run sweeps all default sizes (`64, 128, 256, 512, 1024, 2048, 4096`), every CPU kernel (plus `mps` on macOS), and powers-of-two thread counts up to `available_parallelism()` at `f32` precision:
 
 ```sh
-cargo run --release -- --output results
+just bench --output results
 ```
 
-### 2. Targeted Sweeps
+The full default sweep includes `naive-ijk` at $N = 4096$, which alone takes minutes. Narrow `--sizes` or `--kernel` for quick runs.
+
+### Targeted Sweeps
 
 #### Compare Cache Locality (Single-Threaded)
-Compare the canonical `naive-ijk`, cache-friendly `ikj`, and cache-blocked `tiled` kernels:
+
 ```sh
-cargo run --release -- \
+just bench \
   --sizes 128,256,512,1024 \
   --kernel naive,ikj,tiled \
   --output cache_comparison
 ```
 
-#### Parallel Scaling Sweep
-Benchmark multi-threaded scaling between Rayon work-stealing and static OS threads:
+#### Parallel Scaling
+
 ```sh
-cargo run --release -- \
+just bench \
   --sizes 512,1024,2048 \
   --threads 1,2,4,8,10 \
   --kernel rayon-ikj,static-ikj \
@@ -79,83 +114,104 @@ cargo run --release -- \
   --output parallel_scaling
 ```
 
-#### Multi-Precision Sweep (`f16`, `f32`, `f64`)
-Evaluate throughput across data types:
+#### Multi-Precision (`f16`, `f32`, `f64`)
+
 ```sh
-cargo run --release -- \
+just bench \
   --sizes 512,1024 \
   --kernel ikj,rayon-ikj \
   --precision f16,f32,f64 \
   --output precisions
 ```
 
-#### Headless / CI Execution (No Progress Bar)
-Suppress the animated progress bar to ensure clean log output in automated environments:
-```sh
-cargo run --release -- \
-  --sizes 256,512 \
-  --kernel ikj,rayon-ikj \
-  --no-progress \
-  --output results
-```
+#### Apple Silicon GPU (MPS)
 
-#### Apple Silicon GPU (MPS Native GEMM)
-Benchmark Apple Silicon's hardware matrix coprocessor and GPU execution units using native `MetalPerformanceShaders` (`f16` and `f32` supported):
 ```sh
-cargo run --release -- \
+just bench \
   --sizes 256,512,1024,2048 \
   --kernel mps \
   --precision f16,f32 \
   --output mps_results
 ```
 
----
+#### Headless / CI (No Progress Bar)
 
-## CLI Options
+```sh
+just bench \
+  --sizes 256,512 \
+  --kernel ikj,rayon-ikj \
+  --no-progress \
+  --output results
+```
+
+### CLI Options
 
 | Flag | Description | Default |
 | :--- | :--- | :--- |
-| `--sizes <N,...>` | Matrix dimensions (square $N \times N$), comma-delimited | `64,128,256,512,1024,2048` |
+| `--sizes <N,...>` | Matrix dimensions (square $N \times N$), comma-delimited | `64,128,256,512,1024,2048,4096` |
 | `--threads <T,...>` | Worker thread counts for parallel kernels | Powers of 2 up to CPU count |
-| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `mps`) | All kernels (CPU + macOS GPU) |
-| `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`; note MPS supports `f16`, `f32`) | `f32` |
+| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `mps`) | All kernels (`mps` only on macOS, and omitted when `f64` is requested) |
+| `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`; `mps` supports `f16` and `f32`) | `f32` |
 | `--repetitions <R>` | Timed iterations measured per configuration (mean is recorded) | `1` |
 | `--block-size <B>` | Tile edge length for blocked kernels | `64` |
 | `--no-progress` | Disables the interactive `indicatif` progress bar | `false` |
-| `--output <PREFIX>` | **(Required)** Path prefix without extension (outputs both `.csv` and `.json`) | — |
+| `--output <PREFIX>` | **(Required)** Path prefix without extension; writes both `<PREFIX>.csv` and `<PREFIX>.json` | — |
 
----
+### Methodology & Output Schema
 
-## Methodology & Output Schema
-
-1. **Warmup Run**: Every configuration executes one untimed warmup pass prior to measurement, isolating thread pool initialization, cold caches, and dynamic loader overhead from the recorded metrics.
-2. **Work Validation**: `static-ikj` and `static-tiled` require at least one matrix row per worker thread; thread counts exceeding the matrix dimension $N$ are rejected upfront.
-3. **Structured Export**:
-   - The `--output` destination prefix (e.g. `data/f16` or `results`) automatically writes both `.csv` and `.json` files to avoid rerunning benchmarks for different formats.
+1. **Warmup Run**: Every configuration executes one untimed warmup pass before measurement, isolating thread pool initialization, cold caches, and dynamic loader overhead from the recorded metrics.
+2. **Up-Front Validation**: Invalid plans fail before any work runs or any file is created. `static-ikj` and `static-tiled` need at least one matrix row per worker thread, `mps` rejects `f64`, and `--output` must be a prefix, not a directory or a path with an extension.
+3. **Structured Export**: Both output files are opened before the sweep but truncated only when results are written, so a failed run leaves earlier results intact.
    - Columns: `kernel, n, threads, precision, elapsed_ms, gflops`.
+   - `gflops` is $2N^3$ floating-point operations per second, in billions.
 
 ---
 
-## Visualizations & Interactive Dashboard
+## Benchmark Data
 
-The repository includes a standalone visualization engine in [`scripts/visualize.py`](scripts/visualize.py) (zero third-party Python dependencies required; runs on standard Python 3.9+).
+Recorded full sweeps live in [`data/`](data):
 
-### Interactive Dashboard & Benchmark Data
+| Files | Precision | Kernels |
+| :--- | :--- | :--- |
+| `data/f16.csv`, `data/f16.json` | `f16` | All CPU kernels + `mps` |
+| `data/f32.csv`, `data/f32.json` | `f32` | All CPU kernels + `mps` |
+| `data/f64.csv`, `data/f64.json` | `f64` | All CPU kernels |
 
-- **Interactive Dashboard**: [`plots/dashboard.html`](plots/dashboard.html) (open directly in your browser with `open plots/dashboard.html` or view via [HTMLPreview](https://htmlpreview.github.io/?https://github.com/paulhondola/rayon-gemm/blob/main/plots/dashboard.html))
-- **Benchmark Datasets**: [`data/f16_full_run.csv`](data/f16_full_run.csv), [`data/f32_full_run.csv`](data/f32_full_run.csv), and [`data/f64_full_run.csv`](data/f64_full_run.csv)
+To refresh one, re-run the sweep with a `data/` prefix, for example `just bench --precision f16 --output data/f16`.
 
-### Generating Visualizations
+---
 
-Run the visualization script against your benchmark CSV or JSON results:
+## Web Dashboard
 
-```sh
-# Generate interactive HTML dashboard (auto-discovers f16, f32, and f64 runs)
-./scripts/visualize.py --output-dir plots/
+The dashboard in [`web/`](web) is a Vite + Svelte 5 + TypeScript app linted and formatted with [Biome](https://biomejs.dev).
 
-# Or specify custom benchmark input files
-./scripts/visualize.py --input data/f16_full_run.csv data/f32_full_run.csv data/f64_full_run.csv --output-dir plots/
+- **Develop:** `just dev`, then open the URL Vite prints.
+- **Build:** `just build` (or `bun run build` in `web/`) writes static files to `web/dist/`. Preview them with `bun run preview`.
+- **Deploy:** every push to `main` builds `web/` and publishes `web/dist/` to GitHub Pages via [`deploy.yml`](.github/workflows/deploy.yml).
 
-# Automatically open the dashboard in your default web browser
-./scripts/visualize.py --open
-```
+> **Status:** the dashboard is still the Vite + Svelte starter. Loading `data/` and charting the results are not implemented yet.
+
+---
+
+## Development Workflow
+
+### Pre-Commit Hooks
+
+After `lefthook install`, each commit runs checks scoped to the files it touches:
+
+| Staged files | Hooks |
+| :--- | :--- |
+| `benchmark/**/*.rs` | `cargo fmt` (fixes are re-staged), `cargo clippy -D warnings`, `cargo test` |
+| `web/**/*.{ts,tsx,js,jsx,json}` | `biome check --write` (fixes are re-staged) |
+| `web/**/*.{ts,tsx}` | `bun run typecheck` |
+
+### Continuous Integration
+
+[`ci.yml`](.github/workflows/ci.yml) runs on pushes and pull requests to `main`:
+
+| Job | Steps |
+| :--- | :--- |
+| **Rust Nightly** | `cargo fmt --check`, `cargo clippy --all-targets --all-features -D warnings`, `cargo test` (all against `benchmark/Cargo.toml`) |
+| **Web** | `bun install --frozen-lockfile`, `biome check src`, `bun run typecheck` |
+
+CI runs on Linux, so the macOS-only `mps` kernel is compiled and tested only locally. Run `just check` and `just test` before pushing to catch what CI will.
