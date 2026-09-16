@@ -179,8 +179,6 @@ Recorded full sweeps live in [`data/`](data):
 | `data/f32.csv`, `data/f32.json` | `f32` | All CPU kernels + `mps` |
 | `data/f64.csv`, `data/f64.json` | `f64` | All CPU kernels |
 
-These files predate the timing statistics and still use the single-run `elapsed_ms` column. To refresh one, re-run the sweep with a `data/` prefix, for example `just bench --precision f16 --output data/f16`.
-
 ---
 
 ## Web Dashboard
