@@ -26,7 +26,7 @@ pub trait MpsBench: Sized {
         rhs: &Matrix<Self>,
         output: &mut Matrix<Self>,
         repetitions: usize,
-    ) -> std::time::Duration;
+    ) -> Vec<std::time::Duration>;
 }
 
 #[cfg(target_os = "macos")]
@@ -36,7 +36,7 @@ impl MpsBench for f16 {
         rhs: &Matrix<Self>,
         output: &mut Matrix<Self>,
         repetitions: usize,
-    ) -> std::time::Duration {
+    ) -> Vec<std::time::Duration> {
         let kernel = MpsGemm::<f16>::new().expect("Failed to initialize Metal Performance Shaders");
         kernel.benchmark(lhs, rhs, output, repetitions)
     }
@@ -49,7 +49,7 @@ impl MpsBench for f32 {
         rhs: &Matrix<Self>,
         output: &mut Matrix<Self>,
         repetitions: usize,
-    ) -> std::time::Duration {
+    ) -> Vec<std::time::Duration> {
         let kernel = MpsGemm::<f32>::new().expect("Failed to initialize Metal Performance Shaders");
         kernel.benchmark(lhs, rhs, output, repetitions)
     }
@@ -62,7 +62,7 @@ impl MpsBench for f64 {
         _rhs: &Matrix<Self>,
         _output: &mut Matrix<Self>,
         _repetitions: usize,
-    ) -> std::time::Duration {
+    ) -> Vec<std::time::Duration> {
         panic!("MPS GEMM does not support f64 precision; validation should have rejected this")
     }
 }

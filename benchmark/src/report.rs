@@ -106,7 +106,8 @@ struct TerminalBenchmarkRecord<'a> {
     n: usize,
     threads: usize,
     precision: &'a str,
-    elapsed_ms: String,
+    median_ms: String,
+    stddev_ms: String,
     gflops: String,
 }
 
@@ -116,7 +117,8 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
         n: record.n,
         threads: record.threads,
         precision: record.precision,
-        elapsed_ms: format!("{:.3}", record.elapsed_ms),
+        median_ms: format!("{:.3}", record.median_ms),
+        stddev_ms: format!("{:.3}", record.stddev_ms),
         gflops: format!("{:.3}", record.gflops),
     });
     let mut table = Table::new(rows);
@@ -138,14 +140,18 @@ mod tests {
             n: 256,
             threads: 4,
             precision: "f32",
-            elapsed_ms: 12.345_67,
+            median_ms: 12.345_67,
+            min_ms: 12.0,
+            stddev_ms: 0.25,
             gflops: 2.5,
         }]);
 
         assert!(table.contains("kernel"));
         assert!(table.contains("precision"));
         assert!(table.contains("f32"));
-        assert!(table.contains("elapsed_ms"));
+        assert!(table.contains("median_ms"));
+        assert!(table.contains("stddev_ms"));
+        assert!(table.contains("0.250"));
         assert!(table.contains("rayon-ikj"));
         assert!(table.contains("12.346"));
         assert!(table.contains("2.500"));
@@ -181,15 +187,19 @@ mod tests {
             n: 64,
             threads: 1,
             precision: "f32",
-            elapsed_ms: 1.23,
+            median_ms: 1.23,
+            min_ms: 1.2,
+            stddev_ms: 0.01,
             gflops: 4.56,
         }];
 
         super::write_records(csv_file, json_file, &records).expect("write records");
 
         let csv_content = std::fs::read_to_string(&csv_path).expect("read csv");
-        assert!(csv_content.contains("kernel,n,threads,precision,elapsed_ms,gflops"));
-        assert!(csv_content.contains("naive-ijk,64,1,f32,1.23,4.56"));
+        assert!(
+            csv_content.contains("kernel,n,threads,precision,median_ms,min_ms,stddev_ms,gflops")
+        );
+        assert!(csv_content.contains("naive-ijk,64,1,f32,1.23,1.2,0.01,4.56"));
 
         let json_content = std::fs::read_to_string(&json_path).expect("read json");
         assert!(json_content.contains("\"kernel\": \"naive-ijk\""));

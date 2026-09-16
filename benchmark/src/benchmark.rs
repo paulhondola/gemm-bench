@@ -24,13 +24,15 @@ pub(crate) struct BenchmarkRecord {
     pub(crate) n: usize,
     pub(crate) threads: usize,
     pub(crate) precision: &'static str,
-    pub(crate) elapsed_ms: f64,
+    pub(crate) median_ms: f64,
+    pub(crate) min_ms: f64,
+    pub(crate) stddev_ms: f64,
     pub(crate) gflops: f64,
 }
 
 pub(crate) fn run(
     plan: &BenchmarkPlan,
-) -> Result<Vec<BenchmarkRecord>, rayon::ThreadPoolBuildError> {
+) -> Result<Vec<BenchmarkRecord>, Box<dyn std::error::Error>> {
     let mut records = Vec::new();
     let progress = BenchmarkProgress::new(plan.total_configurations(), plan.no_progress);
 
@@ -53,10 +55,13 @@ fn run_precision<T: Element>(
     precision: Precision,
     progress: &BenchmarkProgress,
     records: &mut Vec<BenchmarkRecord>,
-) -> Result<(), rayon::ThreadPoolBuildError> {
+) -> Result<(), Box<dyn std::error::Error>> {
     for &n in &plan.sizes {
         let (lhs, rhs) = benchmark_inputs::<T>(n);
         let mut output = Matrix::zeros(n, n);
+        let mut reference = Matrix::zeros(n, n);
+        IkjGemm.compute(&lhs, &rhs, &mut reference);
+        let tolerance = tolerance::<T>(n);
 
         for kernel in plan.kernels.iter().copied() {
             let thread_counts: &[usize] = if kernel.uses_workers() {
@@ -66,7 +71,7 @@ fn run_precision<T: Element>(
             };
             for &thread_count in thread_counts {
                 progress.set_target(kernel.label(), n, precision.label(), thread_count);
-                let elapsed = measure(
+                let samples = measure(
                     kernel,
                     thread_count,
                     plan.block_size,
@@ -76,14 +81,29 @@ fn run_precision<T: Element>(
                     &mut output,
                 )?;
                 progress.step();
-                let elapsed_ms = elapsed.as_secs_f64() * 1_000.0;
-                let gflops = 2.0 * (n as f64).powi(3) / elapsed.as_secs_f64() / 1e9;
+
+                // Checked after timing, against the last timed run's output.
+                let error = max_relative_error(&output, &reference);
+                if error > tolerance {
+                    return Err(format!(
+                        "{} produced wrong output at n={n}, precision {}, threads {thread_count}: \
+                         max relative error {error:e} exceeds tolerance {tolerance:e}",
+                        kernel.label(),
+                        precision.label(),
+                    )
+                    .into());
+                }
+
+                let stats = summarize(&samples);
+                let gflops = 2.0 * (n as f64).powi(3) / (stats.median_ms / 1_000.0) / 1e9;
                 records.push(BenchmarkRecord {
                     kernel: kernel.label().to_owned(),
                     n,
                     threads: thread_count,
                     precision: precision.label(),
-                    elapsed_ms,
+                    median_ms: stats.median_ms,
+                    min_ms: stats.min_ms,
+                    stddev_ms: stats.stddev_ms,
                     gflops,
                 });
             }
@@ -103,11 +123,11 @@ fn benchmark_inputs<T: Element>(n: usize) -> (Matrix<T>, Matrix<T>) {
     (lhs, rhs)
 }
 
-/// Returns the mean of `repetitions` timed runs.
+/// Returns the durations of `repetitions` timed runs.
 ///
 /// Every arm first runs the kernel once untimed, after any pool is built, so
 /// one-time costs (the process's first Rayon call, a fresh pool's idle
-/// workers) stay out of the measured mean.
+/// workers) stay out of the measured samples.
 fn measure<T: Element>(
     choice: KernelChoice,
     threads: usize,
@@ -116,28 +136,28 @@ fn measure<T: Element>(
     lhs: &Matrix<T>,
     rhs: &Matrix<T>,
     output: &mut Matrix<T>,
-) -> Result<Duration, rayon::ThreadPoolBuildError> {
-    let mut total = Duration::ZERO;
+) -> Result<Vec<Duration>, rayon::ThreadPoolBuildError> {
+    let mut samples = Vec::with_capacity(repetitions);
     match choice {
         KernelChoice::Naive => {
             let kernel = NaiveGemm;
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
-                total += time_kernel(&kernel, lhs, rhs, output);
+                samples.push(time_kernel(&kernel, lhs, rhs, output));
             }
         }
         KernelChoice::Ikj => {
             let kernel = IkjGemm;
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
-                total += time_kernel(&kernel, lhs, rhs, output);
+                samples.push(time_kernel(&kernel, lhs, rhs, output));
             }
         }
         KernelChoice::Tiled => {
             let kernel = TiledGemm::new(block_size);
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
-                total += time_kernel(&kernel, lhs, rhs, output);
+                samples.push(time_kernel(&kernel, lhs, rhs, output));
             }
         }
         KernelChoice::RayonIkj => {
@@ -148,7 +168,7 @@ fn measure<T: Element>(
                 let start = Instant::now();
                 pool.install(|| kernel.compute(black_box(lhs), black_box(rhs), black_box(output)));
                 black_box(output.as_slice());
-                total += start.elapsed();
+                samples.push(start.elapsed());
             }
         }
         KernelChoice::RayonTiled => {
@@ -159,21 +179,21 @@ fn measure<T: Element>(
                 let start = Instant::now();
                 pool.install(|| kernel.compute(black_box(lhs), black_box(rhs), black_box(output)));
                 black_box(output.as_slice());
-                total += start.elapsed();
+                samples.push(start.elapsed());
             }
         }
         KernelChoice::StaticIkj => {
             let kernel = StaticIkjGemm::new(threads)?;
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
-                total += time_kernel(&kernel, lhs, rhs, output);
+                samples.push(time_kernel(&kernel, lhs, rhs, output));
             }
         }
         KernelChoice::StaticTiled => {
             let kernel = StaticTiledGemm::new(threads, block_size)?;
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
-                total += time_kernel(&kernel, lhs, rhs, output);
+                samples.push(time_kernel(&kernel, lhs, rhs, output));
             }
         }
         #[cfg(target_os = "macos")]
@@ -182,7 +202,7 @@ fn measure<T: Element>(
         }
     }
 
-    Ok(total.div_f64(repetitions as f64))
+    Ok(samples)
 }
 
 fn time_kernel<T: Element>(
@@ -195,4 +215,125 @@ fn time_kernel<T: Element>(
     kernel.compute(black_box(lhs), black_box(rhs), black_box(output));
     black_box(output.as_slice());
     start.elapsed()
+}
+
+/// Timing summary of one configuration's samples, in milliseconds.
+struct TimingStats {
+    median_ms: f64,
+    min_ms: f64,
+    stddev_ms: f64,
+}
+
+/// Median, minimum, and sample standard deviation (zero for a single sample).
+fn summarize(samples: &[Duration]) -> TimingStats {
+    assert!(
+        !samples.is_empty(),
+        "at least one timing sample is required"
+    );
+    let mut sorted: Vec<f64> = samples.iter().map(|d| d.as_secs_f64() * 1_000.0).collect();
+    sorted.sort_by(f64::total_cmp);
+
+    let len = sorted.len();
+    let median_ms = if len % 2 == 1 {
+        sorted[len / 2]
+    } else {
+        (sorted[len / 2 - 1] + sorted[len / 2]) / 2.0
+    };
+    let stddev_ms = if len == 1 {
+        0.0
+    } else {
+        let mean = sorted.iter().sum::<f64>() / len as f64;
+        let variance = sorted.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (len - 1) as f64;
+        variance.sqrt()
+    };
+
+    TimingStats {
+        median_ms,
+        min_ms: sorted[0],
+        stddev_ms,
+    }
+}
+
+/// Largest element-wise `|output - reference| / |reference|`. A NaN anywhere
+/// counts as an infinite error so it can never pass a tolerance check.
+fn max_relative_error<T: Element>(output: &Matrix<T>, reference: &Matrix<T>) -> f64 {
+    output
+        .as_slice()
+        .iter()
+        .zip(reference.as_slice())
+        .map(|(&out, &expected)| {
+            let (out, expected) = (out.to_f64(), expected.to_f64());
+            let error = (out - expected).abs() / expected.abs().max(f64::MIN_POSITIVE);
+            if error.is_nan() { f64::INFINITY } else { error }
+        })
+        .fold(0.0, f64::max)
+}
+
+/// Rounding slack for kernels that sum each element's `n` products in a
+/// different order than the reference: those errors random-walk, growing as `sqrt(n)`.
+fn tolerance<T: Element>(n: usize) -> f64 {
+    4.0 * (n as f64).sqrt() * T::EPSILON
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use rayon_gemm::Matrix;
+
+    use super::{max_relative_error, summarize, tolerance};
+
+    fn ms(values: &[u64]) -> Vec<Duration> {
+        values.iter().map(|&v| Duration::from_millis(v)).collect()
+    }
+
+    #[test]
+    fn summarize_odd_sample_count_uses_middle_value() {
+        let stats = summarize(&ms(&[30, 10, 20]));
+        assert_eq!(stats.median_ms, 20.0);
+        assert_eq!(stats.min_ms, 10.0);
+        assert!((stats.stddev_ms - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn summarize_even_sample_count_averages_middle_values() {
+        let stats = summarize(&ms(&[40, 10, 20, 30]));
+        assert_eq!(stats.median_ms, 25.0);
+        assert_eq!(stats.min_ms, 10.0);
+    }
+
+    #[test]
+    fn summarize_single_sample_has_zero_stddev() {
+        let stats = summarize(&ms(&[7]));
+        assert_eq!(
+            (stats.median_ms, stats.min_ms, stats.stddev_ms),
+            (7.0, 7.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn identical_outputs_have_zero_error() {
+        let reference = Matrix::from_vec(1, 2, vec![1.0_f32, 2.0]);
+        assert_eq!(max_relative_error(&reference.clone(), &reference), 0.0);
+    }
+
+    #[test]
+    fn relative_error_reports_the_worst_element() {
+        let reference = Matrix::from_vec(1, 2, vec![100.0_f64, 2.0]);
+        let output = Matrix::from_vec(1, 2, vec![101.0_f64, 2.1]);
+        assert!((max_relative_error(&output, &reference) - 0.05).abs() < 1e-12);
+    }
+
+    #[test]
+    fn nan_output_is_an_infinite_error() {
+        let reference = Matrix::from_vec(1, 2, vec![1.0_f32, 2.0]);
+        let output = Matrix::from_vec(1, 2, vec![f32::NAN, 2.0]);
+        assert_eq!(max_relative_error(&output, &reference), f64::INFINITY);
+    }
+
+    #[test]
+    fn tolerance_scales_with_sqrt_n_and_precision() {
+        assert_eq!(tolerance::<f64>(16), 16.0 * f64::EPSILON);
+        assert!(tolerance::<f16>(4096) > tolerance::<f32>(4096));
+    }
 }
