@@ -1,5 +1,5 @@
-//! Building blocks for benchmarking dense, row-major floating-point matrix
-//! products at `f16`, `f32`, or `f64` precision.
+//! Building blocks for benchmarking dense, row-major matrix products at
+//! `f16`, `f32`, `f64`, `i32`, or `i64` precision.
 //!
 //! Kernels deliberately overwrite their output matrix: after
 //! `kernel.compute(&a, &b, &mut c)`, `c == a * b`.
