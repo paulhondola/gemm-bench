@@ -152,7 +152,7 @@ just bench \
 | `--threads <T,...>` | Worker thread counts for parallel kernels | Powers of 2 up to CPU count |
 | `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `mps`) | All kernels (`mps` only on macOS, and omitted when `f64` is requested) |
 | `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`; `mps` supports `f16` and `f32`) | `f32` |
-| `--repetitions <R>` | Timed iterations measured per configuration (mean is recorded) | `1` |
+| `--repetitions <R>` | Timed iterations measured per configuration (median, min, and standard deviation are recorded) | `5` |
 | `--block-size <B>` | Tile edge length for blocked kernels | `64` |
 | `--no-progress` | Disables the interactive `indicatif` progress bar | `false` |
 | `--output <PREFIX>` | **(Required)** Path prefix without extension; writes both `<PREFIX>.csv` and `<PREFIX>.json` | — |
@@ -160,10 +160,12 @@ just bench \
 ### Methodology & Output Schema
 
 1. **Warmup Run**: Every configuration executes one untimed warmup pass before measurement, isolating thread pool initialization, cold caches, and dynamic loader overhead from the recorded metrics.
-2. **Up-Front Validation**: Invalid plans fail before any work runs or any file is created. `static-ikj` and `static-tiled` need at least one matrix row per worker thread, `mps` rejects `f64`, and `--output` must be a prefix, not a directory or a path with an extension.
-3. **Structured Export**: Both output files are opened before the sweep but truncated only when results are written, so a failed run leaves earlier results intact.
-   - Columns: `kernel, n, threads, precision, elapsed_ms, gflops`.
-   - `gflops` is $2N^3$ floating-point operations per second, in billions.
+2. **Timing Statistics**: Each configuration runs `--repetitions` timed passes. Records carry the median, minimum, and sample standard deviation; `gflops` is derived from the median, which is robust to one-sided scheduler and thermal noise.
+3. **Output Verification**: For each size and precision, serial `ikj` computes an untimed reference. After timing, every kernel's output is compared against it, and the run aborts (leaving existing output files untouched) if the largest element-wise relative error exceeds $4\sqrt{N}\,\varepsilon$, where $\varepsilon$ is the precision's machine epsilon. CPU kernels that sum in the same order as `ikj` match bit-for-bit; the slack covers kernels such as MPS that sum in a different order. Note that `f16` has $\varepsilon = 2^{-10}$, so its check (25% at $N = 4096$) catches broken kernels, not subtle rounding differences.
+4. **Up-Front Validation**: Invalid plans fail before any work runs or any file is created. `static-ikj` and `static-tiled` need at least one matrix row per worker thread, `mps` rejects `f64`, and `--output` must be a prefix, not a directory or a path with an extension.
+5. **Structured Export**: Both output files are opened before the sweep but truncated only when results are written, so a failed run leaves earlier results intact.
+   - Columns: `kernel, n, threads, precision, median_ms, min_ms, stddev_ms, gflops`.
+   - `gflops` is $2N^3$ floating-point operations per second (from the median time), in billions.
 
 ---
 
@@ -177,7 +179,7 @@ Recorded full sweeps live in [`data/`](data):
 | `data/f32.csv`, `data/f32.json` | `f32` | All CPU kernels + `mps` |
 | `data/f64.csv`, `data/f64.json` | `f64` | All CPU kernels |
 
-To refresh one, re-run the sweep with a `data/` prefix, for example `just bench --precision f16 --output data/f16`.
+These files predate the timing statistics and still use the single-run `elapsed_ms` column. To refresh one, re-run the sweep with a `data/` prefix, for example `just bench --precision f16 --output data/f16`.
 
 ---
 
