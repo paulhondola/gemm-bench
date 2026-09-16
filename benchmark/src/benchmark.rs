@@ -43,6 +43,8 @@ pub(crate) fn run(
             Precision::F16 => run_precision::<f16>(plan, precision, &progress, &mut records)?,
             Precision::F32 => run_precision::<f32>(plan, precision, &progress, &mut records)?,
             Precision::F64 => run_precision::<f64>(plan, precision, &progress, &mut records)?,
+            Precision::I32 => run_precision::<i32>(plan, precision, &progress, &mut records)?,
+            Precision::I64 => run_precision::<i64>(plan, precision, &progress, &mut records)?,
         }
     }
 
@@ -115,10 +117,10 @@ fn run_precision<T: Element>(
 
 fn benchmark_inputs<T: Element>(n: usize) -> (Matrix<T>, Matrix<T>) {
     let lhs = Matrix::from_fn(n, n, |row, col| {
-        T::from_f64(((row * 17 + col * 13) % 23) as f64 / 23.0)
+        T::from_ratio((row * 17 + col * 13) % 23, 23)
     });
     let rhs = Matrix::from_fn(n, n, |row, col| {
-        T::from_f64(((row * 7 + col * 19) % 29) as f64 / 29.0)
+        T::from_ratio((row * 7 + col * 19) % 29, 29)
     });
     (lhs, rhs)
 }
@@ -281,7 +283,7 @@ mod tests {
 
     use rayon_gemm::Matrix;
 
-    use super::{max_relative_error, summarize, tolerance};
+    use super::{benchmark_inputs, max_relative_error, summarize, tolerance};
 
     fn ms(values: &[u64]) -> Vec<Duration> {
         values.iter().map(|&v| Duration::from_millis(v)).collect()
@@ -335,5 +337,14 @@ mod tests {
     fn tolerance_scales_with_sqrt_n_and_precision() {
         assert_eq!(tolerance::<f64>(16), 16.0 * f64::EPSILON);
         assert!(tolerance::<f16>(4096) > tolerance::<f32>(4096));
+        assert_eq!(tolerance::<i32>(4096), 0.0);
+        assert_eq!(tolerance::<i64>(4096), 0.0);
+    }
+
+    #[test]
+    fn integer_inputs_are_not_truncated_to_zero() {
+        let (lhs, rhs) = benchmark_inputs::<i32>(8);
+        assert!(lhs.as_slice().iter().any(|&value| value != 0));
+        assert!(rhs.as_slice().iter().any(|&value| value != 0));
     }
 }

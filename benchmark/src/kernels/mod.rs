@@ -1,4 +1,4 @@
-//! Dense floating-point GEMM kernels sharing one overwrite-style interface.
+//! Dense GEMM kernels sharing one overwrite-style interface.
 
 pub(crate) mod common;
 #[cfg(target_os = "macos")]
@@ -55,25 +55,39 @@ impl MpsBench for f32 {
     }
 }
 
-#[cfg(target_os = "macos")]
-impl MpsBench for f64 {
-    fn run_mps(
-        _lhs: &Matrix<Self>,
-        _rhs: &Matrix<Self>,
-        _output: &mut Matrix<Self>,
-        _repetitions: usize,
-    ) -> Vec<std::time::Duration> {
-        panic!("MPS GEMM does not support f64 precision; validation should have rejected this")
-    }
+/// Precisions `MPSMatrixMultiplication` cannot run; plan validation rejects
+/// them before `measure` is reached.
+macro_rules! impl_mps_unsupported {
+    ($($element:ty),*) => {
+        $(
+            #[cfg(target_os = "macos")]
+            impl MpsBench for $element {
+                fn run_mps(
+                    _lhs: &Matrix<Self>,
+                    _rhs: &Matrix<Self>,
+                    _output: &mut Matrix<Self>,
+                    _repetitions: usize,
+                ) -> Vec<std::time::Duration> {
+                    panic!(concat!(
+                        "MPS GEMM does not support ",
+                        stringify!($element),
+                        " precision; validation should have rejected this"
+                    ))
+                }
+            }
+        )*
+    };
 }
+
+impl_mps_unsupported!(f64, i32, i64);
 
 #[cfg(not(target_os = "macos"))]
 impl<T: Element> MpsBench for T {}
 
-/// A floating-point element type the kernels can multiply.
+/// A numeric element type the kernels can multiply.
 ///
 /// `Default` supplies zero for clearing outputs and starting sums. `EPSILON`
-/// and the `f64` conversions let callers build inputs and compare results
+/// and the conversions let callers build inputs and compare results
 /// independently of precision.
 pub trait Element:
     Copy
@@ -86,22 +100,42 @@ pub trait Element:
     + MpsBench
     + 'static
 {
-    /// Machine epsilon of the element type, widened to `f64`.
+    /// Machine epsilon of the element type, widened to `f64`. Zero for
+    /// integers, whose products are exact in any summation order.
     const EPSILON: f64;
 
-    fn from_f64(value: f64) -> Self;
+    /// Builds an input value from `numerator / denominator`. Integers keep
+    /// only the numerator, since the fraction would truncate to zero.
+    fn from_ratio(numerator: usize, denominator: usize) -> Self;
 
     fn to_f64(self) -> f64;
 }
 
 macro_rules! impl_element {
-    ($($float:ty),*) => {
+    (float: $($float:ty),*) => {
         $(
             impl Element for $float {
                 const EPSILON: f64 = <$float>::EPSILON as f64;
 
-                fn from_f64(value: f64) -> Self {
-                    value as $float
+                fn from_ratio(numerator: usize, denominator: usize) -> Self {
+                    (numerator as f64 / denominator as f64) as $float
+                }
+
+                fn to_f64(self) -> f64 {
+                    self as f64
+                }
+            }
+        )*
+    };
+    (int: $($int:ty),*) => {
+        $(
+            impl Element for $int {
+                const EPSILON: f64 = 0.0;
+
+                // ponytail: no overflow check; benchmark outputs peak at 616·n,
+                // far inside i32 for any n that fits in memory.
+                fn from_ratio(numerator: usize, _denominator: usize) -> Self {
+                    numerator as $int
                 }
 
                 fn to_f64(self) -> f64 {
@@ -112,7 +146,8 @@ macro_rules! impl_element {
     };
 }
 
-impl_element!(f16, f32, f64);
+impl_element!(float: f16, f32, f64);
+impl_element!(int: i32, i64);
 
 /// A dense matrix product kernel that computes `output = lhs * rhs`.
 ///
@@ -135,10 +170,10 @@ mod tests {
 
     fn inputs<T: Element>(n: usize) -> (Matrix<T>, Matrix<T>) {
         let lhs = Matrix::from_fn(n, n, |row, col| {
-            T::from_f64(((row * 17 + col * 13) % 23) as f64 / 23.0)
+            T::from_ratio((row * 17 + col * 13) % 23, 23)
         });
         let rhs = Matrix::from_fn(n, n, |row, col| {
-            T::from_f64(((row * 7 + col * 19) % 29) as f64 / 29.0)
+            T::from_ratio((row * 7 + col * 19) % 29, 29)
         });
         (lhs, rhs)
     }
@@ -196,6 +231,8 @@ mod tests {
         every_kernel_matches_naive::<f16>();
         every_kernel_matches_naive::<f32>();
         every_kernel_matches_naive::<f64>();
+        every_kernel_matches_naive::<i32>();
+        every_kernel_matches_naive::<i64>();
     }
 
     #[cfg(target_os = "macos")]

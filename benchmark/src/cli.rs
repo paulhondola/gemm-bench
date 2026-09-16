@@ -9,7 +9,7 @@ use clap::{Parser, ValueEnum};
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 
 #[derive(Debug, Parser)]
-#[command(about = "Benchmark safe, row-major floating-point GEMM kernels")]
+#[command(about = "Benchmark safe, row-major GEMM kernels")]
 pub(crate) struct Cli {
     /// Matrix dimensions, as a comma-delimited list.
     #[arg(long, value_delimiter = ',')]
@@ -99,21 +99,12 @@ impl Cli {
             self.precision
         };
         let kernels = if self.kernel.is_empty() {
-            #[allow(unused_mut)]
-            let mut list = vec![
-                KernelChoice::Naive,
-                KernelChoice::Ikj,
-                KernelChoice::Tiled,
-                KernelChoice::RayonIkj,
-                KernelChoice::RayonTiled,
-                KernelChoice::StaticIkj,
-                KernelChoice::StaticTiled,
-            ];
-            #[cfg(target_os = "macos")]
-            if !precisions.contains(&Precision::F64) {
-                list.push(KernelChoice::Mps);
-            }
-            list
+            // Defaults run only kernels that support every requested precision.
+            KernelChoice::value_variants()
+                .iter()
+                .copied()
+                .filter(|kernel| precisions.iter().all(|&p| kernel.supports(p)))
+                .collect()
         } else {
             self.kernel
         };
@@ -121,7 +112,7 @@ impl Cli {
         // Validate the resolved sweep before touching the filesystem, so a
         // rejected plan never creates directories or an output file.
         validate_static_threads(&kernels, &threads, &sizes)?;
-        validate_mps_precision(&kernels, &precisions)?;
+        validate_precisions(&kernels, &precisions)?;
         let (csv_output, json_output) = open_outputs(&self.output)?;
 
         Ok(BenchmarkPlan {
@@ -173,6 +164,16 @@ impl KernelChoice {
             Self::RayonIkj | Self::RayonTiled | Self::StaticIkj | Self::StaticTiled
         )
     }
+
+    /// Whether this kernel can run at `precision`. The single source for plan
+    /// validation and the default kernel list.
+    pub(crate) fn supports(self, precision: Precision) -> bool {
+        match self {
+            #[cfg(target_os = "macos")]
+            Self::Mps => matches!(precision, Precision::F16 | Precision::F32),
+            _ => true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -180,6 +181,8 @@ pub(crate) enum Precision {
     F16,
     F32,
     F64,
+    I32,
+    I64,
 }
 
 impl Precision {
@@ -188,6 +191,8 @@ impl Precision {
             Self::F16 => "f16",
             Self::F32 => "f32",
             Self::F64 => "f64",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
         }
     }
 }
@@ -230,18 +235,16 @@ fn validate_static_threads(
     Ok(())
 }
 
-fn validate_mps_precision(
-    kernels: &[KernelChoice],
-    precisions: &[Precision],
-) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    if kernels.contains(&KernelChoice::Mps) && precisions.contains(&Precision::F64) {
-        return Err(
-            "MPS GEMM only supports f16 and f32 precisions; f64 is not supported by Metal Performance Shaders".into(),
-        );
+fn validate_precisions(kernels: &[KernelChoice], precisions: &[Precision]) -> Result<(), String> {
+    for &kernel in kernels {
+        if let Some(precision) = precisions.iter().find(|&&p| !kernel.supports(p)) {
+            return Err(format!(
+                "{} does not support {} precision",
+                kernel.label(),
+                precision.label()
+            ));
+        }
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = (kernels, precisions);
     Ok(())
 }
 
@@ -374,6 +377,27 @@ mod tests {
         .expect("plan should be valid");
 
         assert_eq!(plan.precisions, [Precision::F16, Precision::F64]);
+        let _ = fs::remove_file(output.with_extension("csv"));
+        let _ = fs::remove_file(output.with_extension("json"));
+    }
+
+    #[test]
+    fn precision_flag_accepts_integer_precisions() {
+        let output = temp_output("integers");
+        let plan = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--precision"),
+            OsStr::new("i32,i64"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("integer precisions should parse")
+        .into_plan()
+        .expect("plan should be valid");
+
+        assert_eq!(plan.precisions, [Precision::I32, Precision::I64]);
+        // CPU kernels support integers; mps does not, so defaults omit it.
+        assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticTiled));
         let _ = fs::remove_file(output.with_extension("csv"));
         let _ = fs::remove_file(output.with_extension("json"));
     }
@@ -577,7 +601,29 @@ mod tests {
         .into_plan()
         .expect_err("mps with f64 must be rejected");
 
-        assert!(error.contains("f64 is not supported by Metal Performance Shaders"));
+        assert!(error.contains("mps does not support f64 precision"));
+        assert!(!output.with_extension("csv").exists());
+        assert!(!output.with_extension("json").exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mps_with_integer_precision_is_rejected_before_running() {
+        let output = temp_output("mps_i32");
+        let error = Cli::try_parse_from([
+            OsStr::new("rayon-gemm"),
+            OsStr::new("--kernel"),
+            OsStr::new("mps"),
+            OsStr::new("--precision"),
+            OsStr::new("i32"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect_err("mps with i32 must be rejected");
+
+        assert!(error.contains("mps does not support i32 precision"));
         assert!(!output.with_extension("csv").exists());
         assert!(!output.with_extension("json").exists());
     }
