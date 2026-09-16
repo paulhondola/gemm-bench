@@ -28,8 +28,8 @@ pub(crate) struct Cli {
     precision: Vec<Precision>,
 
     /// Number of measured runs per configuration, after one untimed warm-up
-    /// run; records contain their mean.
-    #[arg(long, default_value_t = 1)]
+    /// run; records contain their median, minimum, and standard deviation.
+    #[arg(long, default_value_t = 5)]
     repetitions: usize,
 
     /// Tile edge length for the blocked kernels.

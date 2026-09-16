@@ -59,14 +59,14 @@ impl<T: MpsElement> MpsGemm<T> {
 
     /// Benchmarks matrix multiplication by pre-allocating shared buffers once,
     /// running an untimed warm-up iteration to bring the GPU clock up, and measuring
-    /// `repetitions` timed dispatches.
+    /// `repetitions` timed dispatches, returning each dispatch's duration.
     pub fn benchmark(
         &self,
         lhs: &Matrix<T>,
         rhs: &Matrix<T>,
         output: &mut Matrix<T>,
         repetitions: usize,
-    ) -> Duration {
+    ) -> Vec<Duration> {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.rows();
         let count = n * n;
@@ -159,7 +159,7 @@ impl<T: MpsElement> MpsGemm<T> {
             }
 
             // Timed repetitions
-            let mut total = Duration::ZERO;
+            let mut samples = Vec::with_capacity(repetitions);
             for _ in 0..repetitions {
                 let cmd_buf = self
                     .command_queue
@@ -173,7 +173,7 @@ impl<T: MpsElement> MpsGemm<T> {
                 let start = Instant::now();
                 cmd_buf.commit();
                 cmd_buf.waitUntilCompleted();
-                total += start.elapsed();
+                samples.push(start.elapsed());
             }
 
             // Copy result back to CPU output matrix
@@ -185,7 +185,7 @@ impl<T: MpsElement> MpsGemm<T> {
                 );
             }
 
-            total.div_f64(repetitions as f64)
+            samples
         })
     }
 }
