@@ -9,7 +9,7 @@ dev:
 
 build:
     cargo build --release --manifest-path benchmark/Cargo.toml
-    cd web && bun run build
+    cd web && bun install && bun run build
 
 test:
     cargo test --manifest-path benchmark/Cargo.toml
