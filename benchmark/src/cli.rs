@@ -167,6 +167,8 @@ impl KernelChoice {
 
     /// Whether this kernel can run at `precision`. The single source for plan
     /// validation and the default kernel list.
+    // Off macOS every kernel supports every precision, leaving `precision` unread.
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     pub(crate) fn supports(self, precision: Precision) -> bool {
         match self {
             #[cfg(target_os = "macos")]
