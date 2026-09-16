@@ -4,10 +4,14 @@ default:
 bench *args='':
     cargo run --release --manifest-path benchmark/Cargo.toml -- {{args}}
 
-dev:
+# Merges every data/*.csv into the Parquet file the dashboard queries.
+data:
+    duckdb -c "COPY (SELECT * FROM read_csv('data/*.csv', union_by_name=true)) TO 'web/public/results.parquet' (FORMAT parquet, COMPRESSION zstd)"
+
+dev: data
     cd web && bun dev
 
-build:
+build: data
     cargo build --release --manifest-path benchmark/Cargo.toml
     cd web && bun install && bun run build
 
