@@ -35,7 +35,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Build Results Parquet
-        run: duckdb -c "COPY (SELECT * FROM read_csv('data/*.csv', union_by_name=true)) TO 'web/public/results.parquet' (FORMAT parquet, COMPRESSION zstd)"
+        run: duckdb -bail < data/build.sql
 
       - name: Build Web App
         run: bun run build
