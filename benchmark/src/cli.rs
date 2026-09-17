@@ -317,6 +317,9 @@ fn validate_precisions(kernels: &[KernelChoice], precisions: &[Precision]) -> Re
 
 /// Each run gets its own file, so reruns and other machines add data instead
 /// of replacing it. Relative to the working directory: `just bench` runs from the repo root.
+// ponytail: two runs on the same host within the same UTC second collide and
+// the second silently truncates the first; add sub-second or random suffix
+// if that ever bites.
 fn default_output_path(host: &str, file_stamp: &str) -> PathBuf {
     Path::new("data/runs")
         .join(host)

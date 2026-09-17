@@ -5,10 +5,16 @@
 
 CREATE VIEW runs AS
 SELECT * FROM read_csv('data/runs/**/*.csv', union_by_name = true, filename = true,
-    -- Explicit types stop e.g. a digit-only commit hash being read as a number.
+    -- Explicit types stop e.g. a digit-only commit hash being read as a number,
+    -- and pin the numeric columns so a malformed value in a contributed run
+    -- file fails the read instead of sniffing as VARCHAR and silently
+    -- widening the merged column (union_by_name) to VARCHAR.
     types = {'kernel': 'VARCHAR', 'backend': 'VARCHAR', 'device': 'VARCHAR',
              'precision': 'VARCHAR', 'host': 'VARCHAR', 'commit': 'VARCHAR',
-             'timestamp': 'TIMESTAMPTZ'});
+             'timestamp': 'TIMESTAMPTZ', 'n': 'BIGINT', 'threads': 'BIGINT',
+             'gflops': 'DOUBLE', 'mean_rel_error_f64': 'DOUBLE',
+             'median_ms': 'DOUBLE', 'min_ms': 'DOUBLE', 'stddev_ms': 'DOUBLE',
+             'block_size': 'BIGINT', 'repetitions': 'BIGINT'});
 
 -- union_by_name fills a column missing from one file with NULL instead of
 -- failing, so required values are checked explicitly. block_size is exempt:
@@ -27,5 +33,5 @@ COPY (
          gflops, mean_rel_error_f64, median_ms, min_ms, stddev_ms,
          block_size, repetitions, host, commit, "timestamp"
   FROM runs
-  ORDER BY host, "timestamp", precision, kernel, n, threads
+  ORDER BY host, "timestamp", precision, kernel, n, threads, block_size, repetitions
 ) TO 'web/public/results.parquet' (FORMAT parquet, COMPRESSION zstd);

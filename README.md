@@ -202,8 +202,9 @@ After `lefthook install`, each commit runs checks scoped to the files it touches
 | Staged files | Hooks |
 | :--- | :--- |
 | `benchmark/**/*.rs` | `cargo fmt` (fixes are re-staged), `cargo clippy -D warnings`, `cargo test` |
-| `web/**/*.{ts,tsx,js,jsx,json}` | `biome check --write` (fixes are re-staged) |
+| `web/**/*.{ts,tsx,js,jsx,json,svelte}` | `biome check --write` (fixes are re-staged) |
 | `web/**/*.{ts,tsx}` | `bun run typecheck` |
+| `data/runs/**/*.csv` | `duckdb -bail < data/build.sql` |
 
 ### Continuous Integration
 
@@ -212,6 +213,6 @@ After `lefthook install`, each commit runs checks scoped to the files it touches
 | Job | Steps |
 | :--- | :--- |
 | **Rust Nightly** | `cargo fmt --check`, `cargo clippy --all-targets --all-features -D warnings`, `cargo test` (all against `benchmark/Cargo.toml`) |
-| **Web** | `bun install --frozen-lockfile`, `biome check src`, `bun run typecheck` |
+| **Web (Data, Lint, Typecheck, Build)** | `bun install --frozen-lockfile`, install DuckDB, `duckdb -bail < data/build.sql`, `biome check src`, `bun run typecheck`, `bun run build` |
 
 CI runs on Linux, so the macOS-only `mps` kernel is compiled and tested only locally. Run `just check` and `just test` before pushing to catch what CI will.
