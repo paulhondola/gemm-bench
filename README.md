@@ -51,12 +51,12 @@ Run `just` with no arguments to list every recipe.
 | Command | What it runs | Use it to |
 | :--- | :--- | :--- |
 | `just bench [ARGS]` | `cargo run --release --manifest-path benchmark/Cargo.toml -- [ARGS]` | Run a benchmark sweep. Every argument is forwarded to the CLI (see [CLI Options](#cli-options)). Results go to `data/runs/<host>/<timestamp>.csv` unless `--output` is given. |
-| `just build` | `cargo build --release` for `benchmark/`, then `bun run build` in `web/` | Produce the optimized benchmark binary (`benchmark/target/release/rayon-gemm`) and the static dashboard (`web/dist/`). |
+| `just build` | `just build-bench`, then `just build-web` | Produce the optimized benchmark binary (`benchmark/target/release/rayon-gemm`) and the static dashboard (`web/dist/`). Run one half with `just build-bench` (`cargo build --release`) or `just build-web` (`just data`, then `bun install && bun run build`). |
 | `just data` | `duckdb -bail < data/build.sql` | Validate every `data/runs/**/*.csv` and merge them into `web/public/results.parquet`, the file the dashboard queries. A run file missing a required value fails with its filename. `just dev` and `just build` run it first. |
 | `just dev` | `bun dev` in `web/` | Start the Vite dev server with hot reload for the dashboard. |
-| `just test` | `cargo test --manifest-path benchmark/Cargo.toml` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests. |
-| `just lint` | `cargo fmt` for `benchmark/`, then `bun run lint` (Biome) in `web/`
-| `just check` | `cargo clippy --all-targets -- -D warnings` for `benchmark/`, then `bun run typecheck` (`tsc --noEmit`) in `web/` | Run the static checks that CI enforces, without modifying files. For Svelte component type checking, run `bun run check` in `web/`. |
+| `just test` | `cargo test --manifest-path benchmark/Cargo.toml` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests. There is no `test-web` target: `web/` has no tests yet. |
+| `just lint` | `just lint-bench`, then `just lint-web` | Auto-fix formatting and lint issues in both halves. Run one half with `just lint-bench` (`cargo fmt`) or `just lint-web` (`bun run lint:fix`, Biome). |
+| `just check` | `just check-bench`, then `just check-web` | Run the static checks that CI enforces, without modifying files. Run one half with `just check-bench` (`cargo clippy --all-targets -- -D warnings`) or `just check-web` (`bun run typecheck`, `tsc --noEmit`). For Svelte component type checking, run `bun run check` in `web/`. |
 
 ---
 
