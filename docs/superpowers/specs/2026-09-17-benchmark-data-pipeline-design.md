@@ -109,31 +109,48 @@ A one-off DuckDB command, run once on the machine that produced the data (not co
 
 ## Merge Query
 
-`data/build.sql` is the single definition, run as `duckdb < data/build.sql` from the repo root by both `just data` and CI:
+`data/build.sql` is the single definition, run as `duckdb -bail < data/build.sql` from the repo root by `just data`, the pre-commit hook, and CI:
 
 ```sql
+CREATE VIEW runs AS
+SELECT * FROM read_csv('data/runs/**/*.csv', union_by_name = true, filename = true,
+    types = {'kernel': 'VARCHAR', 'backend': 'VARCHAR', 'device': 'VARCHAR',
+             'precision': 'VARCHAR', 'host': 'VARCHAR', 'commit': 'VARCHAR',
+             'timestamp': 'TIMESTAMPTZ'});
+
+SELECT error('run files missing required values: ' || string_agg(DISTINCT filename, ', '))
+FROM runs
+WHERE kernel IS NULL OR backend IS NULL OR device IS NULL OR precision IS NULL
+   OR n IS NULL OR threads IS NULL OR gflops IS NULL OR mean_rel_error_f64 IS NULL
+   OR median_ms IS NULL OR min_ms IS NULL OR stddev_ms IS NULL OR repetitions IS NULL
+   OR host IS NULL OR commit IS NULL OR "timestamp" IS NULL
+HAVING count(*) > 0;
+
 COPY (
   SELECT kernel, backend, device, precision, n, threads,
          gflops, mean_rel_error_f64, median_ms, min_ms, stddev_ms,
          block_size, repetitions, host, commit, "timestamp"
-  FROM read_csv('data/runs/**/*.csv', union_by_name = true,
-                types = {'kernel': 'VARCHAR', 'backend': 'VARCHAR', 'device': 'VARCHAR',
-                         'precision': 'VARCHAR', 'host': 'VARCHAR', 'commit': 'VARCHAR',
-                         'timestamp': 'TIMESTAMPTZ'})
+  FROM runs
   ORDER BY host, "timestamp", precision, kernel, n, threads
 ) TO 'web/public/results.parquet' (FORMAT parquet, COMPRESSION zstd);
 ```
 
-- **The explicit column list is the validation.** A CSV missing a required column fails the query.
+- **Required values are checked explicitly.** `union_by_name` silently fills a column missing from *one* file with NULL (verified on DuckDB v1.5.5), so the column list alone doesn't catch it. The check names the offending files. `block_size` is exempt, because roadmap item 4 leaves it empty for kernels without blocks. A column absent from *every* file fails the `COPY` binder instead.
+- **`-bail` is required.** Without it the CLI still exits 1 on an error, but it runs the remaining statements first, so the `COPY` would overwrite the Parquet file with bad data.
 - **Explicit types** stop a digit-only commit hash (`1234567`) from being inferred as a number.
 - **`ORDER BY`** makes the Parquet file identical for identical input.
 - **The Parquet file keeps every run.** Choosing the latest measurement is a query-time concern for the future dashboard.
 
+## Pre-Commit Hooks
+
+- **`data-build`**, a new `lefthook.yml` command: `glob: "data/runs/**/*.csv"`, `run: duckdb -bail < data/build.sql`. A malformed run file fails locally before the PR. It needs the DuckDB CLI, which the README already lists as a prerequisite.
+- **`frontend-lint`:** the glob gains `svelte` (`"*.{ts,tsx,js,jsx,json,svelte}"`), so `.svelte` files are linted on commit.
+
 ## CI and Deployment
 
-- **`ci.yml` web job** adds three steps: install DuckDB (the same pinned v1.5.5 URL as `deploy.yml`), `duckdb < data/build.sql`, and `bun run build`. Malformed contributor CSVs and web build breaks then fail on the PR instead of after merge.
-- **`deploy.yml`:** the inline `COPY` becomes `duckdb < data/build.sql`.
-- **`justfile`:** `data` runs `duckdb < data/build.sql`, with its comment updated to `data/runs/**/*.csv`.
+- **`ci.yml` web job** adds three steps: install DuckDB (the same pinned v1.5.5 URL as `deploy.yml`), `duckdb -bail < data/build.sql`, and `bun run build`. Malformed contributor CSVs and web build breaks then fail on the PR instead of after merge.
+- **`deploy.yml`:** the inline `COPY` becomes `duckdb -bail < data/build.sql`.
+- **`justfile`:** `data` runs `duckdb -bail < data/build.sql`, with its comment updated to `data/runs/**/*.csv`.
 - **Deliberately duplicated:** the six-line DuckDB install step lives in both workflows. A composite action for two uses isn't worth it.
 
 ## README
@@ -164,7 +181,7 @@ Each test follows the existing patterns in its file.
 **End to end, run manually on macOS:**
 1. `just bench --sizes 64,128 --kernel ikj,mps --precision f32` writes one file under `data/runs/Pauls-MacBook-Pro/`, with `backend` `cpu`/`metal`, `device` `Apple M1 Pro`, and a real `commit` and `timestamp`.
 2. `just data` succeeds over the migrated files plus that run. `duckdb -c "DESCRIBE 'web/public/results.parquet'"` lists the 16 columns in order, and the row count equals the migrated 677 rows plus the new run.
-3. Delete a required column from a copy of a run file. `just data` fails. Remove the copy.
+3. Delete a required column from a copy of a run file. `just data` fails and names that file, and the Parquet file is not rewritten. Remove the copy.
 4. The test run file is deleted, not committed.
 
 ## Out of Scope
@@ -174,5 +191,3 @@ Each test follows the existing patterns in its file.
 - **Computing `mean_rel_error_f64`, and the block-size sweep:** both are roadmap item 4.
 - **Stricter data checks** (non-empty `kernel`, positive timings): add when a real bad PR shows up.
 - **`sysinfo`-based device detection** for Windows or ARM Linux: add when a contributor there hits `unknown`.
-- **A pre-commit hook for data files:** CI covers it.
-- **Unrelated, noticed in passing:** the `frontend-lint` glob in `lefthook.yml` skips `.svelte` files.
