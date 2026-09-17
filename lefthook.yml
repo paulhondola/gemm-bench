@@ -16,10 +16,13 @@ pre-commit:
       run: cargo test --manifest-path Cargo.toml
     frontend-lint:
       root: "web/"
-      glob: "*.{ts,tsx,js,jsx,json}"
+      glob: "*.{ts,tsx,js,jsx,json,svelte}"
       run: bunx @biomejs/biome check --write {staged_files}
       stage_fixed: true
     frontend-typecheck:
       root: "web/"
       glob: "*.{ts,tsx}"
       run: bun run typecheck
+    data-build:
+      glob: "data/runs/**/*.csv"
+      run: duckdb -bail < data/build.sql
