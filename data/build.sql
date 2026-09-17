@@ -13,6 +13,7 @@ SELECT * FROM read_csv('data/runs/**/*.csv', union_by_name = true, filename = tr
 -- union_by_name fills a column missing from one file with NULL instead of
 -- failing, so required values are checked explicitly. block_size is exempt:
 -- roadmap item 4 leaves it empty for kernels that don't use blocks.
+CREATE TEMP TABLE _validation_failed AS
 SELECT error('run files missing required values: ' || string_agg(DISTINCT filename, ', '))
 FROM runs
 WHERE kernel IS NULL OR backend IS NULL OR device IS NULL OR precision IS NULL
