@@ -2,6 +2,7 @@
 
 mod benchmark;
 mod cli;
+mod context;
 mod report;
 
 use clap::Parser;

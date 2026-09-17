@@ -133,18 +133,28 @@ mod tests {
     use crate::benchmark::BenchmarkRecord;
     use indicatif::ProgressStyle;
 
-    #[test]
-    fn terminal_table_uses_schema_headers_and_compact_float_precision() {
-        let table = render_results_table(&[BenchmarkRecord {
+    fn record() -> BenchmarkRecord {
+        BenchmarkRecord {
             kernel: "rayon-ikj".to_owned(),
+            precision: "f32",
             n: 256,
             threads: 4,
-            precision: "f32",
+            gflops: 2.5,
+            mean_rel_error_f64: 0.0,
             median_ms: 12.345_67,
             min_ms: 12.0,
             stddev_ms: 0.25,
-            gflops: 2.5,
-        }]);
+            block_size: 64,
+            repetitions: 5,
+            host: "test-host".to_owned(),
+            commit: "abc1234".to_owned(),
+            timestamp: "2026-09-17T12:15:00Z".to_owned(),
+        }
+    }
+
+    #[test]
+    fn terminal_table_uses_schema_headers_and_compact_float_precision() {
+        let table = render_results_table(&[record()]);
 
         assert!(table.contains("kernel"));
         assert!(table.contains("precision"));
@@ -182,28 +192,17 @@ mod tests {
         let csv_file = std::fs::File::create(&csv_path).expect("create csv file");
         let json_file = std::fs::File::create(&json_path).expect("create json file");
 
-        let records = vec![BenchmarkRecord {
-            kernel: "naive-ijk".to_owned(),
-            n: 64,
-            threads: 1,
-            precision: "f32",
-            median_ms: 1.23,
-            min_ms: 1.2,
-            stddev_ms: 0.01,
-            gflops: 4.56,
-        }];
-
-        super::write_records(csv_file, json_file, &records).expect("write records");
+        super::write_records(csv_file, json_file, &[record()]).expect("write records");
 
         let csv_content = std::fs::read_to_string(&csv_path).expect("read csv");
-        assert!(
-            csv_content.contains("kernel,n,threads,precision,median_ms,min_ms,stddev_ms,gflops")
+        assert_eq!(
+            csv_content,
+            "kernel,precision,n,threads,gflops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,block_size,repetitions,host,commit,timestamp\n\
+             rayon-ikj,f32,256,4,2.5,0.0,12.34567,12.0,0.25,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
         );
-        assert!(csv_content.contains("naive-ijk,64,1,f32,1.23,1.2,0.01,4.56"));
 
         let json_content = std::fs::read_to_string(&json_path).expect("read json");
-        assert!(json_content.contains("\"kernel\": \"naive-ijk\""));
-        assert!(json_content.contains("\"precision\": \"f32\""));
+        assert!(json_content.contains("\"kernel\": \"rayon-ikj\""));
 
         let _ = std::fs::remove_dir_all(temp_dir);
     }

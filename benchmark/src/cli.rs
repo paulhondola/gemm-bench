@@ -6,6 +6,8 @@ use std::{
 
 use clap::{Parser, ValueEnum};
 
+use crate::context::{self, RunContext};
+
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 
 #[derive(Debug, Parser)]
@@ -55,6 +57,7 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) precisions: Vec<Precision>,
     pub(crate) repetitions: usize,
     pub(crate) block_size: usize,
+    pub(crate) context: RunContext,
     pub(crate) csv_output: File,
     pub(crate) json_output: File,
     pub(crate) no_progress: bool,
@@ -113,6 +116,7 @@ impl Cli {
         // rejected plan never creates directories or an output file.
         validate_static_threads(&kernels, &threads, &sizes)?;
         validate_precisions(&kernels, &precisions)?;
+        let context = context::capture();
         let (csv_output, json_output) = open_outputs(&self.output)?;
 
         Ok(BenchmarkPlan {
@@ -122,6 +126,7 @@ impl Cli {
             precisions,
             repetitions: self.repetitions,
             block_size: self.block_size,
+            context,
             csv_output,
             json_output,
             no_progress: self.no_progress,
@@ -360,6 +365,7 @@ mod tests {
         assert_eq!(plan.precisions, [Precision::F32]);
         assert!(!plan.no_progress);
         assert!(plan.total_configurations() > 0);
+        assert!(!plan.context.host.is_empty());
         let _ = fs::remove_file(output.with_extension("csv"));
         let _ = fs::remove_file(output.with_extension("json"));
     }
