@@ -22,5 +22,8 @@
 		"svelte-check": "^4.7.6",
 		"typescript": "~6.0.2",
 		"vite": "^8.3.0"
+	},
+	"dependencies": {
+		"@duckdb/duckdb-wasm": "1.33.1-dev57.0"
 	}
 }

@@ -9,7 +9,7 @@ High-performance, safe Rust benchmarks for dense, row-major square matrix multip
 | Path | Contents |
 | :--- | :--- |
 | [`benchmark/`](benchmark) | Rust crate `rayon-gemm`: the GEMM kernels and the benchmark CLI that produces the data. |
-| [`web/`](web) | Bun + Vite + Svelte + TypeScript dashboard that visualizes the data. Deployed to GitHub Pages. |
+| [`web/`](web) | Bun + Vite + Svelte + TypeScript dashboard that queries the data in the browser with DuckDB-WASM. Deployed to GitHub Pages. |
 | [`data/`](data) | Recorded benchmark runs (`f16`, `f32`, `f64`), each as `.csv` and `.json`. |
 | [`justfile`](justfile) | Task runner for every build, run, lint, and check command. |
 | [`lefthook.yml`](lefthook.yml) | Pre-commit hooks for both halves of the repo. |
@@ -24,6 +24,7 @@ High-performance, safe Rust benchmarks for dense, row-major square matrix multip
 | [rustup](https://rustup.rs) | `benchmark/` | The pinned [`rust-toolchain.toml`](rust-toolchain.toml) selects **nightly** (with `clippy` and `rustfmt`) automatically, because the `f16` primitive (`#![feature(f16)]`) is not yet stable. |
 | [just](https://github.com/casey/just) | All commands below | `brew install just` |
 | [Bun](https://bun.sh) | `web/` | `curl -fsSL https://bun.sh/install \| bash` |
+| [DuckDB CLI](https://duckdb.org) | `just data` | `brew install duckdb` |
 | [lefthook](https://github.com/evilmartians/lefthook) | Optional pre-commit hooks | `brew install lefthook`, then `lefthook install` |
 
 The `mps` GPU kernel requires macOS on Apple Silicon. Everything else runs on any platform supported by Rust nightly. On AArch64 CPUs with FP16 support (such as the Apple M series), `f16` arithmetic compiles to native half-precision instructions.
@@ -51,6 +52,7 @@ Run `just` with no arguments to list every recipe.
 | :--- | :--- | :--- |
 | `just bench [ARGS]` | `cargo run --release --manifest-path benchmark/Cargo.toml -- [ARGS]` | Run a benchmark sweep. Every argument is forwarded to the CLI (see [CLI Options](#cli-options)). `--output` is required. |
 | `just build` | `cargo build --release` for `benchmark/`, then `bun run build` in `web/` | Produce the optimized benchmark binary (`benchmark/target/release/rayon-gemm`) and the static dashboard (`web/dist/`). |
+| `just data` | `duckdb` CLI: `data/*.csv` → `web/public/results.parquet` | Rebuild the single Parquet file the dashboard queries. Columns are matched by name, so CSVs with new or missing columns merge cleanly. `just dev` and `just build` run it first. |
 | `just dev` | `bun dev` in `web/` | Start the Vite dev server with hot reload for the dashboard. |
 | `just test` | `cargo test --manifest-path benchmark/Cargo.toml` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests. |
 | `just lint` | `cargo fmt` for `benchmark/`, then `bun run lint` (Biome) in `web/`
