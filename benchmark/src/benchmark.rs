@@ -18,16 +18,25 @@ use crate::{
 };
 
 /// One measured benchmark configuration, shared by terminal and file reporters.
+/// Field order is the CSV column order.
 #[derive(Debug, Serialize)]
 pub(crate) struct BenchmarkRecord {
     pub(crate) kernel: String,
+    pub(crate) backend: &'static str,
+    pub(crate) device: String,
+    pub(crate) precision: &'static str,
     pub(crate) n: usize,
     pub(crate) threads: usize,
-    pub(crate) precision: &'static str,
+    pub(crate) gflops: f64,
+    pub(crate) mean_rel_error_f64: f64,
     pub(crate) median_ms: f64,
     pub(crate) min_ms: f64,
     pub(crate) stddev_ms: f64,
-    pub(crate) gflops: f64,
+    pub(crate) block_size: usize,
+    pub(crate) repetitions: usize,
+    pub(crate) host: String,
+    pub(crate) commit: String,
+    pub(crate) timestamp: String,
 }
 
 pub(crate) fn run(
@@ -100,13 +109,22 @@ fn run_precision<T: Element>(
                 let gflops = 2.0 * (n as f64).powi(3) / (stats.median_ms / 1_000.0) / 1e9;
                 records.push(BenchmarkRecord {
                     kernel: kernel.label().to_owned(),
+                    backend: kernel.backend(),
+                    device: kernel.device(&plan.devices).to_owned(),
+                    precision: precision.label(),
                     n,
                     threads: thread_count,
-                    precision: precision.label(),
+                    gflops,
+                    // ponytail: placeholder until roadmap item 4 measures error against an f64 reference.
+                    mean_rel_error_f64: 0.0,
                     median_ms: stats.median_ms,
                     min_ms: stats.min_ms,
                     stddev_ms: stats.stddev_ms,
-                    gflops,
+                    block_size: plan.block_size,
+                    repetitions: plan.repetitions,
+                    host: plan.context.host.clone(),
+                    commit: plan.context.commit.clone(),
+                    timestamp: plan.context.timestamp.clone(),
                 });
             }
         }

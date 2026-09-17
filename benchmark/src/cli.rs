@@ -6,6 +6,8 @@ use std::{
 
 use clap::{Parser, ValueEnum};
 
+use crate::context::{self, RunContext};
+
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 
 #[derive(Debug, Parser)]
@@ -36,10 +38,10 @@ pub(crate) struct Cli {
     #[arg(long, default_value_t = 64)]
     block_size: usize,
 
-    /// Destination path prefix without extension (e.g. 'data/f16'). Both .csv
-    /// and .json files will be created; missing parent directories are created.
+    /// Output CSV file. Defaults to a new file per run,
+    /// data/runs/<host>/<timestamp>.csv; missing parent directories are created.
     #[arg(long)]
-    output: PathBuf,
+    output: Option<PathBuf>,
 
     /// Disable the interactive progress bar.
     #[arg(long)]
@@ -55,8 +57,10 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) precisions: Vec<Precision>,
     pub(crate) repetitions: usize,
     pub(crate) block_size: usize,
-    pub(crate) csv_output: File,
-    pub(crate) json_output: File,
+    pub(crate) context: RunContext,
+    pub(crate) devices: Devices,
+    pub(crate) output: File,
+    pub(crate) output_path: PathBuf,
     pub(crate) no_progress: bool,
 }
 
@@ -76,6 +80,30 @@ impl BenchmarkPlan {
             .sum();
 
         self.precisions.len() * self.sizes.len() * configs_per_matrix
+    }
+}
+
+/// Device names, looked up once per backend before any kernel runs.
+#[derive(Debug)]
+pub(crate) struct Devices {
+    pub(crate) cpu: String,
+    #[cfg(target_os = "macos")]
+    pub(crate) metal: String,
+}
+
+impl Devices {
+    // Off macOS only the CPU is looked up, leaving `kernels` unread.
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+    fn lookup(kernels: &[KernelChoice]) -> Self {
+        Self {
+            cpu: context::cpu_name(),
+            #[cfg(target_os = "macos")]
+            metal: kernels
+                .contains(&KernelChoice::Mps)
+                .then(rayon_gemm::kernels::mps::default_device_name)
+                .flatten()
+                .unwrap_or_else(|| context::UNKNOWN.to_owned()),
+        }
     }
 }
 
@@ -113,7 +141,12 @@ impl Cli {
         // rejected plan never creates directories or an output file.
         validate_static_threads(&kernels, &threads, &sizes)?;
         validate_precisions(&kernels, &precisions)?;
-        let (csv_output, json_output) = open_outputs(&self.output)?;
+        let context = context::capture();
+        let devices = Devices::lookup(&kernels);
+        let output_path = self
+            .output
+            .unwrap_or_else(|| default_output_path(&context.host, &context.file_stamp));
+        let output = open_output(&output_path)?;
 
         Ok(BenchmarkPlan {
             sizes,
@@ -122,8 +155,10 @@ impl Cli {
             precisions,
             repetitions: self.repetitions,
             block_size: self.block_size,
-            csv_output,
-            json_output,
+            context,
+            devices,
+            output,
+            output_path,
             no_progress: self.no_progress,
         })
     }
@@ -155,6 +190,36 @@ impl KernelChoice {
             Self::StaticTiled => "static-tiled",
             #[cfg(target_os = "macos")]
             Self::Mps => "mps",
+        }
+    }
+
+    /// Hardware family the kernel runs on. Needed next to `device` because
+    /// Apple Silicon reports the same name for its CPU and GPU.
+    pub(crate) fn backend(self) -> &'static str {
+        match self {
+            Self::Naive
+            | Self::Ikj
+            | Self::Tiled
+            | Self::RayonIkj
+            | Self::RayonTiled
+            | Self::StaticIkj
+            | Self::StaticTiled => "cpu",
+            #[cfg(target_os = "macos")]
+            Self::Mps => "metal",
+        }
+    }
+
+    pub(crate) fn device(self, devices: &Devices) -> &str {
+        match self {
+            Self::Naive
+            | Self::Ikj
+            | Self::Tiled
+            | Self::RayonIkj
+            | Self::RayonTiled
+            | Self::StaticIkj
+            | Self::StaticTiled => &devices.cpu,
+            #[cfg(target_os = "macos")]
+            Self::Mps => &devices.metal,
         }
     }
 
@@ -250,35 +315,48 @@ fn validate_precisions(kernels: &[KernelChoice], precisions: &[Precision]) -> Re
     Ok(())
 }
 
-fn validate_and_resolve_output_paths(path: &Path) -> Result<(PathBuf, PathBuf), String> {
-    if path.as_os_str().is_empty() || path.file_name().is_none() {
-        return Err("--output must include a destination prefix (e.g. 'data/f16')".into());
+/// Each run gets its own file, so reruns and other machines add data instead
+/// of replacing it. Relative to the working directory: `just bench` runs from the repo root.
+// ponytail: two runs on the same host within the same UTC second collide and
+// the second silently truncates the first; add sub-second or random suffix
+// if that ever bites.
+fn default_output_path(host: &str, file_stamp: &str) -> PathBuf {
+    Path::new("data/runs")
+        .join(host)
+        .join(format!("{file_stamp}.csv"))
+}
+
+/// `--output` names the CSV file itself.
+fn validate_output_path(path: &Path) -> Result<(), String> {
+    if path.file_name().is_none() {
+        return Err("--output must name a .csv file (e.g. 'results.csv')".into());
     }
     if path.is_dir() {
         return Err(format!(
-            "output path '{}' is an existing directory; --output must specify a destination prefix without extension (e.g. '{}/results')",
+            "output path '{}' is an existing directory; --output must name a .csv file (e.g. '{}')",
             path.display(),
+            path.join("results.csv").display()
+        ));
+    }
+    let is_csv = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("csv"));
+    if !is_csv {
+        return Err(format!(
+            "--output must be a .csv file path (got '{}')",
             path.display()
         ));
     }
-    if let Some(ext) = path.extension().and_then(OsStr::to_str) {
-        return Err(format!(
-            "--output must not include a file extension (got '.{ext}'); specify the path prefix (e.g. '{}') to generate both .csv and .json files",
-            path.with_extension("").display()
-        ));
-    }
-
-    let csv_path = path.with_extension("csv");
-    let json_path = path.with_extension("json");
-    Ok((csv_path, json_path))
+    Ok(())
 }
 
-/// Creates missing parent directories and opens both output files (.csv and .json)
-/// before any benchmark runs, so an unwritable path fails immediately instead of
-/// after the sweep. Neither file is truncated here: existing result files keep
-/// their contents until new records are written.
-fn open_outputs(path: &Path) -> Result<(File, File), String> {
-    let (csv_path, json_path) = validate_and_resolve_output_paths(path)?;
+/// Creates missing parent directories and opens the output file before any
+/// benchmark runs, so an unwritable path fails immediately instead of after
+/// the sweep. The file is not truncated here: existing results keep their
+/// contents until new records are written.
+fn open_output(path: &Path) -> Result<File, String> {
+    validate_output_path(path)?;
 
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent).map_err(|error| {
@@ -289,21 +367,12 @@ fn open_outputs(path: &Path) -> Result<(File, File), String> {
         })?;
     }
 
-    let csv_file = OpenOptions::new()
+    OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(false)
-        .open(&csv_path)
-        .map_err(|error| format!("cannot open output file '{}': {error}", csv_path.display()))?;
-
-    let json_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&json_path)
-        .map_err(|error| format!("cannot open output file '{}': {error}", json_path.display()))?;
-
-    Ok((csv_file, json_file))
+        .open(path)
+        .map_err(|error| format!("cannot open output file '{}': {error}", path.display()))
 }
 
 fn default_thread_counts() -> Vec<usize> {
@@ -324,14 +393,41 @@ fn default_thread_counts() -> Vec<usize> {
 mod tests {
     use std::{ffi::OsStr, fs, path::PathBuf};
 
-    use clap::Parser;
+    use clap::{Parser, ValueEnum};
 
-    use super::{Cli, KernelChoice, Precision, open_outputs, validate_and_resolve_output_paths};
+    use super::{
+        Cli, Devices, KernelChoice, Precision, default_output_path, open_output,
+        validate_output_path,
+    };
 
-    /// A per-process path under the system temp directory, so tests never
+    /// A per-process `.csv` path under the system temp directory, so tests never
     /// write into the repository and parallel test runs do not collide.
     fn temp_output(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("rayon-gemm-test-{}-{name}", std::process::id()))
+        std::env::temp_dir().join(format!("rayon-gemm-test-{}-{name}.csv", std::process::id()))
+    }
+
+    #[test]
+    fn every_kernel_names_its_backend() {
+        for &kernel in KernelChoice::value_variants() {
+            #[cfg(target_os = "macos")]
+            if kernel == KernelChoice::Mps {
+                assert_eq!(kernel.backend(), "metal");
+                continue;
+            }
+            assert_eq!(kernel.backend(), "cpu", "{}", kernel.label());
+        }
+    }
+
+    #[test]
+    fn kernels_report_the_device_of_their_backend() {
+        let devices = Devices {
+            cpu: "Test CPU".to_owned(),
+            #[cfg(target_os = "macos")]
+            metal: "Test GPU".to_owned(),
+        };
+        assert_eq!(KernelChoice::RayonTiled.device(&devices), "Test CPU");
+        #[cfg(target_os = "macos")]
+        assert_eq!(KernelChoice::Mps.device(&devices), "Test GPU");
     }
 
     #[test]
@@ -344,7 +440,7 @@ mod tests {
             precision: Vec::new(),
             repetitions: 1,
             block_size: 64,
-            output: output.clone(),
+            output: Some(output.clone()),
             no_progress: false,
         }
         .into_plan()
@@ -360,8 +456,8 @@ mod tests {
         assert_eq!(plan.precisions, [Precision::F32]);
         assert!(!plan.no_progress);
         assert!(plan.total_configurations() > 0);
-        let _ = fs::remove_file(output.with_extension("csv"));
-        let _ = fs::remove_file(output.with_extension("json"));
+        assert!(!plan.context.host.is_empty());
+        let _ = fs::remove_file(&output);
     }
 
     #[test]
@@ -379,8 +475,7 @@ mod tests {
         .expect("plan should be valid");
 
         assert_eq!(plan.precisions, [Precision::F16, Precision::F64]);
-        let _ = fs::remove_file(output.with_extension("csv"));
-        let _ = fs::remove_file(output.with_extension("json"));
+        let _ = fs::remove_file(&output);
     }
 
     #[test]
@@ -400,8 +495,7 @@ mod tests {
         assert_eq!(plan.precisions, [Precision::I32, Precision::I64]);
         // CPU kernels support integers; mps does not, so defaults omit it.
         assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticTiled));
-        let _ = fs::remove_file(output.with_extension("csv"));
-        let _ = fs::remove_file(output.with_extension("json"));
+        let _ = fs::remove_file(&output);
     }
 
     #[test]
@@ -424,24 +518,32 @@ mod tests {
 
         assert!(error.contains("--threads 16 exceeds --sizes 8"));
         assert!(
-            !output.with_extension("csv").exists(),
-            "a rejected plan must not create the output file"
-        );
-        assert!(
-            !output.with_extension("json").exists(),
+            !output.exists(),
             "a rejected plan must not create the output file"
         );
     }
 
     #[test]
-    fn output_with_extension_is_rejected() {
-        let error = validate_and_resolve_output_paths(PathBuf::from("results.csv").as_path())
-            .expect_err("extension should be rejected");
-        assert!(error.contains("must not include a file extension"));
+    fn default_output_is_a_new_file_per_run_under_the_host() {
+        assert_eq!(
+            default_output_path("Pauls-MacBook-Pro", "20260917T121500Z"),
+            PathBuf::from("data/runs/Pauls-MacBook-Pro/20260917T121500Z.csv")
+        );
+    }
 
-        let error = validate_and_resolve_output_paths(PathBuf::from("data/f16.json").as_path())
-            .expect_err("extension should be rejected");
-        assert!(error.contains("must not include a file extension"));
+    #[test]
+    fn output_accepts_csv_in_any_case() {
+        validate_output_path(PathBuf::from("results.csv").as_path()).expect("lowercase csv");
+        validate_output_path(PathBuf::from("data/results.CSV").as_path()).expect("uppercase CSV");
+    }
+
+    #[test]
+    fn output_without_a_csv_extension_is_rejected() {
+        for path in ["results", "data/f16.json", ""] {
+            let error = validate_output_path(PathBuf::from(path).as_path())
+                .expect_err("non-csv output must be rejected");
+            assert!(error.contains(".csv"), "{path}: {error}");
+        }
     }
 
     #[test]
@@ -449,39 +551,21 @@ mod tests {
         let dir = temp_output("existing_dir");
         fs::create_dir_all(&dir).expect("create test dir");
 
-        let error = validate_and_resolve_output_paths(&dir)
-            .expect_err("existing directory must be rejected");
+        let error = validate_output_path(&dir).expect_err("existing directory must be rejected");
         assert!(error.contains("is an existing directory"));
 
         fs::remove_dir_all(dir).expect("remove test dir");
     }
 
     #[test]
-    fn output_creates_both_csv_and_json_files() {
-        let output = temp_output("both_files");
-        let (csv_file, json_file) = open_outputs(&output).expect("both files should open");
-        drop(csv_file);
-        drop(json_file);
-
-        assert!(output.with_extension("csv").is_file());
-        assert!(output.with_extension("json").is_file());
-
-        let _ = fs::remove_file(output.with_extension("csv"));
-        let _ = fs::remove_file(output.with_extension("json"));
-    }
-
-    #[test]
     fn missing_output_directories_are_created_before_running() {
-        let root = temp_output("nested");
-        let output = root.join("a/b/results");
+        let root =
+            std::env::temp_dir().join(format!("rayon-gemm-test-{}-nested", std::process::id()));
+        let output = root.join("a/b/results.csv");
 
-        let (csv_file, json_file) =
-            open_outputs(&output).expect("missing parent directories should be created");
-        drop(csv_file);
-        drop(json_file);
+        drop(open_output(&output).expect("missing parent directories should be created"));
 
-        assert!(output.with_extension("csv").is_file());
-        assert!(output.with_extension("json").is_file());
+        assert!(output.is_file());
         fs::remove_dir_all(root).expect("remove test directories");
     }
 
@@ -490,7 +574,7 @@ mod tests {
         let blocker = temp_output("blocker");
         fs::write(&blocker, b"").expect("create a regular file");
 
-        let error = open_outputs(&blocker.join("results"))
+        let error = open_output(&blocker.join("results.csv"))
             .expect_err("a regular file cannot be a parent directory");
 
         assert!(error.contains("output directory"));
@@ -500,25 +584,15 @@ mod tests {
     #[test]
     fn existing_output_is_not_truncated_until_records_are_written() {
         let output = temp_output("existing");
-        let csv_path = output.with_extension("csv");
-        let json_path = output.with_extension("json");
-        fs::write(&csv_path, b"previous csv").expect("seed existing csv");
-        fs::write(&json_path, b"previous json").expect("seed existing json");
+        fs::write(&output, b"previous csv").expect("seed existing csv");
 
-        let (csv_file, json_file) = open_outputs(&output).expect("existing output should open");
-        drop(csv_file);
-        drop(json_file);
+        drop(open_output(&output).expect("existing output should open"));
 
         assert_eq!(
-            fs::read(&csv_path).expect("read existing output"),
+            fs::read(&output).expect("read existing output"),
             b"previous csv"
         );
-        assert_eq!(
-            fs::read(&json_path).expect("read existing output"),
-            b"previous json"
-        );
-        let _ = fs::remove_file(csv_path);
-        let _ = fs::remove_file(json_path);
+        let _ = fs::remove_file(output);
     }
 
     #[test]
@@ -535,8 +609,7 @@ mod tests {
         .expect("plan should be valid");
 
         assert!(plan.no_progress);
-        let _ = fs::remove_file(output.with_extension("csv"));
-        let _ = fs::remove_file(output.with_extension("json"));
+        let _ = fs::remove_file(&output);
     }
 
     #[test]
@@ -561,8 +634,7 @@ mod tests {
 
         // 2 precisions * 2 sizes * (1 for naive + 3 for rayon-ikj) = 2 * 2 * 4 = 16
         assert_eq!(plan.total_configurations(), 16);
-        let _ = fs::remove_file(output.with_extension("csv"));
-        let _ = fs::remove_file(output.with_extension("json"));
+        let _ = fs::remove_file(&output);
     }
 
     #[cfg(target_os = "macos")]
@@ -581,9 +653,12 @@ mod tests {
         .expect("mps plan should be valid");
 
         assert_eq!(plan.kernels, [KernelChoice::Mps]);
+        assert_ne!(
+            plan.devices.metal, "unknown",
+            "a Mac with Metal must name its GPU"
+        );
         assert_eq!(plan.total_configurations(), 7); // 7 default sizes * 1 precision * 1 config
-        let _ = fs::remove_file(output.with_extension("csv"));
-        let _ = fs::remove_file(output.with_extension("json"));
+        let _ = fs::remove_file(&output);
     }
 
     #[cfg(target_os = "macos")]
@@ -604,8 +679,10 @@ mod tests {
         .expect_err("mps with f64 must be rejected");
 
         assert!(error.contains("mps does not support f64 precision"));
-        assert!(!output.with_extension("csv").exists());
-        assert!(!output.with_extension("json").exists());
+        assert!(
+            !output.exists(),
+            "a rejected plan must not create the output file"
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -626,7 +703,9 @@ mod tests {
         .expect_err("mps with i32 must be rejected");
 
         assert!(error.contains("mps does not support i32 precision"));
-        assert!(!output.with_extension("csv").exists());
-        assert!(!output.with_extension("json").exists());
+        assert!(
+            !output.exists(),
+            "a rejected plan must not create the output file"
+        );
     }
 }
