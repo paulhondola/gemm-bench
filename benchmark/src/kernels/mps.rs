@@ -37,6 +37,11 @@ impl MpsElement for f32 {
     }
 }
 
+/// Name of the system default Metal device, the one `MpsGemm::new` acquires.
+pub fn default_device_name() -> Option<String> {
+    MTLCreateSystemDefaultDevice().map(|device| device.name().to_string())
+}
+
 /// A dense matrix multiplication kernel leveraging Apple's `MPSMatrixMultiplication`.
 pub struct MpsGemm<T: MpsElement> {
     device: Retained<ProtocolObject<dyn MTLDevice>>,

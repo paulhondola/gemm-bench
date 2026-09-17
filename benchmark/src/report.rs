@@ -136,6 +136,8 @@ mod tests {
     fn record() -> BenchmarkRecord {
         BenchmarkRecord {
             kernel: "rayon-ikj".to_owned(),
+            backend: "cpu",
+            device: "Test CPU".to_owned(),
             precision: "f32",
             n: 256,
             threads: 4,
@@ -197,8 +199,8 @@ mod tests {
         let csv_content = std::fs::read_to_string(&csv_path).expect("read csv");
         assert_eq!(
             csv_content,
-            "kernel,precision,n,threads,gflops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,block_size,repetitions,host,commit,timestamp\n\
-             rayon-ikj,f32,256,4,2.5,0.0,12.34567,12.0,0.25,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
+            "kernel,backend,device,precision,n,threads,gflops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,block_size,repetitions,host,commit,timestamp\n\
+             rayon-ikj,cpu,Test CPU,f32,256,4,2.5,0.0,12.34567,12.0,0.25,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
         );
 
         let json_content = std::fs::read_to_string(&json_path).expect("read json");

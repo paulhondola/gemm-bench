@@ -58,6 +58,7 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) repetitions: usize,
     pub(crate) block_size: usize,
     pub(crate) context: RunContext,
+    pub(crate) devices: Devices,
     pub(crate) csv_output: File,
     pub(crate) json_output: File,
     pub(crate) no_progress: bool,
@@ -79,6 +80,30 @@ impl BenchmarkPlan {
             .sum();
 
         self.precisions.len() * self.sizes.len() * configs_per_matrix
+    }
+}
+
+/// Device names, looked up once per backend before any kernel runs.
+#[derive(Debug)]
+pub(crate) struct Devices {
+    pub(crate) cpu: String,
+    #[cfg(target_os = "macos")]
+    pub(crate) metal: String,
+}
+
+impl Devices {
+    // Off macOS only the CPU is looked up, leaving `kernels` unread.
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+    fn lookup(kernels: &[KernelChoice]) -> Self {
+        Self {
+            cpu: context::cpu_name(),
+            #[cfg(target_os = "macos")]
+            metal: kernels
+                .contains(&KernelChoice::Mps)
+                .then(rayon_gemm::kernels::mps::default_device_name)
+                .flatten()
+                .unwrap_or_else(|| context::UNKNOWN.to_owned()),
+        }
     }
 }
 
@@ -117,6 +142,7 @@ impl Cli {
         validate_static_threads(&kernels, &threads, &sizes)?;
         validate_precisions(&kernels, &precisions)?;
         let context = context::capture();
+        let devices = Devices::lookup(&kernels);
         let (csv_output, json_output) = open_outputs(&self.output)?;
 
         Ok(BenchmarkPlan {
@@ -127,6 +153,7 @@ impl Cli {
             repetitions: self.repetitions,
             block_size: self.block_size,
             context,
+            devices,
             csv_output,
             json_output,
             no_progress: self.no_progress,
@@ -160,6 +187,36 @@ impl KernelChoice {
             Self::StaticTiled => "static-tiled",
             #[cfg(target_os = "macos")]
             Self::Mps => "mps",
+        }
+    }
+
+    /// Hardware family the kernel runs on. Needed next to `device` because
+    /// Apple Silicon reports the same name for its CPU and GPU.
+    pub(crate) fn backend(self) -> &'static str {
+        match self {
+            Self::Naive
+            | Self::Ikj
+            | Self::Tiled
+            | Self::RayonIkj
+            | Self::RayonTiled
+            | Self::StaticIkj
+            | Self::StaticTiled => "cpu",
+            #[cfg(target_os = "macos")]
+            Self::Mps => "metal",
+        }
+    }
+
+    pub(crate) fn device(self, devices: &Devices) -> &str {
+        match self {
+            Self::Naive
+            | Self::Ikj
+            | Self::Tiled
+            | Self::RayonIkj
+            | Self::RayonTiled
+            | Self::StaticIkj
+            | Self::StaticTiled => &devices.cpu,
+            #[cfg(target_os = "macos")]
+            Self::Mps => &devices.metal,
         }
     }
 
@@ -329,14 +386,40 @@ fn default_thread_counts() -> Vec<usize> {
 mod tests {
     use std::{ffi::OsStr, fs, path::PathBuf};
 
-    use clap::Parser;
+    use clap::{Parser, ValueEnum};
 
-    use super::{Cli, KernelChoice, Precision, open_outputs, validate_and_resolve_output_paths};
+    use super::{
+        Cli, Devices, KernelChoice, Precision, open_outputs, validate_and_resolve_output_paths,
+    };
 
     /// A per-process path under the system temp directory, so tests never
     /// write into the repository and parallel test runs do not collide.
     fn temp_output(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("rayon-gemm-test-{}-{name}", std::process::id()))
+    }
+
+    #[test]
+    fn every_kernel_names_its_backend() {
+        for &kernel in KernelChoice::value_variants() {
+            #[cfg(target_os = "macos")]
+            if kernel == KernelChoice::Mps {
+                assert_eq!(kernel.backend(), "metal");
+                continue;
+            }
+            assert_eq!(kernel.backend(), "cpu", "{}", kernel.label());
+        }
+    }
+
+    #[test]
+    fn kernels_report_the_device_of_their_backend() {
+        let devices = Devices {
+            cpu: "Test CPU".to_owned(),
+            #[cfg(target_os = "macos")]
+            metal: "Test GPU".to_owned(),
+        };
+        assert_eq!(KernelChoice::RayonTiled.device(&devices), "Test CPU");
+        #[cfg(target_os = "macos")]
+        assert_eq!(KernelChoice::Mps.device(&devices), "Test GPU");
     }
 
     #[test]
@@ -587,6 +670,10 @@ mod tests {
         .expect("mps plan should be valid");
 
         assert_eq!(plan.kernels, [KernelChoice::Mps]);
+        assert_ne!(
+            plan.devices.metal, "unknown",
+            "a Mac with Metal must name its GPU"
+        );
         assert_eq!(plan.total_configurations(), 7); // 7 default sizes * 1 precision * 1 config
         let _ = fs::remove_file(output.with_extension("csv"));
         let _ = fs::remove_file(output.with_extension("json"));

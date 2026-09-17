@@ -66,9 +66,32 @@ fn utc_fields(secs: u64) -> [u64; 6] {
     [year, month, day, rem / 3_600, rem % 3_600 / 60, rem % 60]
 }
 
+/// The CPU model, e.g. `Apple M1 Pro` or `AMD Ryzen 9 7950X 16-Core Processor`.
+pub(crate) fn cpu_name() -> String {
+    #[cfg(target_os = "macos")]
+    let name = command_output("sysctl", &["-n", "machdep.cpu.brand_string"]);
+    #[cfg(target_os = "linux")]
+    let name = std::fs::read_to_string("/proc/cpuinfo")
+        .ok()
+        .and_then(|cpuinfo| parse_cpu_model(&cpuinfo));
+    // ponytail: Windows and other targets report `unknown`; use `sysinfo` once a contributor needs them.
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let name: Option<String> = None;
+    name.unwrap_or_else(|| UNKNOWN.to_owned())
+}
+
+/// The first `model name` line of `/proc/cpuinfo`. ARM kernels often omit it.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn parse_cpu_model(cpuinfo: &str) -> Option<String> {
+    cpuinfo.lines().find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        (key.trim() == "model name").then(|| value.trim().to_owned())
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{capture, iso_timestamp, short_host};
+    use super::{capture, cpu_name, iso_timestamp, parse_cpu_model, short_host};
 
     #[test]
     fn iso_timestamp_formats_utc_calendar_dates() {
@@ -90,5 +113,25 @@ mod tests {
         assert!(!context.commit.is_empty());
         assert_eq!(context.timestamp.len(), "2026-09-17T12:15:00Z".len());
         assert!(context.timestamp.ends_with('Z'));
+    }
+
+    #[test]
+    fn parse_cpu_model_reads_the_x86_model_name() {
+        let cpuinfo = "processor\t: 0\nvendor_id\t: AuthenticAMD\nmodel name\t: AMD Ryzen 9 7950X 16-Core Processor\n";
+        assert_eq!(
+            parse_cpu_model(cpuinfo).as_deref(),
+            Some("AMD Ryzen 9 7950X 16-Core Processor")
+        );
+    }
+
+    #[test]
+    fn parse_cpu_model_is_none_when_arm_cpuinfo_lacks_a_model_name() {
+        let cpuinfo = "processor\t: 0\nBogoMIPS\t: 48.00\nCPU implementer\t: 0x41\n";
+        assert_eq!(parse_cpu_model(cpuinfo), None);
+    }
+
+    #[test]
+    fn cpu_name_is_never_empty() {
+        assert!(!cpu_name().is_empty());
     }
 }

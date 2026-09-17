@@ -22,6 +22,8 @@ use crate::{
 #[derive(Debug, Serialize)]
 pub(crate) struct BenchmarkRecord {
     pub(crate) kernel: String,
+    pub(crate) backend: &'static str,
+    pub(crate) device: String,
     pub(crate) precision: &'static str,
     pub(crate) n: usize,
     pub(crate) threads: usize,
@@ -107,6 +109,8 @@ fn run_precision<T: Element>(
                 let gflops = 2.0 * (n as f64).powi(3) / (stats.median_ms / 1_000.0) / 1e9;
                 records.push(BenchmarkRecord {
                     kernel: kernel.label().to_owned(),
+                    backend: kernel.backend(),
+                    device: kernel.device(&plan.devices).to_owned(),
                     precision: precision.label(),
                     n,
                     threads: thread_count,
