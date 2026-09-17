@@ -14,6 +14,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let records = benchmark::run(&plan)?;
 
     report::print_results_table(&records);
-    report::write_records(plan.csv_output, plan.json_output, &records)?;
+    report::write_records(plan.output, &records)?;
+    eprintln!(
+        "Wrote {} records to {}",
+        records.len(),
+        plan.output_path.display()
+    );
     Ok(())
 }

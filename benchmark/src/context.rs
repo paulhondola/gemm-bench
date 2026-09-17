@@ -14,6 +14,7 @@ pub(crate) struct RunContext {
     pub(crate) host: String,
     pub(crate) commit: String,
     pub(crate) timestamp: String,
+    pub(crate) file_stamp: String,
 }
 
 /// Looks up the host and commit and reads the clock. Failed lookups become
@@ -28,6 +29,7 @@ pub(crate) fn capture() -> RunContext {
         commit: command_output("git", &["describe", "--always", "--dirty"])
             .unwrap_or_else(|| UNKNOWN.to_owned()),
         timestamp: iso_timestamp(secs),
+        file_stamp: file_stamp(secs),
     }
 }
 
@@ -48,6 +50,13 @@ fn short_host(raw: &str) -> String {
 fn iso_timestamp(secs: u64) -> String {
     let [year, month, day, hour, minute, second] = utc_fields(secs);
     format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+/// The same instant as `iso_timestamp`, without separators, for filenames:
+/// colons are invalid on Windows, and this still sorts chronologically.
+fn file_stamp(secs: u64) -> String {
+    let [year, month, day, hour, minute, second] = utc_fields(secs);
+    format!("{year:04}{month:02}{day:02}T{hour:02}{minute:02}{second:02}Z")
 }
 
 /// Splits Unix seconds into UTC `[year, month, day, hour, minute, second]`,
@@ -91,13 +100,20 @@ fn parse_cpu_model(cpuinfo: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{capture, cpu_name, iso_timestamp, parse_cpu_model, short_host};
+    use super::{capture, cpu_name, file_stamp, iso_timestamp, parse_cpu_model, short_host};
 
     #[test]
     fn iso_timestamp_formats_utc_calendar_dates() {
         assert_eq!(iso_timestamp(0), "1970-01-01T00:00:00Z");
         assert_eq!(iso_timestamp(1_709_210_096), "2024-02-29T12:34:56Z");
         assert_eq!(iso_timestamp(2_208_988_800), "2040-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn file_stamp_is_a_compact_sortable_utc_instant() {
+        assert_eq!(file_stamp(0), "19700101T000000Z");
+        assert_eq!(file_stamp(1_709_210_096), "20240229T123456Z");
+        assert_eq!(file_stamp(2_208_988_800), "20400101T000000Z");
     }
 
     #[test]
@@ -113,6 +129,7 @@ mod tests {
         assert!(!context.commit.is_empty());
         assert_eq!(context.timestamp.len(), "2026-09-17T12:15:00Z".len());
         assert!(context.timestamp.ends_with('Z'));
+        assert_eq!(context.file_stamp.len(), "20260917T121500Z".len());
     }
 
     #[test]
