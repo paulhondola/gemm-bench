@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn write_records_outputs_csv_in_schema_order() {
         let csv_path =
-            std::env::temp_dir().join(format!("rayon-gemm-report-test-{}.csv", std::process::id()));
+            std::env::temp_dir().join(format!("gemm-bench-report-test-{}.csv", std::process::id()));
         let csv_file = std::fs::File::create(&csv_path).expect("create csv file");
 
         super::write_records(csv_file, &[record()]).expect("write records");

@@ -100,7 +100,7 @@ impl Devices {
             #[cfg(target_os = "macos")]
             metal: kernels
                 .contains(&KernelChoice::Mps)
-                .then(rayon_gemm::kernels::mps::default_device_name)
+                .then(gemm_bench::kernels::mps::default_device_name)
                 .flatten()
                 .unwrap_or_else(|| context::UNKNOWN.to_owned()),
         }
@@ -403,7 +403,7 @@ mod tests {
     /// A per-process `.csv` path under the system temp directory, so tests never
     /// write into the repository and parallel test runs do not collide.
     fn temp_output(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("rayon-gemm-test-{}-{name}.csv", std::process::id()))
+        std::env::temp_dir().join(format!("gemm-bench-test-{}-{name}.csv", std::process::id()))
     }
 
     #[test]
@@ -464,7 +464,7 @@ mod tests {
     fn precision_flag_accepts_a_comma_delimited_sweep() {
         let output = temp_output("precision");
         let plan = Cli::try_parse_from([
-            OsStr::new("rayon-gemm"),
+            OsStr::new("gemm-bench"),
             OsStr::new("--precision"),
             OsStr::new("f16,f64"),
             OsStr::new("--output"),
@@ -482,7 +482,7 @@ mod tests {
     fn precision_flag_accepts_integer_precisions() {
         let output = temp_output("integers");
         let plan = Cli::try_parse_from([
-            OsStr::new("rayon-gemm"),
+            OsStr::new("gemm-bench"),
             OsStr::new("--precision"),
             OsStr::new("i32,i64"),
             OsStr::new("--output"),
@@ -502,7 +502,7 @@ mod tests {
     fn static_threads_above_the_matrix_dimension_are_rejected_before_running() {
         let output = temp_output("static-threads");
         let error = Cli::try_parse_from([
-            OsStr::new("rayon-gemm"),
+            OsStr::new("gemm-bench"),
             OsStr::new("--sizes"),
             OsStr::new("8,64"),
             OsStr::new("--threads"),
@@ -560,7 +560,7 @@ mod tests {
     #[test]
     fn missing_output_directories_are_created_before_running() {
         let root =
-            std::env::temp_dir().join(format!("rayon-gemm-test-{}-nested", std::process::id()));
+            std::env::temp_dir().join(format!("gemm-bench-test-{}-nested", std::process::id()));
         let output = root.join("a/b/results.csv");
 
         drop(open_output(&output).expect("missing parent directories should be created"));
@@ -599,7 +599,7 @@ mod tests {
     fn no_progress_flag_is_parsed() {
         let output = temp_output("no_progress");
         let plan = Cli::try_parse_from([
-            OsStr::new("rayon-gemm"),
+            OsStr::new("gemm-bench"),
             OsStr::new("--no-progress"),
             OsStr::new("--output"),
             output.as_os_str(),
@@ -616,7 +616,7 @@ mod tests {
     fn total_configurations_counts_worker_and_single_thread_kernels_correctly() {
         let output = temp_output("count");
         let plan = Cli::try_parse_from([
-            OsStr::new("rayon-gemm"),
+            OsStr::new("gemm-bench"),
             OsStr::new("--sizes"),
             OsStr::new("64,128"),
             OsStr::new("--precision"),
@@ -642,7 +642,7 @@ mod tests {
     fn mps_parses_as_a_kernel_choice() {
         let output = temp_output("mps");
         let plan = Cli::try_parse_from([
-            OsStr::new("rayon-gemm"),
+            OsStr::new("gemm-bench"),
             OsStr::new("--kernel"),
             OsStr::new("mps"),
             OsStr::new("--output"),
@@ -666,7 +666,7 @@ mod tests {
     fn mps_with_f64_precision_is_rejected_before_running() {
         let output = temp_output("mps_f64");
         let error = Cli::try_parse_from([
-            OsStr::new("rayon-gemm"),
+            OsStr::new("gemm-bench"),
             OsStr::new("--kernel"),
             OsStr::new("mps"),
             OsStr::new("--precision"),
@@ -690,7 +690,7 @@ mod tests {
     fn mps_with_integer_precision_is_rejected_before_running() {
         let output = temp_output("mps_i32");
         let error = Cli::try_parse_from([
-            OsStr::new("rayon-gemm"),
+            OsStr::new("gemm-bench"),
             OsStr::new("--kernel"),
             OsStr::new("mps"),
             OsStr::new("--precision"),

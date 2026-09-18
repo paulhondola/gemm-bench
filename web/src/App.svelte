@@ -38,7 +38,7 @@ const fmt = (v: Row[string]) =>
 </script>
 
 <main>
-	<h1>rayon-gemm results</h1>
+	<h1>gemm-bench results</h1>
 
 	{#if error}
 		<p class="error">{error}</p>

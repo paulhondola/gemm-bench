@@ -3,13 +3,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rayon::ThreadPoolBuilder;
-use rayon_gemm::{
+use gemm_bench::{
     Element, GemmKernel, Matrix,
     kernels::{
         IkjGemm, NaiveGemm, RayonIkjGemm, RayonTiledGemm, StaticIkjGemm, StaticTiledGemm, TiledGemm,
     },
 };
+use rayon::ThreadPoolBuilder;
 use serde::Serialize;
 
 use crate::{
@@ -299,7 +299,7 @@ fn tolerance<T: Element>(n: usize) -> f64 {
 mod tests {
     use std::time::Duration;
 
-    use rayon_gemm::Matrix;
+    use gemm_bench::Matrix;
 
     use super::{benchmark_inputs, max_relative_error, summarize, tolerance};
 

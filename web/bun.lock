@@ -5,7 +5,7 @@
     "": {
       "name": "web",
       "dependencies": {
-        "@duckdb/duckdb-wasm": "^1.33.1-dev57.0",
+        "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.13",

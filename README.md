@@ -1,4 +1,4 @@
-# rayon-gemm
+# gemm-bench
 
 High-performance, safe Rust benchmarks for dense, row-major square matrix multiplication ($C = A \times B$) across CPU and Apple Silicon GPU backends at `f16`, `f32`, `f64`, `i32`, and `i64` precisions, with a web dashboard for exploring the results.
 
@@ -8,7 +8,7 @@ High-performance, safe Rust benchmarks for dense, row-major square matrix multip
 
 | Path | Contents |
 | :--- | :--- |
-| [`benchmark/`](benchmark) | Rust crate `rayon-gemm`: the GEMM kernels and the benchmark CLI that produces the data. |
+| [`benchmark/`](benchmark) | Rust crate `gemm-bench`: the GEMM kernels and the benchmark CLI that produces the data. |
 | [`web/`](web) | Bun + Vite + Svelte + TypeScript dashboard that queries the data in the browser with DuckDB-WASM. Deployed to GitHub Pages. |
 | [`data/`](data) | Benchmark runs as `runs/<host>/<timestamp>.csv`, and `build.sql`, which validates and merges them for the dashboard. |
 | [`justfile`](justfile) | Task runner for every build, run, lint, and check command. |
@@ -34,8 +34,8 @@ The `mps` GPU kernel requires macOS on Apple Silicon. Everything else runs on an
 ## Quick Start
 
 ```sh
-git clone https://github.com/paulhondola/rayon-gemm.git
-cd rayon-gemm
+git clone https://github.com/paulhondola/gemm-bench.git
+cd gemm-bench
 just build                # install and build all dependencies
 just test                 # run the benchmark crate's test suite
 just bench --sizes 256,512 --kernel ikj,rayon-ikj
@@ -51,7 +51,7 @@ Run `just` with no arguments to list every recipe.
 | Command | What it runs | Use it to |
 | :--- | :--- | :--- |
 | `just bench [ARGS]` | `cargo run --release --manifest-path benchmark/Cargo.toml -- [ARGS]` | Run a benchmark sweep. Every argument is forwarded to the CLI (see [CLI Options](#cli-options)). Results go to `data/runs/<host>/<timestamp>.csv` unless `--output` is given. |
-| `just build` | `just build-bench`, then `just build-web` | Produce the optimized benchmark binary (`benchmark/target/release/rayon-gemm`) and the static dashboard (`web/dist/`). Run one half with `just build-bench` (`cargo build --release`) or `just build-web` (`just data`, then `bun install && bun run build`). |
+| `just build` | `just build-bench`, then `just build-web` | Produce the optimized benchmark binary (`benchmark/target/release/gemm-bench`) and the static dashboard (`web/dist/`). Run one half with `just build-bench` (`cargo build --release`) or `just build-web` (`just data`, then `bun install && bun run build`). |
 | `just data` | `duckdb -bail < data/build.sql` | Validate every `data/runs/**/*.csv` and merge them into `web/public/results.parquet`, the file the dashboard queries. A run file missing a required value fails with its filename. `just dev` and `just build` run it first. |
 | `just dev` | `bun dev` in `web/` | Start the Vite dev server with hot reload for the dashboard. |
 | `just test` | `cargo test --manifest-path benchmark/Cargo.toml` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests. There is no `test-web` target: `web/` has no tests yet. |
