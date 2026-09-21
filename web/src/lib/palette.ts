@@ -41,10 +41,23 @@ const ORDER = [
  * follows the entity, so a legend toggle must never repaint the survivors.
  */
 export function paletteFor(allKernels: string[]): Map<string, string> {
-	const present = new Set(allKernels);
-	const known = ORDER.filter((k) => present.has(k));
-	const extra = allKernels.filter((k) => !ORDER.includes(k)).sort();
-	return new Map(
-		[...known, ...extra].slice(0, MAX_SERIES).map((k, i) => [k, SLOTS[i]]),
-	);
+	const present = [...new Set(allKernels)];
+	const out = new Map<string, string>();
+
+	// A known kernel takes its documented slot whatever else is present, so
+	// filtering the dataset can never repaint a kernel that survives.
+	for (const kernel of present) {
+		const slot = ORDER.indexOf(kernel);
+		if (slot !== -1) out.set(kernel, SLOTS[slot]);
+	}
+
+	// Unknown kernels fill only the slots no known kernel claimed, in sorted
+	// order, and never receive a generated hue once those run out.
+	const free = SLOTS.filter((_, i) => !out.has(ORDER[i]));
+	const unknown = present.filter((k) => !ORDER.includes(k)).sort();
+	for (let i = 0; i < Math.min(unknown.length, free.length); i++) {
+		out.set(unknown[i], free[i]);
+	}
+
+	return out;
 }

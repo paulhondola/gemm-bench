@@ -20,21 +20,24 @@ test("known kernels take their documented slot", () => {
 	expect(p.get("mps")).toBe("#e66767");
 });
 
-test("colour follows the kernel, not its rank", () => {
-	// The palette is built from the whole dataset, so hiding a series in the
-	// legend must not repaint the ones that remain.
+test("a survivor keeps its colour when another kernel is filtered out", () => {
 	const full = paletteFor(all);
-	const fewer = paletteFor(all);
-	expect(fewer.get("mps")).toBe(full.get("mps"));
+	const without = paletteFor(all.filter((k) => k !== "naive-ijk"));
+	expect(without.get("mps")).toBe(full.get("mps"));
+	expect(without.get("tiled")).toBe(full.get("tiled"));
+	expect(without.has("naive-ijk")).toBe(false);
 });
 
-test("an unknown kernel is appended, never cycled into an occupied slot", () => {
+test("an unknown kernel takes a free slot, never an occupied one", () => {
 	const p = paletteFor([...all.slice(0, 7), "accelerate"]);
-	expect(p.get("accelerate")).toBe("#e66767");
+	expect(p.get("accelerate")).toBe("#199e70");
 	expect(new Set(p.values()).size).toBe(p.size);
 });
 
 test("beyond eight kernels the map caps rather than generating a hue", () => {
 	const p = paletteFor([...all, "accelerate", "packed-simd"]);
 	expect(p.size).toBe(MAX_SERIES);
+	expect(p.has("accelerate")).toBe(false);
+	expect(p.has("packed-simd")).toBe(false);
+	expect(p.get("naive-ijk")).toBe("#3987e5");
 });
