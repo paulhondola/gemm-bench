@@ -4,3 +4,85 @@ import type { Row } from "./db";
 export function precisions(rows: Row[]): string[] {
 	return [...new Set(rows.map((r) => String(r.precision)))].sort();
 }
+
+export type Family = "serial" | "parallel" | "gpu";
+
+/**
+ * Kernel family, read off the rows rather than the kernel's name. A prefix
+ * heuristic would break on the first kernel named differently; a kernel is
+ * parallel because the harness produced multi-thread rows for it.
+ */
+export function families(rows: Row[]): Map<string, Family> {
+	const out = new Map<string, Family>();
+	for (const r of rows) {
+		const kernel = String(r.kernel);
+		if (r.backend === "metal") {
+			out.set(kernel, "gpu");
+			continue;
+		}
+		if (out.get(kernel) === "gpu") continue;
+		if (Number(r.threads) > 1 || out.get(kernel) === "parallel") {
+			out.set(kernel, "parallel");
+		} else if (!out.has(kernel)) {
+			out.set(kernel, "serial");
+		}
+	}
+	return out;
+}
+
+export function kernels(rows: Row[]): string[] {
+	return [...new Set(rows.map((r) => String(r.kernel)))].sort();
+}
+
+const ascending = (a: number, b: number) => a - b;
+
+export function sizesFor(rows: Row[], precision: string): number[] {
+	return [
+		...new Set(
+			rows.filter((r) => r.precision === precision).map((r) => Number(r.n)),
+		),
+	].sort(ascending);
+}
+
+export function allSizes(rows: Row[]): number[] {
+	return [...new Set(rows.map((r) => Number(r.n)))].sort(ascending);
+}
+
+export function threadsFor(
+	rows: Row[],
+	precision: string,
+	n: number,
+): number[] {
+	return [
+		...new Set(
+			rows
+				.filter((r) => r.precision === precision && Number(r.n) === n)
+				.map((r) => Number(r.threads)),
+		),
+	].sort(ascending);
+}
+
+/**
+ * f32 when present — it is the CLI default and the canonical comparison.
+ * Otherwise the precision covering the most sizes, so the landing chart has
+ * the widest x-axis it can. Name order breaks ties so the choice is stable.
+ */
+export function defaultPrecision(rows: Row[]): string {
+	const available = precisions(rows);
+	if (available.includes("f32")) return "f32";
+	return (
+		available
+			.slice()
+			.sort(
+				(a, b) =>
+					sizesFor(rows, b).length - sizesFor(rows, a).length ||
+					a.localeCompare(b),
+			)[0] ?? ""
+	);
+}
+
+/** The largest size the selected precision actually has, not the largest overall. */
+export function defaultSize(rows: Row[], precision: string): number {
+	const sizes = sizesFor(rows, precision);
+	return sizes[sizes.length - 1] ?? 0;
+}
