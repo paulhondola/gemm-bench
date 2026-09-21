@@ -24,6 +24,7 @@
 		"vite": "^8.3.0"
 	},
 	"dependencies": {
-		"@duckdb/duckdb-wasm": "1.33.1-dev57.0"
+		"@duckdb/duckdb-wasm": "1.33.1-dev57.0",
+		"@observablehq/plot": "0.6.17"
 	}
 }
