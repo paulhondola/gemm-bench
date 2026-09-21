@@ -6,7 +6,9 @@ import { paletteFor } from "../palette";
  * Derived from Plot.plot's own signature rather than an exported type name,
  * so it stays correct across Plot versions.
  */
-export type PlotSpec = Parameters<typeof import("@observablehq/plot").plot>[0];
+export type PlotSpec = NonNullable<
+	Parameters<typeof import("@observablehq/plot").plot>[0]
+>;
 
 export interface Filters {
 	precision: string;
