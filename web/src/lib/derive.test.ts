@@ -2,9 +2,13 @@ import { expect, test } from "bun:test";
 import type { Row } from "./db";
 import {
 	allSizes,
+	BASELINE_KERNEL,
+	bestPerKernel,
 	defaultPrecision,
 	defaultSize,
 	families,
+	hasKernel,
+	hasSingleThreadBaseline,
 	precisions,
 	sizesFor,
 } from "./derive";
@@ -119,4 +123,91 @@ test("defaults prefer f32 and the largest size that precision has", () => {
 test("without f32, the default precision is the one with the widest coverage", () => {
 	const noF32 = mixed.filter((r) => r.precision !== "f32");
 	expect(defaultPrecision(noF32)).toBe("i64");
+});
+
+const threaded: Row[] = [
+	{
+		kernel: "rayon-ikj",
+		precision: "f32",
+		n: 64,
+		threads: 1,
+		gops: 10,
+		backend: "cpu",
+	},
+	{
+		kernel: "rayon-ikj",
+		precision: "f32",
+		n: 64,
+		threads: 4,
+		gops: 38,
+		backend: "cpu",
+	},
+	{
+		kernel: "rayon-ikj",
+		precision: "f32",
+		n: 64,
+		threads: 8,
+		gops: 31,
+		backend: "cpu",
+	},
+	{
+		kernel: "ikj",
+		precision: "f32",
+		n: 64,
+		threads: 1,
+		gops: 12,
+		backend: "cpu",
+	},
+];
+
+test("bestPerKernel keeps the peak per kernel and size", () => {
+	const best = bestPerKernel(threaded);
+	expect(best).toHaveLength(2);
+	const rayon = best.find((r) => r.kernel === "rayon-ikj");
+	expect(rayon?.gops).toBe(38);
+	expect(rayon?.threads).toBe(4);
+});
+
+test("bestPerKernel keeps serial kernels in frame", () => {
+	// The bug this guards: pinning a thread count would drop every kernel
+	// that only ever has threads=1 rows.
+	expect(
+		bestPerKernel(threaded)
+			.map((r) => r.kernel)
+			.sort(),
+	).toEqual(["ikj", "rayon-ikj"]);
+});
+
+test("bestPerKernel keeps the first row on a tie", () => {
+	const tied: Row[] = [
+		{
+			kernel: "ikj",
+			precision: "f32",
+			n: 64,
+			threads: 1,
+			gops: 10,
+			backend: "cpu",
+		},
+		{
+			kernel: "ikj",
+			precision: "f32",
+			n: 64,
+			threads: 2,
+			gops: 10,
+			backend: "cpu",
+		},
+	];
+	expect(bestPerKernel(tied)[0].threads).toBe(1);
+});
+
+test("bestPerKernel returns nothing for no rows", () => {
+	expect(bestPerKernel([])).toEqual([]);
+});
+
+test("baseline guards detect what a partial sweep is missing", () => {
+	expect(hasKernel(threaded, BASELINE_KERNEL)).toBe(false);
+	expect(hasSingleThreadBaseline(threaded)).toBe(true);
+	expect(hasSingleThreadBaseline(threaded.filter((r) => r.threads !== 1))).toBe(
+		false,
+	);
 });
