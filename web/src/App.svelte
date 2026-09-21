@@ -25,9 +25,9 @@ $effect(() => {
 	if (!precision) return;
 	// Filter values come from the data itself, so they are safe to inline.
 	query(
-		`SELECT kernel, threads, median_ms, min_ms, stddev_ms, gflops
+		`SELECT kernel, threads, median_ms, min_ms, stddev_ms, gops
 		 FROM results WHERE precision = '${precision}' AND n = ${n}
-		 ORDER BY gflops DESC`,
+		 ORDER BY gops DESC`,
 	)
 		.then((r) => (rows = r))
 		.catch((e) => (error = String(e)));

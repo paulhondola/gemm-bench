@@ -27,7 +27,7 @@ pub(crate) struct BenchmarkRecord {
     pub(crate) precision: &'static str,
     pub(crate) n: usize,
     pub(crate) threads: usize,
-    pub(crate) gflops: f64,
+    pub(crate) gops: f64,
     pub(crate) mean_rel_error_f64: f64,
     pub(crate) median_ms: f64,
     pub(crate) min_ms: f64,
@@ -106,7 +106,7 @@ fn run_precision<T: Element>(
                 }
 
                 let stats = summarize(&samples);
-                let gflops = 2.0 * (n as f64).powi(3) / (stats.median_ms / 1_000.0) / 1e9;
+                let gops = 2.0 * (n as f64).powi(3) / (stats.median_ms / 1_000.0) / 1e9;
                 records.push(BenchmarkRecord {
                     kernel: kernel.label().to_owned(),
                     backend: kernel.backend(),
@@ -114,7 +114,7 @@ fn run_precision<T: Element>(
                     precision: precision.label(),
                     n,
                     threads: thread_count,
-                    gflops,
+                    gops,
                     // ponytail: placeholder until roadmap item 4 measures error against an f64 reference.
                     mean_rel_error_f64: 0.0,
                     median_ms: stats.median_ms,

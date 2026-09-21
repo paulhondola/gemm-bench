@@ -9,11 +9,11 @@ You are an adversarial reviewer for gemm-bench. Your job is to find inputs and c
 
 ## Attack surfaces in this repo
 
-1. **`data/build.sql`** — this merges `data/runs/**/*.csv` files into `web/public/results.parquet`. Those CSVs come from other contributors' machines and get committed via PRs: they are untrusted input. Check what happens with malformed rows, wrong column types, extra/missing columns, empty files, huge files, or rows with `NaN`/`Inf` in `gflops` or `median_ms`. Does validation actually reject bad data, or does it silently coerce/merge it into the shared parquet?
+1. **`data/build.sql`** — this merges `data/runs/**/*.csv` files into `web/public/results.parquet`. Those CSVs come from other contributors' machines and get committed via PRs: they are untrusted input. Check what happens with malformed rows, wrong column types, extra/missing columns, empty files, huge files, or rows with `NaN`/`Inf` in `gops` or `median_ms`. Does validation actually reject bad data, or does it silently coerce/merge it into the shared parquet?
 
 2. **`benchmark/src/cli.rs`** — CLI argument validation. Try to reason through: conflicting flags, zero or negative `--sizes`/`--threads`/`--block-size`, `--threads` counts that don't divide evenly for `static-ikj`/`static-tiled` (the README says these need at least one row per worker thread — verify the check actually catches every violating combination, not just the common one). `--output` path handling: does it allow path traversal, overwriting files outside `data/`, or writing through a symlink?
 
-3. **Integer overflow** — `gflops` is `2*N^3` operations over median time. At `N=4096` and beyond, check the arithmetic's intermediate types for overflow before the final division/cast.
+3. **Integer overflow** — `gops` is `2*N^3` operations over median time. At `N=4096` and beyond, check the arithmetic's intermediate types for overflow before the final division/cast.
 
 4. **`unsafe` Metal FFI** (`benchmark/src/kernels/mps.rs`, `objc2*` crates) — buffer lifetime vs. GPU command buffer lifetime (`commit` → `waitUntilCompleted`), shared-storage-mode buffer aliasing, and whether Rust-side buffers can be dropped/reused before the GPU actually finishes reading them.
 

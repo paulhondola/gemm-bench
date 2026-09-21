@@ -12,7 +12,7 @@ SELECT * FROM read_csv('data/runs/**/*.csv', union_by_name = true, filename = tr
     types = {'kernel': 'VARCHAR', 'backend': 'VARCHAR', 'device': 'VARCHAR',
              'precision': 'VARCHAR', 'host': 'VARCHAR', 'commit': 'VARCHAR',
              'timestamp': 'TIMESTAMPTZ', 'n': 'BIGINT', 'threads': 'BIGINT',
-             'gflops': 'DOUBLE', 'mean_rel_error_f64': 'DOUBLE',
+             'gops': 'DOUBLE', 'mean_rel_error_f64': 'DOUBLE',
              'median_ms': 'DOUBLE', 'min_ms': 'DOUBLE', 'stddev_ms': 'DOUBLE',
              'block_size': 'BIGINT', 'repetitions': 'BIGINT'});
 
@@ -23,14 +23,14 @@ CREATE TEMP TABLE _validation_failed AS
 SELECT error('run files missing required values: ' || string_agg(DISTINCT filename, ', '))
 FROM runs
 WHERE kernel IS NULL OR backend IS NULL OR device IS NULL OR precision IS NULL
-   OR n IS NULL OR threads IS NULL OR gflops IS NULL OR mean_rel_error_f64 IS NULL
+   OR n IS NULL OR threads IS NULL OR gops IS NULL OR mean_rel_error_f64 IS NULL
    OR median_ms IS NULL OR min_ms IS NULL OR stddev_ms IS NULL OR repetitions IS NULL
    OR host IS NULL OR commit IS NULL OR "timestamp" IS NULL
 HAVING count(*) > 0;
 
 COPY (
   SELECT kernel, backend, device, precision, n, threads,
-         gflops, mean_rel_error_f64, median_ms, min_ms, stddev_ms,
+         gops, mean_rel_error_f64, median_ms, min_ms, stddev_ms,
          block_size, repetitions, host, commit, "timestamp"
   FROM runs
   ORDER BY host, "timestamp", precision, kernel, n, threads, block_size, repetitions

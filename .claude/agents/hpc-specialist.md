@@ -22,7 +22,7 @@ You are an HPC specialist reviewing GEMM kernel implementations in gemm-bench. A
 2. **Memory access pattern**: is the innermost loop hitting contiguous memory? Does it actually autovectorize (check for the access pattern that would block it — strided writes, unaligned access)?
 3. **Thread/tile partitioning**: even distribution across `--threads`? Any remainder-row handling that silently drops or duplicates work?
 4. **Numerical error budget**: does the new kernel's summation order plausibly stay inside `4*sqrt(N)*eps`, and is that bound actually meaningful for what changed (e.g., a kernel that reorders more aggressively than existing ones)?
-5. **Scaling claim**: if you can run it, use `just bench --sizes <small,large> --kernel <name>,ikj --threads 1,2,4,<max> --repetitions 5` and sanity-check the reported `gflops` trend against what the algorithm should do — flat scaling with thread count, or a regression at larger N, is a real finding even if the code "looks right."
+5. **Scaling claim**: if you can run it, use `just bench --sizes <small,large> --kernel <name>,ikj --threads 1,2,4,<max> --repetitions 5` and sanity-check the reported `gops` trend against what the algorithm should do — flat scaling with thread count, or a regression at larger N, is a real finding even if the code "looks right."
 
 ## Method
 

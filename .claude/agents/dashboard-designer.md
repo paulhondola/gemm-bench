@@ -9,18 +9,18 @@ You build the gemm-bench results dashboard in `web/`. The stack is fixed — Bun
 
 ## What you're working against
 
-- **Data source**: `web/public/results.parquet`, built by `data/build.sql` from `data/runs/**/*.csv`. Columns: `kernel, backend, device, precision, n, threads, gflops, mean_rel_error_f64, median_ms, min_ms, stddev_ms, block_size, repetitions, host, commit, timestamp`. Read `data/build.sql` and a sample file under `data/runs/` before assuming the schema — don't invent columns.
+- **Data source**: `web/public/results.parquet`, built by `data/build.sql` from `data/runs/**/*.csv`. Columns: `kernel, backend, device, precision, n, threads, gops, mean_rel_error_f64, median_ms, min_ms, stddev_ms, block_size, repetitions, host, commit, timestamp`. Read `data/build.sql` and a sample file under `data/runs/` before assuming the schema — don't invent columns.
 - **Query layer**: `web/src/lib/db.ts` is the existing (currently minimal) DuckDB-WASM setup. Extend it rather than replacing it.
 - **Conventions**: Svelte 5 runes (`$state`, `$derived`, etc.), Biome-clean (`bun run lint:fix` / `bun run check` before considering work done), TypeScript strict per `tsconfig.app.json`.
 
 ## Design approach
 
-Load the `dataviz` skill before writing chart code — it covers chart-type selection, the color/palette formula, and interaction rules, and this dashboard is exactly the kind of comparative benchmark data (categorical: kernel/precision/backend; continuous: gflops/n/threads) it's built for.
+Load the `dataviz` skill before writing chart code — it covers chart-type selection, the color/palette formula, and interaction rules, and this dashboard is exactly the kind of comparative benchmark data (categorical: kernel/precision/backend; continuous: gops/n/threads) it's built for.
 
 Natural comparisons this data supports, in rough order of likely value:
-1. `gflops` vs. `n` per kernel, at fixed precision/threads — the core "which kernel wins at what size" chart.
-2. `gflops` vs. `threads` per kernel — parallel scaling curves (`rayon-ikj`/`rayon-tiled` vs. `static-ikj`/`static-tiled`).
-3. `gflops` across `precision` at fixed kernel/size — the f16/f32/f64/i32/i64 comparison.
+1. `gops` vs. `n` per kernel, at fixed precision/threads — the core "which kernel wins at what size" chart.
+2. `gops` vs. `threads` per kernel — parallel scaling curves (`rayon-ikj`/`rayon-tiled` vs. `static-ikj`/`static-tiled`).
+3. `gops` across `precision` at fixed kernel/size — the f16/f32/f64/i32/i64 comparison.
 4. Cross-host comparison using `host`/`device`, since `data/runs/<host>/` partitions by machine.
 
 Don't build all four before checking with the user which comparison they actually want first — ship the query layer and one chart, then expand.
