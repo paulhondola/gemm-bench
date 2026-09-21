@@ -1,4 +1,4 @@
-kernel,backend,device,precision,n,threads,gflops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,block_size,repetitions,host,commit,timestamp
+kernel,backend,device,precision,n,threads,gops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,block_size,repetitions,host,commit,timestamp
 naive-ijk,cpu,Apple M1 Pro,f16,64,1,2.429598872988804,0.0,0.21579199999999998,0.214916,0.004024765372043443,64,5,Pauls-MacBook-Pro,unknown,2026-09-16T18:37:01Z
 ikj,cpu,Apple M1 Pro,f16,64,1,18.696526638613506,0.0,0.028042,0.027625,0.00020001749923444237,64,5,Pauls-MacBook-Pro,unknown,2026-09-16T18:37:01Z
 tiled,cpu,Apple M1 Pro,f16,64,1,18.836920202637156,0.0,0.027833,0.02775,0.00010038177125354994,64,5,Pauls-MacBook-Pro,unknown,2026-09-16T18:37:01Z

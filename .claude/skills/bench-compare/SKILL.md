@@ -1,6 +1,6 @@
 ---
 name: bench-compare
-description: Compare two benchmark run CSVs (before/after a kernel change, or two machines) and report per-kernel gflops deltas against the measurement noise. Use when the user wants to spot regressions or improvements between runs.
+description: Compare two benchmark run CSVs (before/after a kernel change, or two machines) and report per-kernel gops deltas against the measurement noise. Use when the user wants to spot regressions or improvements between runs.
 argument-hint: <before.csv> <after.csv>
 ---
 
@@ -12,8 +12,8 @@ Rows match on `(kernel, device, precision, n, threads)`. `median_ms` and `stddev
 duckdb -markdown -c "
 WITH a AS (SELECT * FROM read_csv('BEFORE')), b AS (SELECT * FROM read_csv('AFTER'))
 SELECT a.kernel, a.device, a.precision, a.n, a.threads,
-       round(a.gflops, 2) AS before, round(b.gflops, 2) AS after,
-       round(100 * (b.gflops - a.gflops) / a.gflops, 1) AS delta_pct,
+       round(a.gops, 2) AS before, round(b.gops, 2) AS after,
+       round(100 * (b.gops - a.gops) / a.gops, 1) AS delta_pct,
        round(100 * greatest(a.stddev_ms / a.median_ms, b.stddev_ms / b.median_ms), 1) AS noise_pct
 FROM a JOIN b USING (kernel, device, precision, n, threads)
 ORDER BY abs(delta_pct) DESC"

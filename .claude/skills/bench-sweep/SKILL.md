@@ -21,4 +21,4 @@ Rules:
 - **Threads:** `parallel-scaling` lists thread counts up to 10. Tell the user to adjust `--threads` to the machine's core count (`sysctl -n hw.ncpu`). `static-*` kernels error if `--threads` exceeds the smallest `--sizes`.
 - Never widen a preset to the default full sweep (`naive-ijk` at N=4096 takes minutes) unless the user asks.
 - If the preset name is missing or unknown, list the presets above and stop.
-- After the run, report the output path the CLI prints and the top few rows by `gflops`. To compare against an earlier run, point the user at `/bench-compare`.
+- After the run, report the output path the CLI prints and the top few rows by `gops`. To compare against an earlier run, point the user at `/bench-compare`.

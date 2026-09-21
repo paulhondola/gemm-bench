@@ -157,15 +157,15 @@ just bench \
 ### Methodology & Output Schema
 
 1. **Warmup Run**: Every configuration executes one untimed warmup pass before measurement, isolating thread pool initialization, cold caches, and dynamic loader overhead from the recorded metrics.
-2. **Timing Statistics**: Each configuration runs `--repetitions` timed passes. Records carry the median, minimum, and sample standard deviation; `gflops` is derived from the median, which is robust to one-sided scheduler and thermal noise.
+2. **Timing Statistics**: Each configuration runs `--repetitions` timed passes. Records carry the median, minimum, and sample standard deviation; `gops` is derived from the median, which is robust to one-sided scheduler and thermal noise.
 3. **Output Verification**: For each size and precision, serial `ikj` computes an untimed reference. After timing, every kernel's output is compared against it, and the run aborts (leaving the existing output file untouched) if the largest element-wise relative error exceeds $4\sqrt{N}\,\varepsilon$, where $\varepsilon$ is the precision's machine epsilon. CPU kernels that sum in the same order as `ikj` match bit-for-bit; the slack covers kernels such as MPS that sum in a different order. Note that `f16` has $\varepsilon = 2^{-10}$, so its check (25% at $N = 4096$) catches broken kernels, not subtle rounding differences. Integers have $\varepsilon = 0$, so `i32`/`i64` outputs must match `ikj` exactly; integer inputs are the small integer numerators ($0$–$28$) rather than fractions, which keeps outputs far from overflow.
 4. **Up-Front Validation**: Invalid plans fail before any work runs or any file is created. `static-ikj` and `static-tiled` need at least one matrix row per worker thread, `mps` rejects `f64`, `i32`, and `i64`, and `--output` must be a `.csv` file path, not a directory.
 5. **Structured Export**: The output file is opened before the sweep but truncated only when results are written, so a failed run leaves earlier results intact.
-   - Columns: `kernel, backend, device, precision, n, threads, gflops, mean_rel_error_f64, median_ms, min_ms, stddev_ms, block_size, repetitions, host, commit, timestamp`.
+   - Columns: `kernel, backend, device, precision, n, threads, gops, mean_rel_error_f64, median_ms, min_ms, stddev_ms, block_size, repetitions, host, commit, timestamp`.
    - `backend` is `cpu` or `metal`. `device` is the CPU model (`sysctl` on macOS, `/proc/cpuinfo` on Linux) or the Metal GPU name.
    - `host` (hostname without domain), `commit` (`git describe --always --dirty`), and `timestamp` (UTC) are captured once per run. Any lookup that fails is written as `unknown`.
    - `mean_rel_error_f64` is `0.0` until accuracy measurement lands.
-   - `gflops` is $2N^3$ operations (floating-point or integer) per second (from the median time), in billions.
+   - `gops` is $2N^3$ operations per second (from the median time), in billions. The count is $N^3$ multiplies plus $N^3$ adds whatever the element type, so one figure covers the floating-point and the integer precisions alike; `precision` says which kind of operation was counted.
 
 ---
 
