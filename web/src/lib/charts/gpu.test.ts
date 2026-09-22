@@ -3,7 +3,13 @@ import type { Row } from "../db";
 import { gpuRatio, gpuVsCpu, hasGpu } from "./gpu";
 import { type Filters, makeCtx } from "./types";
 
-const f: Filters = { precision: "f32", n: 512, kernel: "mps", relative: false };
+const f: Filters = {
+	precision: "f32",
+	n: 512,
+	kernel: "mps",
+	blockSize: 32,
+	relative: false,
+};
 
 const rows: Row[] = [
 	{

@@ -14,6 +14,7 @@ export interface Filters {
 	precision: string;
 	n: number;
 	kernel: string;
+	blockSize: number;
 	/** true renders the chart's relative projection (speedup / ratio). */
 	relative: boolean;
 }

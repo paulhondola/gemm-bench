@@ -77,6 +77,40 @@ export function allSizes(rows: Row[]): number[] {
 	return [...new Set(rows.map((r) => Number(r.n)))].sort(ascending);
 }
 
+/** Every distinct block size present, sorted. */
+export function blockSizes(rows: Row[]): number[] {
+	return [...new Set(rows.map((r) => Number(r.block_size)))].sort(ascending);
+}
+
+/** Block sizes available for a given precision and size, for the disabled-pill reason text. */
+export function blockSizesFor(
+	rows: Row[],
+	precision: string,
+	n: number,
+): number[] {
+	return [
+		...new Set(
+			rows
+				.filter((r) => r.precision === precision && Number(r.n) === n)
+				.map((r) => Number(r.block_size)),
+		),
+	].sort(ascending);
+}
+
+/**
+ * The block size with the widest coverage (most distinct `n` values), ties
+ * broken numerically so the choice is stable. 0 when there are no rows.
+ */
+export function defaultBlockSize(rows: Row[]): number {
+	const sizes = blockSizes(rows);
+	if (!sizes.length) return 0;
+	const coverage = (b: number) =>
+		new Set(
+			rows.filter((r) => Number(r.block_size) === b).map((r) => Number(r.n)),
+		).size;
+	return sizes.slice().sort((a, b) => coverage(b) - coverage(a) || a - b)[0];
+}
+
 export function threadsFor(
 	rows: Row[],
 	precision: string,

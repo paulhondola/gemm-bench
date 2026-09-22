@@ -4,6 +4,9 @@ import { rowsForTab, visibleTabs } from "./lib/charts/index";
 import { makeCtx } from "./lib/charts/types";
 import {
 	allSizes,
+	blockSizes,
+	blockSizesFor,
+	defaultBlockSize,
 	defaultParallelKernel,
 	defaultSize,
 	families,
@@ -19,14 +22,18 @@ const filters = $derived({
 	precision: store.precision,
 	n: store.n,
 	kernel: store.kernel,
+	blockSize: store.blockSize,
 	relative: store.relative,
 });
 const tabs = $derived(visibleTabs(store.rows, filters, ctx));
 const tab = $derived(tabs.find((t) => t.id === store.tab) ?? tabs[0]);
 const scoped = $derived(
-	tab ? rowsForTab(tab, store.rows, store.precision) : [],
+	tab ? rowsForTab(tab, store.rows, store.precision, store.blockSize) : [],
 );
 const available = $derived(sizesFor(store.rows, store.precision));
+const availableBlockSizes = $derived(
+	blockSizesFor(store.rows, store.precision, store.n),
+);
 // The kernel pill group is threading-tab-only and must offer only the
 // kernels that tab's chart can plot — parallel-family kernels — not every
 // kernel in scope.
@@ -39,6 +46,9 @@ function pickPrecision(p: string) {
 	if (!sizesFor(store.rows, p).includes(store.n)) {
 		store.n = defaultSize(store.rows, p);
 	}
+	if (!blockSizesFor(store.rows, p, store.n).includes(store.blockSize)) {
+		store.blockSize = defaultBlockSize(store.rows);
+	}
 	const family = families(store.rows);
 	const kernelStillValid = store.rows.some(
 		(r) =>
@@ -49,6 +59,19 @@ function pickPrecision(p: string) {
 	if (!kernelStillValid) {
 		store.kernel = defaultParallelKernel(store.rows, p);
 	}
+}
+
+function pickSize(s: number) {
+	store.n = s;
+	if (
+		!blockSizesFor(store.rows, store.precision, s).includes(store.blockSize)
+	) {
+		store.blockSize = defaultBlockSize(store.rows);
+	}
+}
+
+function pickBlockSize(b: number) {
+	store.blockSize = b;
 }
 
 function selectTab(id: string) {
@@ -112,7 +135,23 @@ function selectTab(id: string) {
 								: `no ${store.precision} runs at N = ${s}`}
 							aria-pressed={s === store.n}
 							class:on={s === store.n}
-							onclick={() => (store.n = s)}>N = {s}</button>
+							onclick={() => pickSize(s)}>N = {s}</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if tab.controls.includes("blockSize")}
+				<div class="group" role="group" aria-label="Block size">
+					{#each blockSizes(store.rows) as b}
+						<button
+							type="button"
+							disabled={!availableBlockSizes.includes(b)}
+							title={availableBlockSizes.includes(b)
+								? ""
+								: `no b = ${b} runs at N = ${store.n}`}
+							aria-pressed={b === store.blockSize}
+							class:on={b === store.blockSize}
+							onclick={() => pickBlockSize(b)}>b = {b}</button>
 					{/each}
 				</div>
 			{/if}

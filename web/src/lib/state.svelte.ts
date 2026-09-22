@@ -1,5 +1,6 @@
 import { query, type Row } from "./db";
 import {
+	defaultBlockSize,
 	defaultParallelKernel,
 	defaultPrecision,
 	defaultSize,
@@ -13,6 +14,7 @@ export const store = $state({
 	precision: "",
 	n: 0,
 	kernel: "",
+	blockSize: 0,
 	relative: false,
 	tab: "overview",
 	dropped: 0,
@@ -28,6 +30,7 @@ export async function boot(): Promise<void> {
 		store.precision = defaultPrecision(rows);
 		store.n = defaultSize(rows, store.precision);
 		store.kernel = defaultParallelKernel(rows, store.precision);
+		store.blockSize = defaultBlockSize(rows);
 		store.loaded = true;
 	} catch (e) {
 		store.error = String(e);

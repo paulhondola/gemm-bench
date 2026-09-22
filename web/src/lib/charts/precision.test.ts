@@ -3,7 +3,13 @@ import type { Row } from "../db";
 import { throughputByPrecision } from "./precision";
 import { type Filters, makeCtx } from "./types";
 
-const f: Filters = { precision: "f32", n: 64, kernel: "ikj", relative: false };
+const f: Filters = {
+	precision: "f32",
+	n: 64,
+	kernel: "ikj",
+	blockSize: 32,
+	relative: false,
+};
 
 const rows: Row[] = [
 	{
