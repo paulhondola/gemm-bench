@@ -13,6 +13,7 @@ import {
 	kernels,
 	sizesFor,
 } from "./lib/derive";
+import PickerGroup from "./lib/PickerGroup.svelte";
 import { boot, store } from "./lib/state.svelte";
 
 boot();
@@ -111,61 +112,48 @@ function selectTab(id: string) {
 
 		<div class="controls">
 			{#if tab.controls.includes("precision") || tab.inertPrecision}
-				<div class="group" role="group" aria-label="Precision">
-					{#each [...new Set(store.rows.map((r) => String(r.precision)))].sort() as p}
-						<button
-							type="button"
-							disabled={tab.inertPrecision}
-							title={tab.inertPrecision ? "Precision is this chart's x-axis" : ""}
-							aria-pressed={p === store.precision}
-							class:on={p === store.precision}
-							onclick={() => pickPrecision(p)}>{p}</button>
-					{/each}
-				</div>
+				<PickerGroup
+					label="Precision"
+					items={[...new Set(store.rows.map((r) => String(r.precision)))].sort()}
+					selected={store.precision}
+					disabled={() => Boolean(tab.inertPrecision)}
+					title={() =>
+						tab.inertPrecision ? "Precision is this chart's x-axis" : ""}
+					onSelect={pickPrecision} />
 			{/if}
 
 			{#if tab.controls.includes("n")}
-				<div class="group" role="group" aria-label="Matrix size">
-					{#each allSizes(store.rows) as s}
-						<button
-							type="button"
-							disabled={!available.includes(s)}
-							title={available.includes(s)
-								? ""
-								: `no ${store.precision} runs at N = ${s}`}
-							aria-pressed={s === store.n}
-							class:on={s === store.n}
-							onclick={() => pickSize(s)}>N = {s}</button>
-					{/each}
-				</div>
+				<PickerGroup
+					label="Matrix size"
+					items={allSizes(store.rows)}
+					selected={store.n}
+					format={(s) => `N = ${s}`}
+					disabled={(s) => !available.includes(s)}
+					title={(s) =>
+						available.includes(s) ? "" : `no ${store.precision} runs at N = ${s}`}
+					onSelect={pickSize} />
 			{/if}
 
 			{#if tab.controls.includes("blockSize")}
-				<div class="group" role="group" aria-label="Block size">
-					{#each blockSizes(store.rows) as b}
-						<button
-							type="button"
-							disabled={!availableBlockSizes.includes(b)}
-							title={availableBlockSizes.includes(b)
-								? ""
-								: `no ${store.precision} b = ${b} runs at N = ${store.n}`}
-							aria-pressed={b === store.blockSize}
-							class:on={b === store.blockSize}
-							onclick={() => pickBlockSize(b)}>b = {b}</button>
-					{/each}
-				</div>
+				<PickerGroup
+					label="Block size"
+					items={blockSizes(store.rows)}
+					selected={store.blockSize}
+					format={(b) => `b = ${b}`}
+					disabled={(b) => !availableBlockSizes.includes(b)}
+					title={(b) =>
+						availableBlockSizes.includes(b)
+							? ""
+							: `no ${store.precision} b = ${b} runs at N = ${store.n}`}
+					onSelect={pickBlockSize} />
 			{/if}
 
 			{#if tab.controls.includes("kernel")}
-				<div class="group" role="group" aria-label="Kernel">
-					{#each parallelKernelList as k}
-						<button
-							type="button"
-							aria-pressed={k === store.kernel}
-							class:on={k === store.kernel}
-							onclick={() => (store.kernel = k)}>{k}</button>
-					{/each}
-				</div>
+				<PickerGroup
+					label="Kernel"
+					items={parallelKernelList}
+					selected={store.kernel}
+					onSelect={(k) => (store.kernel = k)} />
 			{/if}
 
 			<label class="toggle">
@@ -262,33 +250,6 @@ function selectTab(id: string) {
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 16px;
-	}
-	.group {
-		display: flex;
-		gap: 6px;
-		padding: 3px;
-		background: #15181b;
-		border: 1px solid #24292e;
-		border-radius: 8px;
-	}
-	.group button {
-		min-height: 36px;
-		padding: 0 14px;
-		border: none;
-		border-radius: 6px;
-		background: transparent;
-		color: #9aa1a8;
-		font-family: "IBM Plex Mono", monospace;
-		font-size: 13px;
-		cursor: pointer;
-	}
-	.group button.on {
-		background: #e6e3dc;
-		color: #0e1012;
-	}
-	.group button:disabled {
-		opacity: 0.35;
-		cursor: not-allowed;
 	}
 	.toggle {
 		font-size: 13px;
