@@ -19,9 +19,13 @@ build-bench:
 build-web: data
     cd web && bun install && bun run build
 
-test:
-    # No test-web: `bun test` fails with no test files in web/.
+test: test-bench test-web
+
+test-bench:
     cargo test --manifest-path benchmark/Cargo.toml
+
+test-web:
+    cd web && bun test
 
 lint: lint-bench lint-web
 

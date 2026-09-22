@@ -1,80 +1,15 @@
 :root {
-	--text: #1f1d24;
-	--muted: #6b6375;
-	--bg: #fff;
-	--border: #e5e4e7;
-	--error: #b42318;
-	color-scheme: light dark;
-	font:
-		15px / 1.5 system-ui,
-		"Segoe UI",
-		Roboto,
-		sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-	:root {
-		--text: #ecebef;
-		--muted: #9d97a6;
-		--bg: #16171d;
-		--border: #2e303a;
-		--error: #f97066;
-	}
+	color-scheme: dark;
+	font-family: "IBM Plex Sans", system-ui, sans-serif;
 }
 
 body {
 	margin: 0;
-	background: var(--bg);
-	color: var(--text);
+	background: #0e1012;
+	color: #e6e3dc;
 }
 
-main {
-	max-width: 960px;
-	margin: 0 auto;
-	padding: 24px 16px;
-}
-
-.filters {
-	display: flex;
-	gap: 16px;
-	margin-bottom: 16px;
-}
-
-label {
-	display: flex;
-	gap: 8px;
-	align-items: center;
-	color: var(--muted);
-}
-
-.scroll {
-	overflow-x: auto;
-}
-
-table {
-	border-collapse: collapse;
-	width: 100%;
-	font-variant-numeric: tabular-nums;
-}
-
-th,
-td {
-	padding: 6px 12px;
-	border-bottom: 1px solid var(--border);
-	text-align: right;
-	white-space: nowrap;
-}
-
-th:first-child,
-td:first-child {
-	text-align: left;
-}
-
-th {
-	color: var(--muted);
-	font-weight: 600;
-}
-
-.error {
-	color: var(--error);
+button:focus-visible {
+	outline: 2px solid #e8743b;
+	outline-offset: 2px;
 }
