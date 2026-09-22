@@ -158,6 +158,18 @@ test("a kernel missing a block size gets an explicit gap, not a line straight th
 			backend: "cpu",
 			block_size: 32,
 		},
+		// ikj does have a block_size=64 row elsewhere (n=1024), so across the
+		// dataset it's a genuinely swept kernel, not a single-block-size one —
+		// the gap below is raggedness at n=512, not the whole kernel missing.
+		{
+			kernel: "ikj",
+			precision: "f32",
+			n: 1024,
+			threads: 1,
+			gops: 22,
+			backend: "cpu",
+			block_size: 64,
+		},
 	];
 	const spec = blockSizeSweep(ragged, f, makeCtx(ragged));
 	expect(spec).not.toBeNull();
@@ -167,6 +179,34 @@ test("a kernel missing a block size gets an explicit gap, not a line straight th
 	};
 	const gap = line.data.find((d) => d.kernel === "ikj" && d.block_size === 64);
 	expect(gap?.gops).toBeNull();
+});
+
+test("a kernel with only one block size is excluded, even at a dominant gops", () => {
+	// mps was measured at exactly one block size but at a much larger gops
+	// than the swept kernels — on a linear axis it would flatten the actual
+	// comparison (tiled 30->50) into a sliver at the bottom.
+	const withDominant: Row[] = [
+		...rows,
+		{
+			kernel: "mps",
+			precision: "f32",
+			n: 512,
+			threads: 1,
+			gops: 660,
+			backend: "gpu",
+			block_size: 32,
+		},
+	];
+	const spec = blockSizeSweep(withDominant, f, makeCtx(withDominant));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	const dot = spec.marks[1] as { data: { kernel: string; gops: number }[] };
+	expect(dot.data.some((d) => d.kernel === "mps")).toBe(false);
+	const maxPlotted = Math.max(...dot.data.map((d) => d.gops));
+	// 660 (mps) must not leak into the plotted range; the swept kernels top
+	// out at tiled's 50.
+	expect(maxPlotted).toBe(50);
+	expect(spec.color?.domain).not.toContain("mps");
 });
 
 test("the legend lists only the kernels actually plotted", () => {

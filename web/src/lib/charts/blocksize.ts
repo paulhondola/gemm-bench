@@ -11,8 +11,16 @@ type BlockGapPoint = { block_size: number; kernel: string; gops: null };
  * pinned by the caller's row scoping / f.n filter.
  */
 export const blockSizeSweep: ChartSpec = (rows, f, ctx) => {
+	// ctx.singleBlockSize is the same predicate rowsForTab uses to *keep* a
+	// one-block-size kernel (e.g. mps) visible on pinned tabs — there it's a
+	// valid measurement to show. Here it's the opposite: a kernel with nothing
+	// to sweep contributes no comparison, only a lone point that can dominate
+	// the linear y-axis and squash the kernels that do vary.
 	const atSize = rows.filter(
-		(r) => Number(r.n) === f.n && ctx.palette.has(String(r.kernel)),
+		(r) =>
+			Number(r.n) === f.n &&
+			ctx.palette.has(String(r.kernel)) &&
+			!ctx.singleBlockSize.has(String(r.kernel)),
 	);
 
 	const best = new Map<string, BlockPoint>();

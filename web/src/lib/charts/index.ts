@@ -110,7 +110,7 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "Throughput vs block size",
-				note: "Every kernel is plotted, and no column records which ones actually do cache blocking. For a kernel that does not block, the two points are independent repeat runs — any gap between them is run-to-run noise, not a block-size effect. Read a large, consistent change as real and a small wobble as noise.",
+				note: "Kernels measured at only one block size (e.g. mps) have nothing to sweep and are omitted here. No column records which of the remaining kernels actually do cache blocking — for one that does not, the two points are independent repeat runs, and any gap between them is run-to-run noise, not a block-size effect. Read a large, consistent change as real and a small wobble as noise.",
 				spec: blockSizeSweep,
 			},
 		],
