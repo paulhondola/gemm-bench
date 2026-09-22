@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
+import { gpuVsCpu } from "./gpu";
 import { rowsForTab, TABS, visibleTabs } from "./index";
 import { type Filters, makeCtx } from "./types";
 
@@ -64,7 +65,7 @@ test("every tab declares its own controls", () => {
 	const precision = TABS.find((t) => t.id === "precision");
 	expect(precision?.inertPrecision).toBe(true);
 	const gpu = TABS.find((t) => t.id === "gpu");
-	expect(gpu?.inertBlockSize).toBe(true);
+	expect(gpu?.inertBlockSize).toBeUndefined();
 	const blocksize = TABS.find((t) => t.id === "blocksize");
 	expect(blocksize?.inertBlockSize).toBe(true);
 });
@@ -173,7 +174,13 @@ test("a non-selected block size does not leak into a pinned chart", () => {
 	const overview = TABS.find((t) => t.id === "overview");
 	expect(overview).toBeDefined();
 	if (!overview) return;
-	const scoped = rowsForTab(overview, twoBlockSizes, "f32", 32);
+	const scoped = rowsForTab(
+		overview,
+		twoBlockSizes,
+		"f32",
+		32,
+		makeCtx(twoBlockSizes),
+	);
 	expect(scoped.every((r) => r.block_size === 32)).toBe(true);
 	expect(scoped).toHaveLength(2);
 });
@@ -291,4 +298,96 @@ test("the GPU tab survives selecting a block size mps does not have", () => {
 		ctx,
 	).map((t) => t.id);
 	expect(ids).toContain("gpu");
+});
+
+test("the GPU tab's CPU-family line pins to the selected block size, not the max across both", () => {
+	// rayon-ikj is faster at block_size=64 (the non-selected one). mps has a
+	// single block size (32) and must survive scoping regardless; rayon-ikj
+	// has two, so it must be filtered to the selection. If the GPU tab stayed
+	// inertBlockSize (never scoped), byFamily's bestPerKernel would see both
+	// of rayon-ikj's block sizes and plot the higher one — the max-of-repeats
+	// upward bias this feature exists to remove.
+	const rows: Row[] = [
+		{
+			kernel: "mps",
+			precision: "f32",
+			n: 256,
+			threads: 1,
+			gops: 93,
+			backend: "metal",
+			median_ms: 1,
+			stddev_ms: 0,
+			block_size: 32,
+		},
+		{
+			kernel: "mps",
+			precision: "f32",
+			n: 512,
+			threads: 1,
+			gops: 738,
+			backend: "metal",
+			median_ms: 1,
+			stddev_ms: 0,
+			block_size: 32,
+		},
+		{
+			kernel: "rayon-ikj",
+			precision: "f32",
+			n: 256,
+			threads: 4,
+			gops: 40,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0,
+			block_size: 32,
+		},
+		{
+			kernel: "rayon-ikj",
+			precision: "f32",
+			n: 512,
+			threads: 4,
+			gops: 45,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0,
+			block_size: 32,
+		},
+		{
+			kernel: "rayon-ikj",
+			precision: "f32",
+			n: 256,
+			threads: 4,
+			gops: 999,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0,
+			block_size: 64,
+		},
+		{
+			kernel: "rayon-ikj",
+			precision: "f32",
+			n: 512,
+			threads: 4,
+			gops: 999,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0,
+			block_size: 64,
+		},
+	];
+	const gpu = TABS.find((t) => t.id === "gpu");
+	expect(gpu).toBeDefined();
+	if (!gpu) return;
+	const ctx = makeCtx(rows);
+	const scoped = rowsForTab(gpu, rows, "f32", 32, ctx);
+	const spec = gpuVsCpu(scoped, { ...f, precision: "f32", blockSize: 32 }, ctx);
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	const line = spec.marks[0] as {
+		data: { family: string; n: number; gops: number | null }[];
+	};
+	const parallel = line.data.find(
+		(d) => d.family === "parallel" && d.n === 256,
+	);
+	expect(parallel?.gops).toBe(40);
 });

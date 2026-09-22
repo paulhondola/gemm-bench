@@ -111,6 +111,37 @@ export function defaultBlockSize(rows: Row[]): number {
 	return sizes.slice().sort((a, b) => coverage(b) - coverage(a) || a - b)[0];
 }
 
+/**
+ * The block size to fall back to when the current selection is invalid for
+ * this specific (precision, n) — the smallest one actually available there.
+ * Unlike `defaultBlockSize`, which picks once over the whole dataset for
+ * boot, this must stay valid as precision/n change, so it reads the exact
+ * combination the fallback needs to hold for.
+ */
+export function defaultBlockSizeFor(
+	rows: Row[],
+	precision: string,
+	n: number,
+): number {
+	return blockSizesFor(rows, precision, n)[0] ?? 0;
+}
+
+/** Kernels present at exactly one distinct block_size across the whole
+ * dataset: the dimension does not vary for them, so a block-size selection
+ * must not filter them away. */
+export function singleBlockSizeKernels(rows: Row[]): Set<string> {
+	const byKernel = new Map<string, Set<number>>();
+	for (const r of rows) {
+		const kernel = String(r.kernel);
+		const sizes = byKernel.get(kernel) ?? new Set<number>();
+		sizes.add(Number(r.block_size));
+		byKernel.set(kernel, sizes);
+	}
+	return new Set(
+		[...byKernel].filter(([, sizes]) => sizes.size === 1).map(([k]) => k),
+	);
+}
+
 export function threadsFor(
 	rows: Row[],
 	precision: string,

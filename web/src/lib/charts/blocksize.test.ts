@@ -170,7 +170,26 @@ test("a kernel missing a block size gets an explicit gap, not a line straight th
 });
 
 test("the legend lists only the kernels actually plotted", () => {
-	const spec = blockSizeSweep(rows, f, makeCtx(rows));
+	// rayon-ikj is in ctx.palette (whole dataset) but only has an n=1024 row,
+	// which f.n=512 excludes — so it must be absent from the plotted legend.
+	// Reverting rowsForTab back to the raw palette keys would still include it.
+	const withUnplottedKernel: Row[] = [
+		...rows,
+		{
+			kernel: "rayon-ikj",
+			precision: "f32",
+			n: 1024,
+			threads: 4,
+			gops: 200,
+			backend: "cpu",
+			block_size: 32,
+		},
+	];
+	const spec = blockSizeSweep(
+		withUnplottedKernel,
+		f,
+		makeCtx(withUnplottedKernel),
+	);
 	expect(spec).not.toBeNull();
 	if (!spec) return;
 	expect(spec.color?.domain).toEqual(expect.arrayContaining(["tiled", "ikj"]));

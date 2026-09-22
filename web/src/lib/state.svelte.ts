@@ -1,6 +1,6 @@
 import { query, type Row } from "./db";
 import {
-	defaultBlockSize,
+	defaultBlockSizeFor,
 	defaultParallelKernel,
 	defaultPrecision,
 	defaultSize,
@@ -30,7 +30,7 @@ export async function boot(): Promise<void> {
 		store.precision = defaultPrecision(rows);
 		store.n = defaultSize(rows, store.precision);
 		store.kernel = defaultParallelKernel(rows, store.precision);
-		store.blockSize = defaultBlockSize(rows);
+		store.blockSize = defaultBlockSizeFor(rows, store.precision, store.n);
 		store.loaded = true;
 	} catch (e) {
 		store.error = String(e);

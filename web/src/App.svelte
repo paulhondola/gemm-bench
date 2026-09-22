@@ -6,7 +6,7 @@ import {
 	allSizes,
 	blockSizes,
 	blockSizesFor,
-	defaultBlockSize,
+	defaultBlockSizeFor,
 	defaultParallelKernel,
 	defaultSize,
 	families,
@@ -28,7 +28,7 @@ const filters = $derived({
 const tabs = $derived(visibleTabs(store.rows, filters, ctx));
 const tab = $derived(tabs.find((t) => t.id === store.tab) ?? tabs[0]);
 const scoped = $derived(
-	tab ? rowsForTab(tab, store.rows, store.precision, store.blockSize) : [],
+	tab ? rowsForTab(tab, store.rows, store.precision, store.blockSize, ctx) : [],
 );
 const available = $derived(sizesFor(store.rows, store.precision));
 const availableBlockSizes = $derived(
@@ -47,7 +47,7 @@ function pickPrecision(p: string) {
 		store.n = defaultSize(store.rows, p);
 	}
 	if (!blockSizesFor(store.rows, p, store.n).includes(store.blockSize)) {
-		store.blockSize = defaultBlockSize(store.rows);
+		store.blockSize = defaultBlockSizeFor(store.rows, p, store.n);
 	}
 	const family = families(store.rows);
 	const kernelStillValid = store.rows.some(
@@ -66,7 +66,7 @@ function pickSize(s: number) {
 	if (
 		!blockSizesFor(store.rows, store.precision, s).includes(store.blockSize)
 	) {
-		store.blockSize = defaultBlockSize(store.rows);
+		store.blockSize = defaultBlockSizeFor(store.rows, store.precision, s);
 	}
 }
 
@@ -148,7 +148,7 @@ function selectTab(id: string) {
 							disabled={!availableBlockSizes.includes(b)}
 							title={availableBlockSizes.includes(b)
 								? ""
-								: `no b = ${b} runs at N = ${store.n}`}
+								: `no ${store.precision} b = ${b} runs at N = ${store.n}`}
 							aria-pressed={b === store.blockSize}
 							class:on={b === store.blockSize}
 							onclick={() => pickBlockSize(b)}>b = {b}</button>

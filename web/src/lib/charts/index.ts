@@ -22,9 +22,12 @@ export interface Tab {
 	/** The precision pills render disabled: precision is this tab's x-axis. */
 	inertPrecision?: boolean;
 	/**
-	 * The block size pills render disabled: this tab either doesn't vary by
-	 * block size (GPU — `mps` has one block size and doesn't block) or block
-	 * size is its x-axis (the Block size tab itself).
+	 * The block size pills render disabled: block size is this tab's x-axis
+	 * (the Block size tab itself). A kernel measured at only one block size
+	 * (e.g. `mps`) is exempted from scoping automatically, via
+	 * `ctx.singleBlockSize` in `rowsForTab` — that's a property of the data,
+	 * not something a tab should assert about itself, so it is never a reason
+	 * to set this flag.
 	 */
 	inertBlockSize?: boolean;
 }
@@ -86,7 +89,6 @@ export const TABS: Tab[] = [
 		id: "gpu",
 		label: "GPU",
 		controls: ["precision"],
-		inertBlockSize: true,
 		panels: [
 			{
 				title: "GPU vs CPU",
@@ -108,7 +110,7 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "Throughput vs block size",
-				note: "Every kernel plotted — only some do cache blocking. A flat line is a repeat run and its own noise floor, not evidence the kernel ignores block size; a line that moves is the one actually blocking.",
+				note: "Every kernel is plotted, and no column records which ones actually do cache blocking. For a kernel that does not block, the two points are independent repeat runs — any gap between them is run-to-run noise, not a block-size effect. Read a large, consistent change as real and a small wobble as noise.",
 				spec: blockSizeSweep,
 			},
 		],
@@ -118,21 +120,26 @@ export const TABS: Tab[] = [
 /**
  * The rows a tab actually renders. The precision tab puts precision on its
  * x-axis, so it needs every precision; the Block size tab puts block size on
- * its x-axis, and GPU is inert to block size because `mps` has only one and
- * doesn't block — every other tab is scoped to both selected values. This is
- * the single place scoping happens: visibility and rendering must agree, or
- * a tab can appear and then render nothing.
+ * its x-axis. Every other tab is scoped to both selected values — except for
+ * a kernel with only one distinct block size in the whole dataset (`mps`):
+ * the dimension doesn't vary for it, so a block-size selection must not
+ * filter it away, whichever tab it appears on. This is the single place
+ * scoping happens: visibility and rendering must agree, or a tab can appear
+ * and then render nothing.
  */
 export function rowsForTab(
 	tab: Tab,
 	rows: Row[],
 	precision: string,
 	blockSize: number,
+	ctx: Ctx,
 ): Row[] {
 	return rows.filter(
 		(r) =>
 			(tab.inertPrecision || r.precision === precision) &&
-			(tab.inertBlockSize || Number(r.block_size) === blockSize),
+			(tab.inertBlockSize ||
+				ctx.singleBlockSize.has(String(r.kernel)) ||
+				Number(r.block_size) === blockSize),
 	);
 }
 
@@ -141,7 +148,8 @@ export function visibleTabs(rows: Row[], f: Filters, ctx: Ctx): Tab[] {
 	return TABS.filter((t) =>
 		t.panels.some(
 			(p) =>
-				p.spec(rowsForTab(t, rows, f.precision, f.blockSize), f, ctx) !== null,
+				p.spec(rowsForTab(t, rows, f.precision, f.blockSize, ctx), f, ctx) !==
+				null,
 		),
 	);
 }

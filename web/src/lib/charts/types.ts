@@ -1,5 +1,10 @@
 import type { Row } from "../db";
-import { type Family, families, kernels } from "../derive";
+import {
+	type Family,
+	families,
+	kernels,
+	singleBlockSizeKernels,
+} from "../derive";
 import { paletteFor } from "../palette";
 
 /**
@@ -22,11 +27,18 @@ export interface Filters {
 export interface Ctx {
 	palette: Map<string, string>;
 	family: Map<string, Family>;
+	/** Kernels measured at exactly one block size: the dimension does not vary
+	 *  for them, so a block-size selection must not filter them away. */
+	singleBlockSize: Set<string>;
 }
 
 /** Built once from the whole dataset so colour never depends on the filter. */
 export function makeCtx(allRows: Row[]): Ctx {
-	return { palette: paletteFor(kernels(allRows)), family: families(allRows) };
+	return {
+		palette: paletteFor(kernels(allRows)),
+		family: families(allRows),
+		singleBlockSize: singleBlockSizeKernels(allRows),
+	};
 }
 
 /**

@@ -7,6 +7,7 @@ import {
 	blockSizes,
 	blockSizesFor,
 	defaultBlockSize,
+	defaultBlockSizeFor,
 	defaultParallelKernel,
 	defaultPrecision,
 	defaultSize,
@@ -16,6 +17,7 @@ import {
 	isPlottable,
 	partitionPlottable,
 	precisions,
+	singleBlockSizeKernels,
 	sizesFor,
 } from "./derive";
 
@@ -384,4 +386,37 @@ test("defaultBlockSize breaks a coverage tie numerically", () => {
 
 test("defaultBlockSize is 0 for no rows", () => {
 	expect(defaultBlockSize([])).toBe(0);
+});
+
+test("defaultBlockSizeFor recovers a selection stranded by an n change", () => {
+	// block_size=64 is a real, valid selection at n=128 — the App.svelte
+	// pickSize control's exact scenario is choosing 64 there, then moving to
+	// n=256, which only has block_size=32.
+	const stranded = 64;
+	expect(blockSizesFor(blockRows, "f32", 128)).toContain(stranded);
+	expect(blockSizesFor(blockRows, "f32", 256)).not.toContain(stranded);
+	expect(defaultBlockSizeFor(blockRows, "f32", 256)).toBe(32);
+});
+
+test("defaultBlockSizeFor is 0 when nothing exists for that precision/n", () => {
+	expect(defaultBlockSizeFor(blockRows, "f16", 256)).toBe(0);
+	expect(defaultBlockSizeFor(blockRows, "f32", 4096)).toBe(0);
+});
+
+test("singleBlockSizeKernels: a kernel with two block sizes in the dataset is excluded, a kernel with one is included", () => {
+	const mixed: Row[] = [
+		...blockRows, // ikj: block_size 32 and 64 -> not single
+		{
+			kernel: "mps",
+			precision: "f32",
+			n: 256,
+			threads: 1,
+			gops: 900,
+			backend: "metal",
+			block_size: 32,
+		},
+	];
+	const single = singleBlockSizeKernels(mixed);
+	expect(single.has("mps")).toBe(true);
+	expect(single.has("ikj")).toBe(false);
 });
