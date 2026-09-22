@@ -5,6 +5,35 @@ export function precisions(rows: Row[]): string[] {
 	return [...new Set(rows.map((r) => String(r.precision)))].sort();
 }
 
+/**
+ * Contributor CSVs are untrusted: build.sql only rejects NULLs, so NaN,
+ * Infinity, zero and negative values all reach the parquet. A single
+ * non-positive n or gops poisons a log scale's whole domain, blanking every
+ * series on the chart rather than just the bad row — so unusable rows are
+ * dropped at the door.
+ */
+export function isPlottable(row: Row): boolean {
+	const positive = (v: unknown) => Number.isFinite(Number(v)) && Number(v) > 0;
+	const nonNegative = (v: unknown) =>
+		Number.isFinite(Number(v)) && Number(v) >= 0;
+	return (
+		positive(row.n) &&
+		positive(row.threads) &&
+		positive(row.gops) &&
+		positive(row.median_ms) &&
+		nonNegative(row.stddev_ms)
+	);
+}
+
+/** Returns the usable rows and how many were discarded. */
+export function partitionPlottable(rows: Row[]): {
+	rows: Row[];
+	dropped: number;
+} {
+	const usable = rows.filter(isPlottable);
+	return { rows: usable, dropped: rows.length - usable.length };
+}
+
 export type Family = "serial" | "parallel" | "gpu";
 
 /**

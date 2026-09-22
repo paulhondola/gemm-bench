@@ -62,6 +62,12 @@ function selectTab(id: string) {
 	<header>
 		<h1>gemm-bench</h1>
 		<p>C = A·B on square N×N matrices · throughput = 2N³ / median wall time</p>
+		{#if store.dropped > 0}
+			<p>
+				{store.dropped} row{store.dropped === 1 ? "" : "s"} discarded as unusable
+				(non-finite or non-positive values)
+			</p>
+		{/if}
 	</header>
 
 	{#if store.error}

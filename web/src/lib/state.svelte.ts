@@ -1,5 +1,10 @@
 import { query, type Row } from "./db";
-import { defaultParallelKernel, defaultPrecision, defaultSize } from "./derive";
+import {
+	defaultParallelKernel,
+	defaultPrecision,
+	defaultSize,
+	partitionPlottable,
+} from "./derive";
 
 export const store = $state({
 	rows: [] as Row[],
@@ -10,13 +15,16 @@ export const store = $state({
 	kernel: "",
 	relative: false,
 	tab: "overview",
+	dropped: 0,
 });
 
 /** One query at boot; every derivation downstream is synchronous. */
 export async function boot(): Promise<void> {
 	try {
-		const rows = await query("SELECT * FROM results");
+		const queried = await query("SELECT * FROM results");
+		const { rows, dropped } = partitionPlottable(queried);
 		store.rows = rows;
+		store.dropped = dropped;
 		store.precision = defaultPrecision(rows);
 		store.n = defaultSize(rows, store.precision);
 		store.kernel = defaultParallelKernel(rows, store.precision);

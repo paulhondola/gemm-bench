@@ -71,8 +71,8 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 				stroke: "family",
 				strokeWidth: 2,
 			}),
-			// Dashed because the mps timed region is commit -> waitUntilCompleted
-			// only: buffer copies and encoding are excluded.
+			// Dashed because a Metal-backed kernel's timed region is commit ->
+			// waitUntilCompleted only: buffer copies and encoding are excluded.
 			Plot.line(gpuLine, {
 				x: "n",
 				y: "gops",
@@ -127,7 +127,7 @@ export const gpuRatio: ChartSpec = (rows, _f, ctx) => {
 	return {
 		...BASE,
 		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		y: { type: "log", label: "mps ÷ best CPU", labelAnchor: "top" },
+		y: { type: "log", label: "GPU ÷ best CPU", labelAnchor: "top" },
 		marks: [
 			Plot.ruleY([1], { stroke: REFERENCE_INK, strokeDasharray: "5 5" }),
 			Plot.line(ratios, {

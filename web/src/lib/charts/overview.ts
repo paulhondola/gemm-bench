@@ -1,6 +1,7 @@
 import * as Plot from "@observablehq/plot";
 import type { Row } from "../db";
 import { BASELINE_KERNEL, bestPerKernel, hasKernel } from "../derive";
+import { UNPALETTED_FILL } from "../palette";
 import {
 	BASE,
 	breakGaps,
@@ -199,14 +200,20 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 		gops: Number(r.gops),
 	}));
 
+	// Scoped to the kernels actually plotted here, not the whole palette: a
+	// 9th+ kernel can win a size (this is computed over every kernel, not the
+	// 8-slot legend) and has no palette entry, so it needs an explicit
+	// fallback fill rather than falling out of the domain to `undefined`.
+	const present = [...new Set(cells.map((c) => c.kernel))];
+
 	return {
 		...BASE,
 		height: 120,
 		x: { type: "band", label: "N" },
 		y: { axis: null },
 		color: {
-			domain: [...ctx.palette.keys()],
-			range: [...ctx.palette.values()],
+			domain: present,
+			range: present.map((k) => ctx.palette.get(k) ?? UNPALETTED_FILL),
 		},
 		marks: [
 			Plot.cell(cells, { x: "n", fill: "kernel" }),

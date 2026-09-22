@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
+import { UNPALETTED_FILL } from "../palette";
 import {
 	canShowSpeedup,
 	fastestPerSize,
@@ -201,4 +202,46 @@ test("the stddev band stays finite when stddev exceeds the median", () => {
 		expect(Number.isFinite(point.hi)).toBe(true);
 		expect(point.hi).toBeLessThan(100);
 	}
+});
+
+test("a 9th kernel outside the 8-slot palette still gets a visible, defined fill when it wins a size", () => {
+	const eightKnown = [
+		"naive-ijk",
+		"ikj",
+		"tiled",
+		"rayon-ikj",
+		"static-ikj",
+		"rayon-tiled",
+		"static-tiled",
+		"mps",
+	];
+	const nineKernels: Row[] = [
+		...eightKnown.map((kernel) => ({
+			kernel,
+			precision: "f32",
+			n: 64,
+			threads: 1,
+			gops: 10,
+			backend: "cpu",
+		})),
+		{
+			kernel: "accelerate",
+			precision: "f32",
+			n: 64,
+			threads: 1,
+			gops: 999,
+			backend: "cpu",
+		},
+	];
+	const ctx = makeCtx(nineKernels);
+	// The palette caps at 8 slots by design; a 9th kernel has no entry.
+	expect(ctx.palette.has("accelerate")).toBe(false);
+
+	const spec = fastestPerSize(nineKernels, f, ctx);
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	const color = spec.color as { domain: string[]; range: string[] };
+	const idx = color.domain.indexOf("accelerate");
+	expect(idx).not.toBe(-1);
+	expect(color.range[idx]).toBe(UNPALETTED_FILL);
 });

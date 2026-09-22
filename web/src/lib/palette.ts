@@ -22,6 +22,14 @@ export const MAX_SERIES = SLOTS.length;
 export const REFERENCE_INK = "#5b636b";
 
 /**
+ * Fill for a winner that has no palette slot — a 9th+ kernel can still win a
+ * size on fastestPerSize (computed over every kernel, not the 8-slot
+ * legend), and must render visibly rather than as `fill: undefined`. The
+ * theme's muted-text token; #0e1012 cell text stays legible on it.
+ */
+export const UNPALETTED_FILL = "#9aa1a8";
+
+/**
  * Fixed assignment order, arranged so the most-compared pairs land on
  * adjacent slots — adjacent pairs are the validated worst case.
  */

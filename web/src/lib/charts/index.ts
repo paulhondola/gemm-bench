@@ -82,7 +82,7 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "GPU vs CPU",
-				note: "mps is dashed: its timed region excludes buffer copies and encoding",
+				note: "Metal-backed kernels are dashed: their timed region is GPU execution only, excluding buffer copies and command encoding",
 				spec: gpuVsCpu,
 			},
 			{

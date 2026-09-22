@@ -10,6 +10,8 @@ import {
 	families,
 	hasKernel,
 	hasSingleThreadBaseline,
+	isPlottable,
+	partitionPlottable,
 	precisions,
 	sizesFor,
 } from "./derive";
@@ -213,6 +215,52 @@ test("defaultParallelKernel picks the highest-gops parallel kernel at that preci
 test("defaultParallelKernel returns empty when the precision has no parallel kernel", () => {
 	// i64 in mixed only has a serial ikj row.
 	expect(defaultParallelKernel(mixed, "i64")).toBe("");
+});
+
+const validRow: Row = {
+	kernel: "ikj",
+	precision: "f32",
+	n: 64,
+	threads: 1,
+	gops: 10,
+	backend: "cpu",
+	median_ms: 1,
+	stddev_ms: 0.1,
+};
+
+test("isPlottable rejects n = 0", () => {
+	expect(isPlottable({ ...validRow, n: 0 })).toBe(false);
+});
+
+test("isPlottable rejects negative gops", () => {
+	expect(isPlottable({ ...validRow, gops: -5 })).toBe(false);
+});
+
+test("isPlottable rejects NaN gops", () => {
+	expect(isPlottable({ ...validRow, gops: Number.NaN })).toBe(false);
+});
+
+test("isPlottable rejects Infinity median_ms", () => {
+	expect(
+		isPlottable({ ...validRow, median_ms: Number.POSITIVE_INFINITY }),
+	).toBe(false);
+});
+
+test("isPlottable rejects negative threads", () => {
+	expect(isPlottable({ ...validRow, threads: -1 })).toBe(false);
+});
+
+test("isPlottable keeps a valid row with stddev_ms = 0", () => {
+	// Zero standard deviation is legitimate (a perfectly consistent
+	// measurement), not an error condition.
+	expect(isPlottable({ ...validRow, stddev_ms: 0 })).toBe(true);
+});
+
+test("partitionPlottable reports the usable rows and the dropped count", () => {
+	const rows = [validRow, { ...validRow, n: 0 }, { ...validRow, gops: -1 }];
+	const { rows: usable, dropped } = partitionPlottable(rows);
+	expect(usable).toEqual([validRow]);
+	expect(dropped).toBe(2);
 });
 
 test("baseline guards detect what a partial sweep is missing", () => {
