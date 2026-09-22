@@ -57,7 +57,7 @@ export const TABS: Tab[] = [
 			},
 			{
 				title: "Parallel efficiency",
-				note: "Speedup as a share of ideal, per matrix size",
+				note: "Speedup as a share of ideal — every size at once, so the N pill does not apply here",
 				spec: parallelEfficiency,
 			},
 		],

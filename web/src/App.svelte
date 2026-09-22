@@ -1,80 +1,257 @@
 <script lang="ts">
-import { query, type Row } from "./lib/db";
+import Chart from "./lib/Chart.svelte";
+import { rowsForTab, TABS, visibleTabs } from "./lib/charts/index";
+import { makeCtx } from "./lib/charts/types";
+import { allSizes, defaultSize, kernels, sizesFor } from "./lib/derive";
+import { boot, store } from "./lib/state.svelte";
 
-let precisions: string[] = $state([]);
-let sizes: number[] = $state([]);
-let precision = $state("");
-let n = $state(0);
-let rows: Row[] = $state([]);
-let error = $state("");
+boot();
 
-const columns = $derived(rows.length ? Object.keys(rows[0]) : []);
-
-query("SELECT DISTINCT precision FROM results ORDER BY 1")
-	.then(async (p) => {
-		precisions = p.map((r) => String(r.precision));
-		sizes = (await query("SELECT DISTINCT n FROM results ORDER BY 1")).map(
-			(r) => Number(r.n),
-		);
-		precision = precisions[0];
-		n = sizes[0];
-	})
-	.catch((e) => (error = String(e)));
-
-$effect(() => {
-	if (!precision) return;
-	// Filter values come from the data itself, so they are safe to inline.
-	query(
-		`SELECT kernel, threads, median_ms, min_ms, stddev_ms, gops
-		 FROM results WHERE precision = '${precision}' AND n = ${n}
-		 ORDER BY gops DESC`,
-	)
-		.then((r) => (rows = r))
-		.catch((e) => (error = String(e)));
+const ctx = $derived(makeCtx(store.rows));
+const filters = $derived({
+	precision: store.precision,
+	n: store.n,
+	kernel: store.kernel,
+	relative: store.relative,
 });
+const tabs = $derived(visibleTabs(store.rows, filters, ctx));
+const tab = $derived(tabs.find((t) => t.id === store.tab) ?? tabs[0]);
+const scoped = $derived(
+	tab ? rowsForTab(tab, store.rows, store.precision) : [],
+);
+const available = $derived(sizesFor(store.rows, store.precision));
+const kernelList = $derived(kernels(scoped));
 
-const fmt = (v: Row[string]) =>
-	typeof v === "number" && !Number.isInteger(v) ? v.toFixed(3) : v;
+function pickPrecision(p: string) {
+	store.precision = p;
+	if (!sizesFor(store.rows, p).includes(store.n)) {
+		store.n = defaultSize(store.rows, p);
+	}
+}
 </script>
 
 <main>
-	<h1>gemm-bench results</h1>
+	<header>
+		<h1>gemm-bench</h1>
+		<p>C = A·B on square N×N matrices · throughput = 2N³ / median wall time</p>
+	</header>
 
-	{#if error}
-		<p class="error">{error}</p>
-	{:else if !precisions.length}
-		<p>Loading DuckDB…</p>
+	{#if store.error}
+		<p class="error">{store.error}</p>
+	{:else if !store.loaded}
+		<p class="muted">Loading DuckDB…</p>
+	{:else if !tab}
+		<p class="muted">No results yet. Run <code>just bench</code> and <code>just data</code>.</p>
 	{:else}
-		<div class="filters">
-			<label>
-				Precision
-				<select bind:value={precision}>
-					{#each precisions as p}<option value={p}>{p}</option>{/each}
-				</select>
-			</label>
-			<label>
-				n
-				<select bind:value={n}>
-					{#each sizes as s}<option value={s}>{s}</option>{/each}
-				</select>
+		<nav>
+			{#each tabs as t}
+				<button
+					type="button"
+					class:current={t.id === tab.id}
+					onclick={() => (store.tab = t.id)}>{t.label}</button>
+			{/each}
+		</nav>
+
+		<div class="controls">
+			{#if tab.controls.includes("precision") || tab.inertPrecision}
+				<div class="group" role="group" aria-label="Precision">
+					{#each [...new Set(store.rows.map((r) => String(r.precision)))].sort() as p}
+						<button
+							type="button"
+							disabled={tab.inertPrecision}
+							title={tab.inertPrecision ? "Precision is this chart's x-axis" : ""}
+							aria-pressed={p === store.precision}
+							class:on={p === store.precision}
+							onclick={() => pickPrecision(p)}>{p}</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if tab.controls.includes("n")}
+				<div class="group" role="group" aria-label="Matrix size">
+					{#each allSizes(store.rows) as s}
+						<button
+							type="button"
+							disabled={!available.includes(s)}
+							title={available.includes(s)
+								? ""
+								: `no ${store.precision} runs at N = ${s}`}
+							aria-pressed={s === store.n}
+							class:on={s === store.n}
+							onclick={() => (store.n = s)}>N = {s}</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if tab.controls.includes("kernel")}
+				<div class="group" role="group" aria-label="Kernel">
+					{#each kernelList as k}
+						<button
+							type="button"
+							aria-pressed={k === store.kernel}
+							class:on={k === store.kernel}
+							onclick={() => (store.kernel = k)}>{k}</button>
+					{/each}
+				</div>
+			{/if}
+
+			<label class="toggle">
+				<input type="checkbox" bind:checked={store.relative} />
+				Relative
 			</label>
 		</div>
 
-		{#if rows.length}
+		<div class="panels">
+			{#each tab.panels as panel}
+				<Chart
+					title={panel.title}
+					note={panel.note}
+					spec={panel.spec(scoped, filters, ctx)} />
+			{/each}
+		</div>
+
+		<details class="table">
+			<summary>Data view ({scoped.length} rows)</summary>
 			<div class="scroll">
 				<table>
 					<thead>
-						<tr>{#each columns as c}<th>{c}</th>{/each}</tr>
+						<tr>
+							{#each scoped.length ? Object.keys(scoped[0]) : [] as c}<th>{c}</th>{/each}
+						</tr>
 					</thead>
 					<tbody>
-						{#each rows as row}
-							<tr>{#each columns as c}<td>{fmt(row[c])}</td>{/each}</tr>
+						{#each scoped as row}
+							<tr>
+								{#each Object.keys(scoped[0]) as c}
+									<td>
+										{typeof row[c] === "number" && !Number.isInteger(row[c])
+											? (row[c] as number).toFixed(3)
+											: row[c]}
+									</td>
+								{/each}
+							</tr>
 						{/each}
 					</tbody>
 				</table>
 			</div>
-		{:else}
-			<p>No results for {precision} at n = {n}.</p>
-		{/if}
+		</details>
 	{/if}
 </main>
+
+<style>
+	main {
+		max-width: 1440px;
+		margin: 0 auto;
+		padding: 32px;
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
+	}
+	h1 {
+		margin: 0;
+		font-family: "IBM Plex Mono", monospace;
+		font-size: 30px;
+		font-weight: 600;
+		letter-spacing: -0.5px;
+	}
+	header p,
+	.muted {
+		margin: 6px 0 0;
+		font-size: 14px;
+		color: #9aa1a8;
+	}
+	.error {
+		color: #e66767;
+	}
+	nav {
+		display: flex;
+		gap: 4px;
+		border-bottom: 1px solid #24292e;
+	}
+	nav button {
+		min-height: 44px;
+		padding: 0 18px;
+		background: transparent;
+		border: none;
+		border-bottom: 2px solid transparent;
+		margin-bottom: -1px;
+		font-size: 14px;
+		font-weight: 500;
+		color: #9aa1a8;
+		cursor: pointer;
+	}
+	nav button.current {
+		color: #e6e3dc;
+		border-bottom-color: #e8743b;
+	}
+	.controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 16px;
+	}
+	.group {
+		display: flex;
+		gap: 6px;
+		padding: 3px;
+		background: #15181b;
+		border: 1px solid #24292e;
+		border-radius: 8px;
+	}
+	.group button {
+		min-height: 36px;
+		padding: 0 14px;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		color: #9aa1a8;
+		font-family: "IBM Plex Mono", monospace;
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.group button.on {
+		background: #e6e3dc;
+		color: #0e1012;
+	}
+	.group button:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+	.toggle {
+		font-size: 13px;
+		color: #9aa1a8;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.panels {
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
+	}
+	.table summary {
+		cursor: pointer;
+		color: #9aa1a8;
+		font-size: 13px;
+	}
+	.scroll {
+		overflow-x: auto;
+		margin-top: 12px;
+	}
+	table {
+		border-collapse: collapse;
+		font-family: "IBM Plex Mono", monospace;
+		font-size: 12px;
+	}
+	th,
+	td {
+		padding: 6px 12px;
+		text-align: right;
+		border-bottom: 1px solid #24292e;
+		white-space: nowrap;
+	}
+	th {
+		color: #9aa1a8;
+		font-weight: 500;
+	}
+</style>
