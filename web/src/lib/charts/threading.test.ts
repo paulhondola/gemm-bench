@@ -1,0 +1,99 @@
+import { expect, test } from "bun:test";
+import type { Row } from "../db";
+import {
+	canShowScaling,
+	parallelEfficiency,
+	throughputVsThreads,
+} from "./threading";
+import { type Filters, makeCtx } from "./types";
+
+const f: Filters = {
+	precision: "f16",
+	n: 1024,
+	kernel: "rayon-ikj",
+	relative: false,
+};
+
+const rows: Row[] = [
+	{
+		kernel: "rayon-ikj",
+		precision: "f16",
+		n: 1024,
+		threads: 1,
+		gops: 52.9,
+		backend: "cpu",
+	},
+	{
+		kernel: "rayon-ikj",
+		precision: "f16",
+		n: 1024,
+		threads: 4,
+		gops: 199.5,
+		backend: "cpu",
+	},
+	{
+		kernel: "rayon-ikj",
+		precision: "f16",
+		n: 1024,
+		threads: 10,
+		gops: 394.1,
+		backend: "cpu",
+	},
+	{
+		kernel: "static-ikj",
+		precision: "f16",
+		n: 1024,
+		threads: 1,
+		gops: 52.8,
+		backend: "cpu",
+	},
+	{
+		kernel: "static-ikj",
+		precision: "f16",
+		n: 1024,
+		threads: 4,
+		gops: 199.9,
+		backend: "cpu",
+	},
+	{
+		kernel: "static-ikj",
+		precision: "f16",
+		n: 1024,
+		threads: 10,
+		gops: 304.8,
+		backend: "cpu",
+	},
+	{
+		kernel: "ikj",
+		precision: "f16",
+		n: 1024,
+		threads: 1,
+		gops: 52.5,
+		backend: "cpu",
+	},
+];
+
+test("the scaling chart builds when a kernel has two thread counts", () => {
+	expect(throughputVsThreads(rows, f, makeCtx(rows))).not.toBeNull();
+});
+
+test("serial-only rows are not a scaling chart", () => {
+	const serial = rows.filter((r) => r.kernel === "ikj");
+	expect(throughputVsThreads(serial, f, makeCtx(serial))).toBeNull();
+});
+
+test("the speedup projection needs a 1-thread row", () => {
+	expect(canShowScaling(rows)).toBe(true);
+	expect(canShowScaling(rows.filter((r) => r.threads !== 1))).toBe(false);
+});
+
+test("efficiency builds per size and caps the axis at 100", () => {
+	const spec = parallelEfficiency(rows, f, makeCtx(rows));
+	expect(spec).not.toBeNull();
+	expect(spec?.y?.domain).toEqual([0, 100]);
+});
+
+test("efficiency without a 1-thread baseline is not shown", () => {
+	const noBase = rows.filter((r) => r.threads !== 1);
+	expect(parallelEfficiency(noBase, f, makeCtx(noBase))).toBeNull();
+});
