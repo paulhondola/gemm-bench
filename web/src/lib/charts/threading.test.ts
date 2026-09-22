@@ -97,3 +97,43 @@ test("efficiency without a 1-thread baseline is not shown", () => {
 	const noBase = rows.filter((r) => r.threads !== 1);
 	expect(parallelEfficiency(noBase, f, makeCtx(noBase))).toBeNull();
 });
+
+test("the scaling chart plots only the selected size", () => {
+	const twoSizes: Row[] = [
+		...rows,
+		{
+			kernel: "rayon-ikj",
+			precision: "f16",
+			n: 256,
+			threads: 1,
+			gops: 9,
+			backend: "cpu",
+		},
+		{
+			kernel: "rayon-ikj",
+			precision: "f16",
+			n: 256,
+			threads: 4,
+			gops: 33,
+			backend: "cpu",
+		},
+		{
+			kernel: "rayon-ikj",
+			precision: "f16",
+			n: 256,
+			threads: 10,
+			gops: 70,
+			backend: "cpu",
+		},
+	];
+	const spec = throughputVsThreads(twoSizes, f, makeCtx(twoSizes));
+	expect(spec).not.toBeNull();
+	if (!spec) return; // unreachable: the assertion above throws first
+	// marks[0] is Plot.line(points, ...): the first mark pushed when f.relative
+	// is false (no ideal-line mark prepended), verified against the actual
+	// spec rather than assumed.
+	const plotted = (spec.marks[0] as unknown as { data: { threads: number }[] })
+		.data;
+	// f pins n = 1024, so the three n = 256 rows must not appear.
+	expect(plotted).toHaveLength(rows.filter((r) => r.kernel !== "ikj").length);
+});

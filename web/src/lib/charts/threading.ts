@@ -26,7 +26,9 @@ function singleThread(rows: Row[]): Map<string, number> {
 }
 
 export const throughputVsThreads: ChartSpec = (rows, f, ctx) => {
-	const mine = parallelRows(rows, ctx);
+	// The threading tab pins a size: without this, several sizes' rows land on
+	// the same x position and the 1-thread baseline below picks an arbitrary one.
+	const mine = parallelRows(rows, ctx).filter((r) => Number(r.n) === f.n);
 	const counts = new Set(mine.map((r) => Number(r.threads)));
 	if (counts.size < 2) return null;
 
@@ -133,12 +135,16 @@ export const parallelEfficiency: ChartSpec = (rows, _f, ctx) => {
 	);
 	if (ticks.length < 2) return null;
 
+	// Extend rather than clamp: a real result above 100% (cache-locality
+	// effects on small problems) must still be visible, not silently capped.
+	const ceiling = Math.max(100, ...points.map((p) => p.y));
+
 	return {
 		...BASE,
 		x: { type: "linear", ticks, label: "Threads" },
 		y: {
 			type: "linear",
-			domain: [0, 100],
+			domain: [0, ceiling],
 			label: "% of ideal",
 			labelAnchor: "top",
 		},
