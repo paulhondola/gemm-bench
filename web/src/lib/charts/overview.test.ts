@@ -92,6 +92,75 @@ test("serialOnly drops the parallel kernels", () => {
 	expect(plotted).toEqual(new Set(["naive-ijk"]));
 });
 
+test("a kernel missing a row at one size gets an explicit gap, not a line straight through it", () => {
+	const ragged: Row[] = [
+		{
+			kernel: "ikj",
+			precision: "f32",
+			n: 64,
+			threads: 1,
+			gops: 30,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0.01,
+		},
+		// ikj has no n=128 row; naive-ijk does, so the union x-axis includes 128.
+		{
+			kernel: "ikj",
+			precision: "f32",
+			n: 256,
+			threads: 1,
+			gops: 50,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0.01,
+		},
+		{
+			kernel: "naive-ijk",
+			precision: "f32",
+			n: 64,
+			threads: 1,
+			gops: 3,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0.01,
+		},
+		{
+			kernel: "naive-ijk",
+			precision: "f32",
+			n: 128,
+			threads: 1,
+			gops: 4,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0.01,
+		},
+		{
+			kernel: "naive-ijk",
+			precision: "f32",
+			n: 256,
+			threads: 1,
+			gops: 5,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0.01,
+		},
+	];
+	const spec = throughputVsSize(ragged, f, makeCtx(ragged));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	// marks[0] is Plot.areaY(lineData, ...) and marks[1] is Plot.line(lineData,
+	// ...) — confirmed by introspecting spec.marks[i].data for this exact
+	// fixture: both index 0 and 1 carried the gap-filled data (a
+	// threads/lo/hi/y: null entry for ikj at n=128); index 2 (dot) and index 3
+	// (tip) carried only the real points.
+	const line = spec.marks[1] as {
+		data: { kernel: string; n: number; y: number | null }[];
+	};
+	const gap = line.data.find((d) => d.kernel === "ikj" && d.n === 128);
+	expect(gap?.y).toBeNull();
+});
+
 test("the stddev band stays finite when stddev exceeds the median", () => {
 	const noisy: Row[] = [
 		{

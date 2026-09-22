@@ -2,14 +2,17 @@ import * as Plot from "@observablehq/plot";
 import type { Row } from "../db";
 import { bestPerKernel } from "../derive";
 import { REFERENCE_INK } from "../palette";
-import { BASE, type ChartSpec, type Ctx, log2Ticks } from "./types";
+import { BASE, breakGaps, type ChartSpec, type Ctx, log2Ticks } from "./types";
 
 export function hasGpu(rows: Row[]): boolean {
 	return rows.some((r) => r.backend === "metal");
 }
 
+type FamilyPoint = { n: number; family: string; gops: number };
+type FamilyGapPoint = { n: number; family: string; gops: null };
+
 /** Best gpu / parallel / serial result at each size — one line per family. */
-function byFamily(rows: Row[], ctx: Ctx) {
+function byFamily(rows: Row[], ctx: Ctx): FamilyPoint[] {
 	const out = new Map<string, { n: number; family: string; gops: number }>();
 	for (const r of bestPerKernel(rows)) {
 		const family = ctx.family.get(String(r.kernel)) ?? "serial";
@@ -34,6 +37,16 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 	const sizes = log2Ticks(points.map((p) => p.n));
 	if (sizes.length < 2) return null;
 
+	// Plot draws a line straight through a size a family has no row for;
+	// break it instead of implying a measurement nobody took.
+	const lineData = breakGaps<FamilyPoint | FamilyGapPoint>(
+		points,
+		sizes,
+		(p) => p.n,
+		(p) => p.family,
+		(family, n) => ({ n, family, gops: null }),
+	);
+
 	return {
 		...BASE,
 		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
@@ -44,7 +57,7 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 			legend: true,
 		},
 		marks: [
-			Plot.line(points, {
+			Plot.line(lineData, {
 				x: "n",
 				y: "gops",
 				stroke: "family",

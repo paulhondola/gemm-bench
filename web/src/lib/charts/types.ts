@@ -39,6 +39,27 @@ export function log2Ticks(values: number[]): number[] {
 	return [...new Set(values)].sort((a, b) => a - b);
 }
 
+/**
+ * Plot's line mark draws straight through a missing point, which would assert a
+ * measurement nobody took. The dashboard is built for ragged data — contributed
+ * runs are expected to be partial — so give every series an explicit null-y
+ * point at each x it lacks, and Plot breaks the line there instead.
+ */
+export function breakGaps<T>(
+	points: T[],
+	xs: number[],
+	xOf: (p: T) => number,
+	seriesOf: (p: T) => string,
+	gap: (series: string, x: number) => T,
+): T[] {
+	const series = [...new Set(points.map(seriesOf))];
+	return series.flatMap((s) =>
+		xs.map(
+			(x) => points.find((p) => seriesOf(p) === s && xOf(p) === x) ?? gap(s, x),
+		),
+	);
+}
+
 /** Shared axis/mark defaults: recessive grid, 2px lines, generous margins. */
 export const BASE: Partial<PlotSpec> = {
 	style: { background: "transparent", color: "#9aa1a8", fontSize: "12px" },

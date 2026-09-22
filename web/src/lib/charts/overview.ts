@@ -3,11 +3,29 @@ import type { Row } from "../db";
 import { BASELINE_KERNEL, bestPerKernel, hasKernel } from "../derive";
 import {
 	BASE,
+	breakGaps,
 	type ChartSpec,
 	type Ctx,
 	log2Ticks,
 	type PlotSpec,
 } from "./types";
+
+type SizePoint = {
+	n: number;
+	kernel: string;
+	threads: number;
+	lo: number;
+	hi: number;
+	y: number;
+};
+type SizeGapPoint = {
+	n: number;
+	kernel: string;
+	threads: null;
+	lo: null;
+	hi: null;
+	y: null;
+};
 
 /** Without a naive-ijk row there is no denominator, so the toggle is hidden. */
 export function canShowSpeedup(rows: Row[]): boolean {
@@ -58,6 +76,16 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 		.filter((p) => Number.isFinite(p.y));
 	if (!points.length) return null;
 
+	// Plot draws a line/band straight through a size a kernel has no row for;
+	// break both instead of implying a measurement nobody took.
+	const lineData = breakGaps<SizePoint | SizeGapPoint>(
+		points,
+		sizes,
+		(p) => p.n,
+		(p) => p.kernel,
+		(kernel, n) => ({ n, kernel, threads: null, lo: null, hi: null, y: null }),
+	);
+
 	return {
 		...BASE,
 		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
@@ -75,7 +103,7 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 			...(relative
 				? []
 				: [
-						Plot.areaY(points, {
+						Plot.areaY(lineData, {
 							x: "n",
 							y1: "lo",
 							y2: "hi",
@@ -83,7 +111,7 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 							fillOpacity: 0.15,
 						}),
 					]),
-			Plot.line(points, {
+			Plot.line(lineData, {
 				x: "n",
 				y: "y",
 				stroke: "kernel",

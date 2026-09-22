@@ -73,3 +73,61 @@ test("neither GPU chart builds without metal rows", () => {
 	expect(gpuVsCpu(cpu, f, ctx)).toBeNull();
 	expect(gpuRatio(cpu, f, ctx)).toBeNull();
 });
+
+test("the gpu family gets an explicit gap where it has no row, instead of a line straight through it", () => {
+	const ragged: Row[] = [
+		{
+			kernel: "mps",
+			precision: "f32",
+			n: 256,
+			threads: 1,
+			gops: 93,
+			backend: "metal",
+		},
+		// mps has no n=512 row; rayon-ikj does, so the union x-axis includes 512.
+		{
+			kernel: "mps",
+			precision: "f32",
+			n: 1024,
+			threads: 1,
+			gops: 900,
+			backend: "metal",
+		},
+		{
+			kernel: "rayon-ikj",
+			precision: "f32",
+			n: 256,
+			threads: 4,
+			gops: 138,
+			backend: "cpu",
+		},
+		{
+			kernel: "rayon-ikj",
+			precision: "f32",
+			n: 512,
+			threads: 4,
+			gops: 194,
+			backend: "cpu",
+		},
+		{
+			kernel: "rayon-ikj",
+			precision: "f32",
+			n: 1024,
+			threads: 4,
+			gops: 250,
+			backend: "cpu",
+		},
+	];
+	const spec = gpuVsCpu(ragged, f, makeCtx(ragged));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	// marks[0] is Plot.line(lineData, ...), confirmed by introspecting
+	// spec.marks[i].data for this exact fixture: index 0 carried the
+	// gap-filled gpu series (with a null-gops entry at n=512), index 1 the
+	// dot mark's real-points-only data, index 2 the text labels, index 3 tip.
+	const line = spec.marks[0] as {
+		data: { family: string; n: number; gops: number | null }[];
+	};
+	const gap = line.data.find((d) => d.family === "gpu" && d.n === 512);
+	expect(gap?.gops).toBeNull();
+});
