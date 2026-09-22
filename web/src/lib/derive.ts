@@ -115,3 +115,21 @@ export function hasKernel(rows: Row[], kernel: string): boolean {
 export function hasSingleThreadBaseline(rows: Row[]): boolean {
 	return rows.some((r) => Number(r.threads) === 1);
 }
+
+/** The parallel kernel with the highest gops at this precision — T2's default pin. */
+export function defaultParallelKernel(rows: Row[], precision: string): string {
+	const family = families(rows);
+	const candidates = rows.filter(
+		(r) =>
+			r.precision === precision && family.get(String(r.kernel)) === "parallel",
+	);
+	let best = "";
+	let peak = Number.NEGATIVE_INFINITY;
+	for (const r of candidates) {
+		if (Number(r.gops) > peak) {
+			peak = Number(r.gops);
+			best = String(r.kernel);
+		}
+	}
+	return best;
+}

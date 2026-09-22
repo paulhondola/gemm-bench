@@ -48,8 +48,16 @@ export const throughputVsThreads: ChartSpec = (rows, f, ctx) => {
 	const ticks = [...counts].sort((a, b) => a - b);
 	const ideal = ticks.map((t) => ({ threads: t, y: t }));
 
+	// Scoped to what's actually plotted, not the whole-dataset palette, so the
+	// legend never lists a kernel this chart doesn't draw. ctx.palette is
+	// still the hue lookup, so a kernel keeps its colour regardless of who
+	// else is present.
+	const present = [...new Set(points.map((p) => p.kernel))];
+
 	return {
 		...BASE,
+		// Direct labels below need room for the longest kernel name.
+		marginRight: 100,
 		// Linear, not log: 8 and 10 really are close, and linear shows the
 		// departure from ideal as curvature where log would straighten it.
 		x: { type: "linear", ticks, label: "Threads" },
@@ -59,8 +67,8 @@ export const throughputVsThreads: ChartSpec = (rows, f, ctx) => {
 			labelAnchor: "top",
 		},
 		color: {
-			domain: [...ctx.palette.keys()],
-			range: [...ctx.palette.values()],
+			domain: present,
+			range: present.map((k) => ctx.palette.get(k) as string),
 			legend: true,
 		},
 		marks: [
@@ -106,8 +114,13 @@ export const throughputVsThreads: ChartSpec = (rows, f, ctx) => {
 	};
 };
 
-export const parallelEfficiency: ChartSpec = (rows, _f, ctx) => {
-	const mine = parallelRows(rows, ctx);
+export const parallelEfficiency: ChartSpec = (rows, f, ctx) => {
+	// Scoped to the pinned kernel: without this, one line per size interleaves
+	// every parallel kernel's points (Plot's z defaults to stroke, so a line
+	// groups by n alone), and the line jumps thread counts across kernels
+	// instead of running monotonically within one.
+	const mine = parallelRows(rows, ctx).filter((r) => r.kernel === f.kernel);
+	if (!mine.length) return null;
 	if (!canShowScaling(mine)) return null;
 
 	// Baseline per (kernel, n) so efficiency compares like with like.

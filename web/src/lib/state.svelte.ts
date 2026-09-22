@@ -1,5 +1,5 @@
 import { query, type Row } from "./db";
-import { defaultPrecision, defaultSize } from "./derive";
+import { defaultParallelKernel, defaultPrecision, defaultSize } from "./derive";
 
 export const store = $state({
 	rows: [] as Row[],
@@ -19,6 +19,7 @@ export async function boot(): Promise<void> {
 		store.rows = rows;
 		store.precision = defaultPrecision(rows);
 		store.n = defaultSize(rows, store.precision);
+		store.kernel = defaultParallelKernel(rows, store.precision);
 		store.loaded = true;
 	} catch (e) {
 		store.error = String(e);

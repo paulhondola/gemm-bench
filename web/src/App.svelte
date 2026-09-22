@@ -1,8 +1,15 @@
 <script lang="ts">
 import Chart from "./lib/Chart.svelte";
-import { rowsForTab, TABS, visibleTabs } from "./lib/charts/index";
+import { rowsForTab, visibleTabs } from "./lib/charts/index";
 import { makeCtx } from "./lib/charts/types";
-import { allSizes, defaultSize, kernels, sizesFor } from "./lib/derive";
+import {
+	allSizes,
+	defaultParallelKernel,
+	defaultSize,
+	families,
+	kernels,
+	sizesFor,
+} from "./lib/derive";
 import { boot, store } from "./lib/state.svelte";
 
 boot();
@@ -20,13 +27,34 @@ const scoped = $derived(
 	tab ? rowsForTab(tab, store.rows, store.precision) : [],
 );
 const available = $derived(sizesFor(store.rows, store.precision));
-const kernelList = $derived(kernels(scoped));
+// The kernel pill group is threading-tab-only and must offer only the
+// kernels that tab's chart can plot — parallel-family kernels — not every
+// kernel in scope.
+const parallelKernelList = $derived(
+	kernels(scoped).filter((k) => ctx.family.get(k) === "parallel"),
+);
 
 function pickPrecision(p: string) {
 	store.precision = p;
 	if (!sizesFor(store.rows, p).includes(store.n)) {
 		store.n = defaultSize(store.rows, p);
 	}
+	const family = families(store.rows);
+	const kernelStillValid = store.rows.some(
+		(r) =>
+			r.precision === p &&
+			r.kernel === store.kernel &&
+			family.get(String(r.kernel)) === "parallel",
+	);
+	if (!kernelStillValid) {
+		store.kernel = defaultParallelKernel(store.rows, p);
+	}
+}
+
+function selectTab(id: string) {
+	store.tab = id;
+	// Projection state is per-chart, not persisted across tab switches.
+	store.relative = false;
 }
 </script>
 
@@ -48,7 +76,7 @@ function pickPrecision(p: string) {
 				<button
 					type="button"
 					class:current={t.id === tab.id}
-					onclick={() => (store.tab = t.id)}>{t.label}</button>
+					onclick={() => selectTab(t.id)}>{t.label}</button>
 			{/each}
 		</nav>
 
@@ -85,7 +113,7 @@ function pickPrecision(p: string) {
 
 			{#if tab.controls.includes("kernel")}
 				<div class="group" role="group" aria-label="Kernel">
-					{#each kernelList as k}
+					{#each parallelKernelList as k}
 						<button
 							type="button"
 							aria-pressed={k === store.kernel}

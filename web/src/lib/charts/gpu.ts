@@ -46,9 +46,17 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 		(p) => p.family,
 		(family, n) => ({ n, family, gops: null }),
 	);
+	// Plot.line draws one <path> per series (grouped by z, which defaults to
+	// stroke), so a per-datum strokeDasharray channel cannot vary along that
+	// one path — it silently does nothing. Split into two marks instead: gpu
+	// dashed at a constant dasharray, everything else solid.
+	const otherLine = lineData.filter((p) => p.family !== "gpu");
+	const gpuLine = lineData.filter((p) => p.family === "gpu");
 
 	return {
 		...BASE,
+		// Direct labels below need room for the longest family/kernel name.
+		marginRight: 100,
 		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
 		y: { type: "log", label: "GOP/s", labelAnchor: "top" },
 		color: {
@@ -57,15 +65,20 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 			legend: true,
 		},
 		marks: [
-			Plot.line(lineData, {
+			Plot.line(otherLine, {
 				x: "n",
 				y: "gops",
 				stroke: "family",
 				strokeWidth: 2,
-				// Dashed because the mps timed region is commit -> waitUntilCompleted
-				// only: buffer copies and encoding are excluded.
-				strokeDasharray: (d: { family: string }) =>
-					d.family === "gpu" ? "5 4" : undefined,
+			}),
+			// Dashed because the mps timed region is commit -> waitUntilCompleted
+			// only: buffer copies and encoding are excluded.
+			Plot.line(gpuLine, {
+				x: "n",
+				y: "gops",
+				stroke: "family",
+				strokeWidth: 2,
+				strokeDasharray: "5 4",
 			}),
 			Plot.dot(points, { x: "n", y: "gops", fill: "family", r: 4 }),
 			// Three series, so direct labels as well as the legend.

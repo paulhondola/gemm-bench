@@ -80,6 +80,15 @@ test("the speedup projection needs a naive-ijk baseline", () => {
 	);
 });
 
+test("the legend lists only the kernels plotted, not the whole palette", () => {
+	// serialOnly is fed only naive-ijk rows here, so rayon-ikj (present
+	// elsewhere in the palette) must not appear in the legend domain.
+	const spec = serialOnly(rows, f, makeCtx(rows));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	expect(spec.color?.domain).toEqual(["naive-ijk"]);
+});
+
 test("serialOnly drops the parallel kernels", () => {
 	const spec = serialOnly(rows, f, makeCtx(rows));
 	expect(spec).not.toBeNull();

@@ -48,7 +48,7 @@ export const TABS: Tab[] = [
 	{
 		id: "threads",
 		label: "CPU threading",
-		controls: ["precision", "n"],
+		controls: ["precision", "n", "kernel"],
 		panels: [
 			{
 				title: "Throughput vs thread count",
@@ -57,7 +57,7 @@ export const TABS: Tab[] = [
 			},
 			{
 				title: "Parallel efficiency",
-				note: "Speedup as a share of ideal — every size at once, so the N pill does not apply here",
+				note: "Speedup as a share of ideal, for the selected kernel — every size at once, so the N pill does not apply here",
 				spec: parallelEfficiency,
 			},
 		],

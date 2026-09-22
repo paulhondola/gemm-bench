@@ -37,14 +37,20 @@ export const throughputByPrecision: ChartSpec = (rows, f, ctx) => {
 	);
 	if (order.length < 2) return null;
 
+	// Scoped to what's actually plotted, not the whole-dataset palette, so the
+	// legend never lists a kernel this chart doesn't draw. ctx.palette is
+	// still the hue lookup, so a kernel keeps its colour regardless of who
+	// else is present.
+	const present = [...new Set(bars.map((b) => b.kernel))];
+
 	return {
 		...BASE,
 		fx: { domain: order, label: "Precision" },
 		x: { axis: null },
 		y: { type: "linear", label: "GOP/s", labelAnchor: "top" },
 		color: {
-			domain: [...ctx.palette.keys()],
-			range: [...ctx.palette.values()],
+			domain: present,
+			range: present.map((k) => ctx.palette.get(k) as string),
 			legend: true,
 		},
 		marks: [

@@ -98,6 +98,34 @@ test("efficiency without a 1-thread baseline is not shown", () => {
 	expect(parallelEfficiency(noBase, f, makeCtx(noBase))).toBeNull();
 });
 
+test("the legend lists only the kernels plotted, not the whole palette", () => {
+	// ikj is serial (filtered out by parallelRows), so it must not appear in
+	// the color domain even though it's in the fixture and the palette.
+	const spec = throughputVsThreads(rows, f, makeCtx(rows));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	expect(spec.color?.domain).toEqual(
+		expect.arrayContaining(["rayon-ikj", "static-ikj"]),
+	);
+	expect(spec.color?.domain).toHaveLength(2);
+});
+
+test("parallelEfficiency plots only the selected kernel, one line per size", () => {
+	const spec = parallelEfficiency(rows, f, makeCtx(rows));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	// marks[0] is Plot.line(points, ...): the first mark pushed.
+	const points = (spec.marks[0] as unknown as { data: { n: string }[] }).data;
+	const rayonRows = rows.filter((r) => r.kernel === "rayon-ikj");
+	expect(points).toHaveLength(rayonRows.length);
+});
+
+test("parallelEfficiency hides when the pinned kernel has no rows", () => {
+	expect(
+		parallelEfficiency(rows, { ...f, kernel: "does-not-exist" }, makeCtx(rows)),
+	).toBeNull();
+});
+
 test("the scaling chart plots only the selected size", () => {
 	const twoSizes: Row[] = [
 		...rows,

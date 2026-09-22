@@ -4,6 +4,7 @@ import {
 	allSizes,
 	BASELINE_KERNEL,
 	bestPerKernel,
+	defaultParallelKernel,
 	defaultPrecision,
 	defaultSize,
 	families,
@@ -202,6 +203,16 @@ test("bestPerKernel keeps the first row on a tie", () => {
 
 test("bestPerKernel returns nothing for no rows", () => {
 	expect(bestPerKernel([])).toEqual([]);
+});
+
+test("defaultParallelKernel picks the highest-gops parallel kernel at that precision", () => {
+	// mixed has one parallel kernel at f32 (rayon-ikj, best row gops 38).
+	expect(defaultParallelKernel(mixed, "f32")).toBe("rayon-ikj");
+});
+
+test("defaultParallelKernel returns empty when the precision has no parallel kernel", () => {
+	// i64 in mixed only has a serial ikj row.
+	expect(defaultParallelKernel(mixed, "i64")).toBe("");
 });
 
 test("baseline guards detect what a partial sweep is missing", () => {

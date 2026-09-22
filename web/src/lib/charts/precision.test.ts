@@ -54,6 +54,28 @@ test("precisions are ordered by descending best throughput", () => {
 	expect(spec?.fx?.domain).toEqual(["f32", "i64"]);
 });
 
+test("the legend lists only the kernels plotted, not the whole palette", () => {
+	const withUnplotted: Row[] = [
+		...rows,
+		{
+			kernel: "tiled",
+			precision: "f32",
+			n: 128,
+			threads: 1,
+			gops: 40,
+			backend: "cpu",
+		},
+	];
+	// tiled only has an n=128 row, so at f.n=64 it must not appear in the legend.
+	const spec = throughputByPrecision(withUnplotted, f, makeCtx(withUnplotted));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	expect(spec.color?.domain).toEqual(
+		expect.arrayContaining(["ikj", "rayon-ikj"]),
+	);
+	expect(spec.color?.domain).toHaveLength(2);
+});
+
 test("a row at a different size does not leak into the pinned size", () => {
 	// The best-per-(kernel,precision) map keys on kernel+precision, not n, so
 	// a missing `f.n` filter would let this n=128 row's huge gops win over

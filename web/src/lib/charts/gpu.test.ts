@@ -121,11 +121,14 @@ test("the gpu family gets an explicit gap where it has no row, instead of a line
 	const spec = gpuVsCpu(ragged, f, makeCtx(ragged));
 	expect(spec).not.toBeNull();
 	if (!spec) return;
-	// marks[0] is Plot.line(lineData, ...), confirmed by introspecting
-	// spec.marks[i].data for this exact fixture: index 0 carried the
-	// gap-filled gpu series (with a null-gops entry at n=512), index 1 the
-	// dot mark's real-points-only data, index 2 the text labels, index 3 tip.
-	const line = spec.marks[0] as {
+	// marks[0] is the non-gpu Plot.line, marks[1] is the dashed gpu-only
+	// Plot.line (split so a constant strokeDasharray can be used — Plot.line
+	// draws one <path> per series, so a per-datum dasharray channel is a
+	// no-op), confirmed by introspecting spec.marks[i].data for this exact
+	// fixture: index 1 carried the gap-filled gpu series (with a null-gops
+	// entry at n=512), index 2 the dot mark's real-points-only data, index 3
+	// the text labels, index 4 tip.
+	const line = spec.marks[1] as {
 		data: { family: string; n: number; gops: number | null }[];
 	};
 	const gap = line.data.find((d) => d.family === "gpu" && d.n === 512);

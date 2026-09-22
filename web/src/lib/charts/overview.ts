@@ -76,6 +76,15 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 		.filter((p) => Number.isFinite(p.y));
 	if (!points.length) return null;
 
+	// Scoped to what's actually plotted, not the whole-dataset palette, so the
+	// legend never lists a kernel this chart doesn't draw. ctx.palette is still
+	// the hue lookup, so a kernel keeps its colour regardless of who else is
+	// present.
+	const present = [...new Set(points.map((p) => p.kernel))];
+	// Direct labels in addition to the legend, but only when there are few
+	// enough series to read them — the headline chart can carry up to 8.
+	const showLabels = present.length <= 4;
+
 	// Plot draws a line/band straight through a size a kernel has no row for;
 	// break both instead of implying a measurement nobody took.
 	const lineData = breakGaps<SizePoint | SizeGapPoint>(
@@ -85,9 +94,16 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 		(p) => p.kernel,
 		(kernel, n) => ({ n, kernel, threads: null, lo: null, hi: null, y: null }),
 	);
+	// Plot.line draws one <path> per series (grouped by z, which defaults to
+	// stroke), so a per-datum strokeDasharray channel cannot vary along that
+	// one path — it silently does nothing. Split into two marks instead: mps
+	// dashed at a constant dasharray, everything else solid.
+	const otherLine = lineData.filter((p) => p.kernel !== "mps");
+	const mpsLine = lineData.filter((p) => p.kernel === "mps");
 
 	return {
 		...BASE,
+		...(showLabels ? { marginRight: 100 } : {}),
 		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
 		y: {
 			type: "log",
@@ -95,8 +111,8 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 			labelAnchor: "top",
 		},
 		color: {
-			domain: [...ctx.palette.keys()],
-			range: [...ctx.palette.values()],
+			domain: present,
+			range: present.map((k) => ctx.palette.get(k) as string),
 			legend: true,
 		},
 		marks: [
@@ -111,15 +127,36 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 							fillOpacity: 0.15,
 						}),
 					]),
-			Plot.line(lineData, {
+			Plot.line(otherLine, {
 				x: "n",
 				y: "y",
 				stroke: "kernel",
 				strokeWidth: 2,
-				strokeDasharray: (d: { kernel: string }) =>
-					d.kernel === "mps" ? "5 4" : undefined,
+			}),
+			Plot.line(mpsLine, {
+				x: "n",
+				y: "y",
+				stroke: "kernel",
+				strokeWidth: 2,
+				strokeDasharray: "5 4",
 			}),
 			Plot.dot(points, { x: "n", y: "y", fill: "kernel", r: 4 }),
+			...(showLabels
+				? [
+						Plot.text(
+							points.filter((p) => p.n === sizes[sizes.length - 1]),
+							{
+								x: "n",
+								y: "y",
+								text: "kernel",
+								dx: 6,
+								textAnchor: "start",
+								fill: "#9aa1a8",
+								fontSize: 11,
+							},
+						),
+					]
+				: []),
 			Plot.tip(
 				points,
 				Plot.pointer({
