@@ -6,6 +6,7 @@ use std::{
 
 use clap::{Parser, ValueEnum};
 
+use crate::config::ConfigFile;
 use crate::context::{self, RunContext};
 
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
@@ -14,8 +15,9 @@ const DEFAULT_REPETITIONS: usize = 5;
 
 const AFTER_HELP: &str = "\
 Every omitted dimension (--sizes, --threads, --kernel, --precision,
---block-size) sweeps all of its values. With none given, pass --sweep to run
-the full sweep (hours); otherwise this help is shown.
+--block-size) sweeps all of its values. With none given, load a preset with
+--config or pass --sweep to run everything (hours); otherwise this help is
+shown.
 
 Examples:
   gemm-bench --sizes 256,512 --kernel ikj,rayon-ikj --precision f32
@@ -63,6 +65,10 @@ pub(crate) struct Cli {
     /// Run even though no dimension is pinned: the full sweep, which takes hours.
     #[arg(long)]
     sweep: bool,
+
+    /// TOML preset whose keys are these flags' names; flags given here override it.
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 /// Fully resolved configuration used by the benchmark runner.
@@ -159,6 +165,7 @@ impl Cli {
     /// shows the help instead of starting an hours-long run.
     pub(crate) fn is_unpinned(&self) -> bool {
         !self.sweep
+            && self.config.is_none()
             && self.sizes.is_empty()
             && self.threads.is_empty()
             && self.kernel.is_empty()
@@ -167,38 +174,41 @@ impl Cli {
     }
 
     pub(crate) fn into_plan(self) -> Result<BenchmarkPlan, String> {
-        validate_cli(&self)?;
+        let file = match &self.config {
+            Some(path) => ConfigFile::load(path)?,
+            None => ConfigFile::default(),
+        };
+        let file_kernels = file.kernels()?;
+        let file_precisions = file.precisions()?;
+        let explicit_kernels = !self.kernel.is_empty() || file_kernels.is_some();
 
-        let sizes = if self.sizes.is_empty() {
-            DEFAULT_SIZES.to_vec()
-        } else {
-            self.sizes
-        };
-        let threads = if self.threads.is_empty() {
-            default_thread_counts()
-        } else {
-            self.threads
-        };
-        let precisions = if self.precision.is_empty() {
+        let sizes = pick(self.sizes, file.sizes, || DEFAULT_SIZES.to_vec());
+        let threads = pick(self.threads, file.threads, default_thread_counts);
+        let precisions = pick(self.precision, file_precisions, || {
             Precision::value_variants().to_vec()
-        } else {
-            self.precision
-        };
-        let explicit_kernels = !self.kernel.is_empty();
-        let kernels = if self.kernel.is_empty() {
-            // Every kernel; `cells` skips the combinations one can't run.
+        });
+        // Every kernel by default; `cells` skips the combinations one can't run.
+        let kernels = pick(self.kernel, file_kernels, || {
             KernelChoice::value_variants().to_vec()
-        } else {
-            self.kernel
-        };
-        let block_sizes = if self.block_size.is_empty() {
+        });
+        let block_sizes = pick(self.block_size, file.block_size, || {
             DEFAULT_BLOCK_SIZES.to_vec()
-        } else {
-            self.block_size
-        };
+        });
+        let repetitions = self
+            .repetitions
+            .or(file.repetitions)
+            .unwrap_or(DEFAULT_REPETITIONS);
 
         // Validate the resolved sweep before touching the filesystem, so a
         // rejected plan never creates directories or an output file.
+        validate_values(
+            &sizes,
+            &threads,
+            &kernels,
+            &precisions,
+            &block_sizes,
+            repetitions,
+        )?;
         if explicit_kernels {
             reject_idle_kernels(&kernels, &precisions, &threads, &sizes)?;
         }
@@ -215,7 +225,7 @@ impl Cli {
             threads,
             kernels,
             precisions,
-            repetitions: self.repetitions.unwrap_or(DEFAULT_REPETITIONS),
+            repetitions,
             block_sizes,
             context,
             devices,
@@ -340,18 +350,46 @@ impl Precision {
     }
 }
 
-fn validate_cli(cli: &Cli) -> Result<(), String> {
-    if cli.repetitions == Some(0) {
+/// A command-line flag wins, then the config key; an omitted dimension sweeps
+/// every value.
+fn pick<T>(flag: Vec<T>, key: Option<Vec<T>>, all: impl FnOnce() -> Vec<T>) -> Vec<T> {
+    if flag.is_empty() {
+        key.unwrap_or_else(all)
+    } else {
+        flag
+    }
+}
+
+/// Checks the resolved values, so config keys get the same checks as flags.
+fn validate_values(
+    sizes: &[usize],
+    threads: &[usize],
+    kernels: &[KernelChoice],
+    precisions: &[Precision],
+    block_sizes: &[usize],
+    repetitions: usize,
+) -> Result<(), String> {
+    if repetitions == 0 {
         return Err("--repetitions must be greater than zero".into());
     }
-    if cli.block_size.contains(&0) {
-        return Err("all --block-size values must be greater than zero".into());
+    let counts = [
+        ("--sizes", sizes.len()),
+        ("--threads", threads.len()),
+        ("--kernel", kernels.len()),
+        ("--precision", precisions.len()),
+        ("--block-size", block_sizes.len()),
+    ];
+    if let Some((flag, _)) = counts.iter().find(|(_, count)| *count == 0) {
+        return Err(format!("{flag} needs at least one value"));
     }
-    if cli.sizes.contains(&0) {
-        return Err("all --sizes values must be greater than zero".into());
-    }
-    if cli.threads.contains(&0) {
-        return Err("all --threads values must be greater than zero".into());
+    for (flag, values) in [
+        ("--sizes", sizes),
+        ("--threads", threads),
+        ("--block-size", block_sizes),
+    ] {
+        if values.contains(&0) {
+            return Err(format!("all {flag} values must be greater than zero"));
+        }
     }
     Ok(())
 }
@@ -504,12 +542,16 @@ fn default_thread_counts() -> Vec<usize> {
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsStr, fs, path::PathBuf};
+    use std::{
+        ffi::{OsStr, OsString},
+        fs,
+        path::PathBuf,
+    };
 
     use clap::{Parser, ValueEnum};
 
     use super::{
-        Cli, Devices, KernelChoice, Precision, default_output_path, open_output,
+        BenchmarkPlan, Cli, Devices, KernelChoice, Precision, default_output_path, open_output,
         validate_output_path,
     };
 
@@ -975,5 +1017,103 @@ mod tests {
             [(1, Some(32)), (1, Some(64)), (1, Some(128))]
         );
         let _ = fs::remove_file(&output);
+    }
+
+    fn temp_config(name: &str, body: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "gemm-bench-test-{}-{name}.toml",
+            std::process::id()
+        ));
+        fs::write(&path, body).expect("write test config");
+        path
+    }
+
+    fn plan_with_config(name: &str, body: &str, flags: &[&str]) -> Result<BenchmarkPlan, String> {
+        let config = temp_config(name, body);
+        let output = temp_output(name);
+        let mut args: Vec<OsString> = vec![
+            "gemm-bench".into(),
+            "--config".into(),
+            config.clone().into(),
+            "--output".into(),
+            output.clone().into(),
+        ];
+        args.extend(flags.iter().map(OsString::from));
+        let plan = Cli::try_parse_from(args)
+            .expect("arguments should parse")
+            .into_plan();
+        let _ = fs::remove_file(config);
+        let _ = fs::remove_file(output);
+        plan
+    }
+
+    const PRESET: &str = "sizes = [64]\nkernel = [\"ikj\"]\nprecision = [\"f32\"]\nblock-size = [32]\nrepetitions = 2\n";
+
+    #[test]
+    fn config_keys_fill_the_dimensions_flags_omit() {
+        let plan = plan_with_config("fill", PRESET, &[]).expect("config plan should be valid");
+        assert_eq!(plan.sizes, [64]);
+        assert_eq!(plan.kernels, [KernelChoice::Ikj]);
+        assert_eq!(plan.precisions, [Precision::F32]);
+        assert_eq!(plan.block_sizes, [32]);
+        assert_eq!(plan.repetitions, 2);
+        assert!(
+            plan.threads.contains(&1),
+            "an omitted key still sweeps every value"
+        );
+    }
+
+    #[test]
+    fn a_flag_replaces_its_config_key_and_nothing_else() {
+        let plan = plan_with_config("override", PRESET, &["--sizes", "128,256"])
+            .expect("config plan should be valid");
+        assert_eq!(plan.sizes, [128, 256]);
+        assert_eq!(plan.kernels, [KernelChoice::Ikj]);
+        assert_eq!(plan.repetitions, 2);
+    }
+
+    #[test]
+    fn a_misspelled_config_key_is_rejected() {
+        let error = plan_with_config("typo", "size = [64]\n", &[])
+            .expect_err("unknown keys must be rejected");
+        assert!(error.contains("unknown field `size`"), "{error}");
+    }
+
+    #[test]
+    fn an_unknown_kernel_in_a_config_is_rejected() {
+        let error = plan_with_config("bad-kernel", "kernel = [\"ijk\"]\n", &[])
+            .expect_err("unknown kernel names must be rejected");
+        assert!(error.contains("unknown value 'ijk'"), "{error}");
+    }
+
+    #[test]
+    fn an_empty_config_list_is_rejected() {
+        let error = plan_with_config("empty", "sizes = []\n", &[])
+            .expect_err("an empty dimension must be rejected");
+        assert!(
+            error.contains("--sizes needs at least one value"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_kernel_named_in_a_config_counts_as_explicit() {
+        let error = plan_with_config(
+            "idle",
+            "kernel = [\"static-ikj\"]\nsizes = [8]\nthreads = [16]\n",
+            &[],
+        )
+        .expect_err("a named kernel with nothing to run must be rejected");
+        assert!(
+            error.contains("static-ikj needs at least one row per thread"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_config_counts_as_pinning() {
+        let cli = Cli::try_parse_from(["gemm-bench", "--config", "configs/quick.toml"])
+            .expect("arguments should parse");
+        assert!(!cli.is_unpinned());
     }
 }

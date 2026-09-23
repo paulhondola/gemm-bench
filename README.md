@@ -156,6 +156,7 @@ just bench \
 | `--no-progress` | Disables the interactive `indicatif` progress bar | `false` |
 | `--output <FILE.csv>` | Output file; must have a `.csv` extension. Missing parent directories are created. Run via `just bench` so the default lands in the repo's `data/` | `data/runs/<host>/<timestamp>.csv` |
 | `--sweep` | Run with no dimension pinned: every value of every dimension (hours). Without it and with nothing pinned, the help is shown | `false` |
+| `--config <FILE.toml>` | Preset whose keys are the flag names (`sizes`, `threads`, `kernel`, `precision`, `block-size`, `repetitions`); unknown keys are rejected. A flag on the command line replaces the matching key; omitted keys sweep every value | none |
 
 ### Methodology & Output Schema
 

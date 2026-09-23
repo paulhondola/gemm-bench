@@ -2,6 +2,7 @@
 
 mod benchmark;
 mod cli;
+mod config;
 mod context;
 mod report;
 
