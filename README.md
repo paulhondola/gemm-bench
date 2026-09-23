@@ -185,7 +185,7 @@ just bench \
    - Columns: `kernel, backend, device, precision, n, threads, gops, mean_rel_error_f64, median_ms, min_ms, stddev_ms, block_size, repetitions, host, commit, timestamp`. `block_size` is empty for kernels that don't tile.
    - `backend` is `cpu` or `metal`. `device` is the CPU model (`sysctl` on macOS, `/proc/cpuinfo` on Linux) or the Metal GPU name.
    - `host` (hostname without domain), `commit` (`git describe --always --dirty`), and `timestamp` (UTC) are captured once per run. Any lookup that fails is written as `unknown`.
-   - `mean_rel_error_f64` is `0.0` until accuracy measurement lands.
+   - `mean_rel_error_f64` is the kernel's accuracy: the mean element-wise relative error against the same inputs widened to `f64` and multiplied in `f64` (untimed, once per size and precision). It counts only the kernel's arithmetic, not the rounding of its inputs, so `f64` CPU kernels and exact `i32`/`i64` products score `0`. It is informational; step 3's check is what aborts a run. Runs recorded before 2026-09-24 wrote a `0.0` placeholder, which `just data` publishes as `NULL`.
    - `gops` is $2N^3$ operations per second (from the median time), in billions. The count is $N^3$ multiplies plus $N^3$ adds whatever the element type, so one figure covers the floating-point and the integer precisions alike; `precision` says which kind of operation was counted.
 
 ---
