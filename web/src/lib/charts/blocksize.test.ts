@@ -235,3 +235,77 @@ test("the legend lists only the kernels actually plotted", () => {
 	expect(spec.color?.domain).toEqual(expect.arrayContaining(["tiled", "ikj"]));
 	expect(spec.color?.domain).toHaveLength(2);
 });
+
+test("a row without a block size is never plotted", () => {
+	// Mixed old/new data: ikj has 32/64 from old runs plus a new row with no
+	// block size. Number(null) is 0, which a log-scale x-axis cannot place.
+	const withNull: Row[] = [
+		...rows,
+		{
+			kernel: "ikj",
+			precision: "f32",
+			n: 512,
+			threads: 1,
+			gops: 25,
+			backend: "cpu",
+			block_size: null,
+		},
+	];
+	const spec = blockSizeSweep(withNull, f, makeCtx(withNull));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	const dot = spec.marks[1] as { data: { block_size: number }[] };
+	expect(dot.data.every((d) => d.block_size > 0)).toBe(true);
+});
+
+test("a kernel with old @64 and new null rows is still excluded as single-block-size", () => {
+	// Old committed runs recorded block_size=64 for every kernel, including
+	// non-tiling ones like mps; new runs leave it null for them. Naively
+	// collecting Number(r.block_size) (Number(null) === 0) makes mps look like
+	// it has two distinct block sizes (64 and 0), so singleBlockSizeKernels
+	// stops exempting it, and its lone old @64 row reaches this chart as a fake
+	// swept point.
+	const mixedOldAndNew: Row[] = [
+		{
+			kernel: "tiled",
+			precision: "f32",
+			n: 512,
+			threads: 1,
+			gops: 30,
+			backend: "cpu",
+			block_size: 32,
+		},
+		{
+			kernel: "tiled",
+			precision: "f32",
+			n: 512,
+			threads: 1,
+			gops: 50,
+			backend: "cpu",
+			block_size: 64,
+		},
+		{
+			kernel: "mps",
+			precision: "f32",
+			n: 512,
+			threads: 1,
+			gops: 900,
+			backend: "metal",
+			block_size: 64,
+		},
+		{
+			kernel: "mps",
+			precision: "f32",
+			n: 512,
+			threads: 1,
+			gops: 910,
+			backend: "metal",
+			block_size: null,
+		},
+	];
+	const spec = blockSizeSweep(mixedOldAndNew, f, makeCtx(mixedOldAndNew));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	const dot = spec.marks[1] as { data: { kernel: string }[] };
+	expect(dot.data.some((d) => d.kernel === "mps")).toBe(false);
+});

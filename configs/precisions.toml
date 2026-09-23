@@ -1,0 +1,5 @@
+# Every precision at one size. mps runs at f16/f32 and is skipped for the rest.
+# mps exists only on macOS, so this preset loads only there.
+sizes = [1024]
+block-size = [64]
+kernel = ["ikj", "rayon-ikj", "mps"]

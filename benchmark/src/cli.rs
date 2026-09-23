@@ -6,18 +6,35 @@ use std::{
 
 use clap::{Parser, ValueEnum};
 
+use crate::config::ConfigFile;
 use crate::context::{self, RunContext};
 
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
+const DEFAULT_BLOCK_SIZES: [usize; 5] = [16, 32, 64, 128, 256];
+const DEFAULT_REPETITIONS: usize = 5;
+
+const AFTER_HELP: &str = "\
+Every omitted dimension (--sizes, --threads, --kernel, --precision,
+--block-size) sweeps all of its values. With none given, load a preset with
+--config or pass --sweep to run everything (hours); otherwise this help is
+shown.
+
+Examples:
+  gemm-bench --sizes 256,512 --kernel ikj,rayon-ikj --precision f32
+  gemm-bench --config configs/quick.toml
+  gemm-bench --config configs/default.toml --sizes 1024
+  gemm-bench --sweep
+
+Presets in configs/: default, quick, precisions, block-sizes.";
 
 #[derive(Debug, Parser)]
-#[command(about = "Benchmark safe, row-major GEMM kernels")]
+#[command(about = "Benchmark safe, row-major GEMM kernels", after_help = AFTER_HELP)]
 pub(crate) struct Cli {
-    /// Matrix dimensions, as a comma-delimited list.
+    /// Matrix dimensions, as a comma-delimited list. Omit to sweep 64 through 4096.
     #[arg(long, value_delimiter = ',')]
     sizes: Vec<usize>,
 
-    /// Worker counts, as a comma-delimited list. Defaults to powers of two up to available CPUs.
+    /// Worker counts, as a comma-delimited list. Omit to sweep powers of two below available CPUs, plus that maximum.
     #[arg(long, value_delimiter = ',')]
     threads: Vec<usize>,
 
@@ -25,18 +42,19 @@ pub(crate) struct Cli {
     #[arg(long, value_delimiter = ',', value_enum)]
     kernel: Vec<KernelChoice>,
 
-    /// Element precision(s), as a comma-delimited list. Defaults to f32.
+    /// Element precision(s), as a comma-delimited list. Omit to sweep all of them.
     #[arg(long, value_delimiter = ',', value_enum)]
     precision: Vec<Precision>,
 
-    /// Number of measured runs per configuration, after one untimed warm-up
-    /// run; records contain their median, minimum, and standard deviation.
-    #[arg(long, default_value_t = 5)]
-    repetitions: usize,
+    /// Number of measured runs per configuration (default 5), after one untimed
+    /// warm-up run; records contain their median, minimum, and standard deviation.
+    #[arg(long)]
+    repetitions: Option<usize>,
 
-    /// Tile edge length for the blocked kernels.
-    #[arg(long, default_value_t = 64)]
-    block_size: usize,
+    /// Tile edge length(s) for the tiled kernels, as a comma-delimited list.
+    /// Omit to sweep 16 through 256.
+    #[arg(long, value_delimiter = ',')]
+    block_size: Vec<usize>,
 
     /// Output CSV file. Defaults to a new file per run,
     /// data/runs/<host>/<timestamp>.csv; missing parent directories are created.
@@ -46,6 +64,14 @@ pub(crate) struct Cli {
     /// Disable the interactive progress bar.
     #[arg(long)]
     no_progress: bool,
+
+    /// Run even though no dimension is pinned: the full sweep, which takes hours.
+    #[arg(long)]
+    sweep: bool,
+
+    /// TOML preset whose keys are these flags' names; flags given here override it.
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 /// Fully resolved configuration used by the benchmark runner.
@@ -56,30 +82,60 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) kernels: Vec<KernelChoice>,
     pub(crate) precisions: Vec<Precision>,
     pub(crate) repetitions: usize,
-    pub(crate) block_size: usize,
+    pub(crate) block_sizes: Vec<usize>,
     pub(crate) context: RunContext,
     pub(crate) devices: Devices,
     pub(crate) output: File,
     pub(crate) output_path: PathBuf,
     pub(crate) no_progress: bool,
+    /// One line per group of skipped cells, printed before the run.
+    pub(crate) skipped: Vec<String>,
 }
 
 impl BenchmarkPlan {
+    /// The (threads, block size) cells measured for one kernel at one
+    /// precision and size; empty when the kernel can't run there. The single
+    /// source for the sweep loop and the configuration count.
+    pub(crate) fn cells(
+        &self,
+        kernel: KernelChoice,
+        precision: Precision,
+        n: usize,
+    ) -> Vec<(usize, Option<usize>)> {
+        if !kernel.supports(precision) {
+            return Vec::new();
+        }
+        let threads: Vec<usize> = if kernel.uses_workers() {
+            self.threads
+                .iter()
+                .copied()
+                .filter(|&t| kernel.fits(t, n))
+                .collect()
+        } else {
+            vec![1]
+        };
+        let blocks: Vec<Option<usize>> = if kernel.uses_blocks() {
+            self.block_sizes.iter().copied().map(Some).collect()
+        } else {
+            vec![None]
+        };
+        threads
+            .iter()
+            .flat_map(|&t| blocks.iter().map(move |&b| (t, b)))
+            .collect()
+    }
+
     /// Returns the exact number of configurations that will be measured.
     pub(crate) fn total_configurations(&self) -> usize {
-        let configs_per_matrix: usize = self
-            .kernels
-            .iter()
-            .map(|kernel| {
-                if kernel.uses_workers() {
-                    self.threads.len()
-                } else {
-                    1
+        let mut total = 0;
+        for &precision in &self.precisions {
+            for &n in &self.sizes {
+                for &kernel in &self.kernels {
+                    total += self.cells(kernel, precision, n).len();
                 }
-            })
-            .sum();
-
-        self.precisions.len() * self.sizes.len() * configs_per_matrix
+            }
+        }
+        total
     }
 }
 
@@ -108,39 +164,62 @@ impl Devices {
 }
 
 impl Cli {
-    pub(crate) fn into_plan(self) -> Result<BenchmarkPlan, String> {
-        validate_cli(&self)?;
+    /// True when nothing narrows the sweep and `--sweep` wasn't given; `main`
+    /// shows the help instead of starting an hours-long run.
+    pub(crate) fn is_unpinned(&self) -> bool {
+        !self.sweep
+            && self.config.is_none()
+            && self.sizes.is_empty()
+            && self.threads.is_empty()
+            && self.kernel.is_empty()
+            && self.precision.is_empty()
+            && self.block_size.is_empty()
+    }
 
-        let sizes = if self.sizes.is_empty() {
-            DEFAULT_SIZES.to_vec()
-        } else {
-            self.sizes
+    pub(crate) fn into_plan(self) -> Result<BenchmarkPlan, String> {
+        let file = match &self.config {
+            Some(path) => ConfigFile::load(path)?,
+            None => ConfigFile::default(),
         };
-        let threads = if self.threads.is_empty() {
-            default_thread_counts()
-        } else {
-            self.threads
-        };
-        let precisions = if self.precision.is_empty() {
-            vec![Precision::F32]
-        } else {
-            self.precision
-        };
-        let kernels = if self.kernel.is_empty() {
-            // Defaults run only kernels that support every requested precision.
-            KernelChoice::value_variants()
-                .iter()
-                .copied()
-                .filter(|kernel| precisions.iter().all(|&p| kernel.supports(p)))
-                .collect()
-        } else {
-            self.kernel
-        };
+        let file_kernels = file
+            .kernels()
+            .map_err(|error| annotate_config_error(&self.config, error))?;
+        let file_precisions = file
+            .precisions()
+            .map_err(|error| annotate_config_error(&self.config, error))?;
+        let explicit_kernels = !self.kernel.is_empty() || file_kernels.is_some();
+
+        let sizes = pick(self.sizes, file.sizes, || DEFAULT_SIZES.to_vec());
+        let threads = pick(self.threads, file.threads, default_thread_counts);
+        let precisions = pick(self.precision, file_precisions, || {
+            Precision::value_variants().to_vec()
+        });
+        // Every kernel by default; `cells` skips the combinations one can't run.
+        let kernels = pick(self.kernel, file_kernels, || {
+            KernelChoice::value_variants().to_vec()
+        });
+        let block_sizes = pick(self.block_size, file.block_size, || {
+            DEFAULT_BLOCK_SIZES.to_vec()
+        });
+        let repetitions = self
+            .repetitions
+            .or(file.repetitions)
+            .unwrap_or(DEFAULT_REPETITIONS);
 
         // Validate the resolved sweep before touching the filesystem, so a
         // rejected plan never creates directories or an output file.
-        validate_static_threads(&kernels, &threads, &sizes)?;
-        validate_precisions(&kernels, &precisions)?;
+        validate_values(
+            &sizes,
+            &threads,
+            &kernels,
+            &precisions,
+            &block_sizes,
+            repetitions,
+        )?;
+        if explicit_kernels {
+            reject_idle_kernels(&kernels, &precisions, &threads, &sizes)?;
+        }
+        let skipped = skip_notices(&kernels, &precisions, &threads, &sizes);
         let context = context::capture();
         let devices = Devices::lookup(&kernels);
         let output_path = self
@@ -153,13 +232,14 @@ impl Cli {
             threads,
             kernels,
             precisions,
-            repetitions: self.repetitions,
-            block_size: self.block_size,
+            repetitions,
+            block_sizes,
             context,
             devices,
             output,
             output_path,
             no_progress: self.no_progress,
+            skipped,
         })
     }
 }
@@ -230,8 +310,21 @@ impl KernelChoice {
         )
     }
 
-    /// Whether this kernel can run at `precision`. The single source for plan
-    /// validation and the default kernel list.
+    /// Whether the kernel tiles by `--block-size`; the others run once and
+    /// record an empty block size.
+    pub(crate) fn uses_blocks(self) -> bool {
+        matches!(self, Self::Tiled | Self::RayonTiled | Self::StaticTiled)
+    }
+
+    /// Whether the kernel can run `threads` workers on `n` rows: the static
+    /// kernels give every worker at least one row.
+    pub(crate) fn fits(self, threads: usize, n: usize) -> bool {
+        !matches!(self, Self::StaticIkj | Self::StaticTiled) || threads <= n
+    }
+
+    /// Whether this kernel can run at `precision`. With `fits`, the single
+    /// source for skipping cells and rejecting a named kernel with nothing to
+    /// run.
     // Off macOS every kernel supports every precision, leaving `precision` unread.
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     pub(crate) fn supports(self, precision: Precision) -> bool {
@@ -264,55 +357,130 @@ impl Precision {
     }
 }
 
-fn validate_cli(cli: &Cli) -> Result<(), String> {
-    if cli.repetitions == 0 {
+/// Prefixes a config-value error (from `ConfigFile::kernels`/`precisions`)
+/// with the file path, matching `ConfigFile::load`'s error shape. These
+/// errors only occur when a config was actually given.
+fn annotate_config_error(config: &Option<PathBuf>, error: String) -> String {
+    match config {
+        Some(path) => format!("invalid config '{}': {error}", path.display()),
+        None => error,
+    }
+}
+
+/// A command-line flag wins, then the config key; an omitted dimension sweeps
+/// every value.
+fn pick<T>(flag: Vec<T>, key: Option<Vec<T>>, all: impl FnOnce() -> Vec<T>) -> Vec<T> {
+    if flag.is_empty() {
+        key.unwrap_or_else(all)
+    } else {
+        flag
+    }
+}
+
+/// Checks the resolved values, so config keys get the same checks as flags.
+fn validate_values(
+    sizes: &[usize],
+    threads: &[usize],
+    kernels: &[KernelChoice],
+    precisions: &[Precision],
+    block_sizes: &[usize],
+    repetitions: usize,
+) -> Result<(), String> {
+    if repetitions == 0 {
         return Err("--repetitions must be greater than zero".into());
     }
-    if cli.block_size == 0 {
-        return Err("--block-size must be greater than zero".into());
+    let counts = [
+        ("--sizes", sizes.len()),
+        ("--threads", threads.len()),
+        ("--kernel", kernels.len()),
+        ("--precision", precisions.len()),
+        ("--block-size", block_sizes.len()),
+    ];
+    if let Some((flag, _)) = counts.iter().find(|(_, count)| *count == 0) {
+        return Err(format!("{flag} needs at least one value"));
     }
-    if cli.sizes.contains(&0) {
-        return Err("all --sizes values must be greater than zero".into());
-    }
-    if cli.threads.contains(&0) {
-        return Err("all --threads values must be greater than zero".into());
+    for (flag, values) in [
+        ("--sizes", sizes),
+        ("--threads", threads),
+        ("--block-size", block_sizes),
+    ] {
+        if values.contains(&0) {
+            return Err(format!("all {flag} values must be greater than zero"));
+        }
     }
     Ok(())
 }
 
-/// `static-ikj` and `static-tiled` give every worker at least one row, so a
-/// worker count above the smallest matrix dimension cannot be honored and is
-/// rejected up front.
-fn validate_static_threads(
+/// A kernel named on the command line that can't run anywhere in the sweep is
+/// a mistake worth stopping for; default kernels are only skipped.
+fn reject_idle_kernels(
     kernels: &[KernelChoice],
+    precisions: &[Precision],
     threads: &[usize],
     sizes: &[usize],
 ) -> Result<(), String> {
-    if !kernels.contains(&KernelChoice::StaticIkj) && !kernels.contains(&KernelChoice::StaticTiled)
-    {
-        return Ok(());
-    }
-    let max_threads = threads.iter().copied().max().unwrap_or(1);
-    let min_size = sizes.iter().copied().min().unwrap_or(usize::MAX);
-    if max_threads > min_size {
-        return Err(format!(
-            "static kernels need at least one row per thread; --threads {max_threads} exceeds --sizes {min_size}"
-        ));
-    }
-    Ok(())
-}
-
-fn validate_precisions(kernels: &[KernelChoice], precisions: &[Precision]) -> Result<(), String> {
     for &kernel in kernels {
-        if let Some(precision) = precisions.iter().find(|&&p| !kernel.supports(p)) {
+        if !precisions.iter().any(|&p| kernel.supports(p)) {
+            let requested: Vec<&str> = precisions.iter().map(|p| p.label()).collect();
             return Err(format!(
                 "{} does not support {} precision",
                 kernel.label(),
-                precision.label()
+                requested.join(", ")
+            ));
+        }
+        let runnable = sizes
+            .iter()
+            .any(|&n| threads.iter().any(|&t| kernel.fits(t, n)));
+        if kernel.uses_workers() && !runnable {
+            return Err(format!(
+                "{} needs at least one row per thread; every --threads value exceeds every --sizes value",
+                kernel.label()
             ));
         }
     }
     Ok(())
+}
+
+/// One stderr line per group of cells `BenchmarkPlan::cells` leaves out.
+fn skip_notices(
+    kernels: &[KernelChoice],
+    precisions: &[Precision],
+    threads: &[usize],
+    sizes: &[usize],
+) -> Vec<String> {
+    let mut notices = Vec::new();
+    for &kernel in kernels {
+        let unsupported: Vec<&str> = precisions
+            .iter()
+            .filter(|&&p| !kernel.supports(p))
+            .map(|p| p.label())
+            .collect();
+        if !unsupported.is_empty() {
+            notices.push(format!(
+                "skipping {} at {} (unsupported precision)",
+                kernel.label(),
+                unsupported.join(", ")
+            ));
+        }
+        if !kernel.uses_workers() {
+            continue;
+        }
+        for &n in sizes {
+            let too_many: Vec<String> = threads
+                .iter()
+                .filter(|&&t| !kernel.fits(t, n))
+                .map(ToString::to_string)
+                .collect();
+            if !too_many.is_empty() {
+                notices.push(format!(
+                    "skipping {} with {} threads at n={n} (needs a row per thread)",
+                    kernel.label(),
+                    too_many.join(",")
+                ));
+            }
+        }
+    }
+    notices
 }
 
 /// Each run gets its own file, so reruns and other machines add data instead
@@ -391,12 +559,16 @@ fn default_thread_counts() -> Vec<usize> {
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsStr, fs, path::PathBuf};
+    use std::{
+        ffi::{OsStr, OsString},
+        fs,
+        path::PathBuf,
+    };
 
     use clap::{Parser, ValueEnum};
 
     use super::{
-        Cli, Devices, KernelChoice, Precision, default_output_path, open_output,
+        BenchmarkPlan, Cli, Devices, KernelChoice, Precision, default_output_path, open_output,
         validate_output_path,
     };
 
@@ -431,33 +603,41 @@ mod tests {
     }
 
     #[test]
-    fn empty_sweeps_expand_to_defaults() {
+    fn omitted_dimensions_sweep_every_value() {
         let output = temp_output("defaults");
-        let plan = Cli {
-            sizes: Vec::new(),
-            threads: Vec::new(),
-            kernel: Vec::new(),
-            precision: Vec::new(),
-            repetitions: 1,
-            block_size: 64,
-            output: Some(output.clone()),
-            no_progress: false,
-        }
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--sweep"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
         .into_plan()
-        .expect("default plan should be valid");
+        .expect("the full sweep should be valid");
 
         assert_eq!(plan.sizes, [64, 128, 256, 512, 1024, 2048, 4096]);
         assert!(plan.threads.contains(&1));
-        assert_eq!(plan.kernels.first(), Some(&KernelChoice::Naive));
-        #[cfg(target_os = "macos")]
-        assert_eq!(plan.kernels.last(), Some(&KernelChoice::Mps));
-        #[cfg(not(target_os = "macos"))]
-        assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticTiled));
-        assert_eq!(plan.precisions, [Precision::F32]);
+        assert_eq!(plan.kernels, KernelChoice::value_variants());
+        assert_eq!(plan.precisions, Precision::value_variants());
+        assert_eq!(plan.block_sizes, [16, 32, 64, 128, 256]);
+        assert_eq!(plan.repetitions, 5);
         assert!(!plan.no_progress);
-        assert!(plan.total_configurations() > 0);
         assert!(!plan.context.host.is_empty());
         let _ = fs::remove_file(&output);
+    }
+
+    #[test]
+    fn only_a_pinned_dimension_or_sweep_skips_the_help() {
+        let unpinned = |args: &[&str]| {
+            Cli::try_parse_from(std::iter::once("gemm-bench").chain(args.iter().copied()))
+                .expect("arguments should parse")
+                .is_unpinned()
+        };
+        assert!(unpinned(&[]));
+        assert!(unpinned(&["--no-progress", "--repetitions", "3"]));
+        assert!(!unpinned(&["--sweep"]));
+        assert!(!unpinned(&["--sizes", "64"]));
+        assert!(!unpinned(&["--block-size", "32"]));
     }
 
     #[test]
@@ -493,15 +673,17 @@ mod tests {
         .expect("plan should be valid");
 
         assert_eq!(plan.precisions, [Precision::I32, Precision::I64]);
-        // CPU kernels support integers; mps does not, so defaults omit it.
-        assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticTiled));
+        // Defaults keep every kernel; mps (no integer support) just has no cells.
+        assert_eq!(plan.kernels, KernelChoice::value_variants());
+        #[cfg(target_os = "macos")]
+        assert!(plan.cells(KernelChoice::Mps, Precision::I32, 64).is_empty());
         let _ = fs::remove_file(&output);
     }
 
     #[test]
-    fn static_threads_above_the_matrix_dimension_are_rejected_before_running() {
-        let output = temp_output("static-threads");
-        let error = Cli::try_parse_from([
+    fn static_thread_counts_above_a_size_are_skipped_for_that_size() {
+        let output = temp_output("static-skip");
+        let plan = Cli::try_parse_from([
             OsStr::new("gemm-bench"),
             OsStr::new("--sizes"),
             OsStr::new("8,64"),
@@ -509,18 +691,89 @@ mod tests {
             OsStr::new("4,16"),
             OsStr::new("--kernel"),
             OsStr::new("static-ikj"),
+            OsStr::new("--precision"),
+            OsStr::new("f32"),
             OsStr::new("--output"),
             output.as_os_str(),
         ])
         .expect("arguments should parse")
         .into_plan()
-        .expect_err("more static threads than rows must be rejected");
+        .expect("a partly runnable static sweep should be valid");
 
-        assert!(error.contains("--threads 16 exceeds --sizes 8"));
+        assert_eq!(
+            plan.cells(KernelChoice::StaticIkj, Precision::F32, 8),
+            [(4, None)]
+        );
+        assert_eq!(
+            plan.cells(KernelChoice::StaticIkj, Precision::F32, 64),
+            [(4, None), (16, None)]
+        );
+        assert_eq!(plan.total_configurations(), 3);
+        assert_eq!(
+            plan.skipped,
+            ["skipping static-ikj with 16 threads at n=8 (needs a row per thread)"]
+        );
+        let _ = fs::remove_file(&output);
+    }
+
+    #[test]
+    fn a_static_kernel_with_no_runnable_thread_count_is_rejected_before_running() {
+        let output = temp_output("static-idle");
+        let error = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--sizes"),
+            OsStr::new("8"),
+            OsStr::new("--threads"),
+            OsStr::new("16"),
+            OsStr::new("--kernel"),
+            OsStr::new("static-ikj"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect_err("a named kernel with nothing to run must be rejected");
+
+        assert!(
+            error.contains("static-ikj needs at least one row per thread"),
+            "{error}"
+        );
         assert!(
             !output.exists(),
             "a rejected plan must not create the output file"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn default_kernels_skip_mps_at_precisions_it_lacks() {
+        let output = temp_output("mps-skip");
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--sizes"),
+            OsStr::new("64"),
+            OsStr::new("--precision"),
+            OsStr::new("f32,f64"),
+            OsStr::new("--threads"),
+            OsStr::new("1"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect("unsupported cells of a default kernel are skipped, not rejected");
+
+        assert!(plan.kernels.contains(&KernelChoice::Mps));
+        assert_eq!(
+            plan.cells(KernelChoice::Mps, Precision::F32, 64),
+            [(1, None)]
+        );
+        assert!(plan.cells(KernelChoice::Mps, Precision::F64, 64).is_empty());
+        assert_eq!(
+            plan.skipped,
+            ["skipping mps at f64 (unsupported precision)"]
+        );
+        let _ = fs::remove_file(&output);
     }
 
     #[test]
@@ -657,7 +910,7 @@ mod tests {
             plan.devices.metal, "unknown",
             "a Mac with Metal must name its GPU"
         );
-        assert_eq!(plan.total_configurations(), 7); // 7 default sizes * 1 precision * 1 config
+        assert_eq!(plan.total_configurations(), 14); // 7 default sizes * mps's 2 precisions (f16, f32)
         let _ = fs::remove_file(&output);
     }
 
@@ -707,5 +960,178 @@ mod tests {
             !output.exists(),
             "a rejected plan must not create the output file"
         );
+    }
+
+    #[test]
+    fn block_size_flag_accepts_a_comma_delimited_sweep() {
+        let output = temp_output("block-sizes");
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--block-size"),
+            OsStr::new("32,64,128"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("block-size list should parse")
+        .into_plan()
+        .expect("plan should be valid");
+
+        assert_eq!(plan.block_sizes, [32, 64, 128]);
+        let _ = fs::remove_file(&output);
+    }
+
+    #[test]
+    fn zero_in_the_block_size_list_is_rejected() {
+        let output = temp_output("zero-block");
+        let error = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--block-size"),
+            OsStr::new("32,0"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect_err("a zero block size must be rejected");
+
+        assert!(error.contains("--block-size"), "{error}");
+        assert!(
+            !output.exists(),
+            "a rejected plan must not create the output file"
+        );
+    }
+
+    #[test]
+    fn block_sizes_multiply_only_the_tiled_kernels() {
+        let output = temp_output("block-count");
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--sizes"),
+            OsStr::new("64"),
+            OsStr::new("--precision"),
+            OsStr::new("f32"),
+            OsStr::new("--kernel"),
+            OsStr::new("ikj,tiled,rayon-tiled"),
+            OsStr::new("--threads"),
+            OsStr::new("1,2"),
+            OsStr::new("--block-size"),
+            OsStr::new("32,64,128"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect("plan should be valid");
+
+        // ikj 1 + tiled 3 blocks + rayon-tiled 2 threads x 3 blocks = 10
+        assert_eq!(plan.total_configurations(), 10);
+        assert_eq!(
+            plan.cells(KernelChoice::Ikj, Precision::F32, 64),
+            [(1, None)]
+        );
+        assert_eq!(
+            plan.cells(KernelChoice::Tiled, Precision::F32, 64),
+            [(1, Some(32)), (1, Some(64)), (1, Some(128))]
+        );
+        let _ = fs::remove_file(&output);
+    }
+
+    fn temp_config(name: &str, body: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "gemm-bench-test-{}-{name}.toml",
+            std::process::id()
+        ));
+        fs::write(&path, body).expect("write test config");
+        path
+    }
+
+    fn plan_with_config(name: &str, body: &str, flags: &[&str]) -> Result<BenchmarkPlan, String> {
+        let config = temp_config(name, body);
+        let output = temp_output(name);
+        let mut args: Vec<OsString> = vec![
+            "gemm-bench".into(),
+            "--config".into(),
+            config.clone().into(),
+            "--output".into(),
+            output.clone().into(),
+        ];
+        args.extend(flags.iter().map(OsString::from));
+        let plan = Cli::try_parse_from(args)
+            .expect("arguments should parse")
+            .into_plan();
+        let _ = fs::remove_file(config);
+        let _ = fs::remove_file(output);
+        plan
+    }
+
+    const PRESET: &str = "sizes = [64]\nkernel = [\"ikj\"]\nprecision = [\"f32\"]\nblock-size = [32]\nrepetitions = 2\n";
+
+    #[test]
+    fn config_keys_fill_the_dimensions_flags_omit() {
+        let plan = plan_with_config("fill", PRESET, &[]).expect("config plan should be valid");
+        assert_eq!(plan.sizes, [64]);
+        assert_eq!(plan.kernels, [KernelChoice::Ikj]);
+        assert_eq!(plan.precisions, [Precision::F32]);
+        assert_eq!(plan.block_sizes, [32]);
+        assert_eq!(plan.repetitions, 2);
+        assert!(
+            plan.threads.contains(&1),
+            "an omitted key still sweeps every value"
+        );
+    }
+
+    #[test]
+    fn a_flag_replaces_its_config_key_and_nothing_else() {
+        let plan = plan_with_config("override", PRESET, &["--sizes", "128,256"])
+            .expect("config plan should be valid");
+        assert_eq!(plan.sizes, [128, 256]);
+        assert_eq!(plan.kernels, [KernelChoice::Ikj]);
+        assert_eq!(plan.repetitions, 2);
+    }
+
+    #[test]
+    fn a_misspelled_config_key_is_rejected() {
+        let error = plan_with_config("typo", "size = [64]\n", &[])
+            .expect_err("unknown keys must be rejected");
+        assert!(error.contains("unknown field `size`"), "{error}");
+    }
+
+    #[test]
+    fn an_unknown_kernel_in_a_config_is_rejected() {
+        let error = plan_with_config("bad-kernel", "kernel = [\"ijk\"]\n", &[])
+            .expect_err("unknown kernel names must be rejected");
+        assert!(error.contains("unknown value 'ijk'"), "{error}");
+        assert!(error.contains("invalid config '"), "{error}");
+    }
+
+    #[test]
+    fn an_empty_config_list_is_rejected() {
+        let error = plan_with_config("empty", "sizes = []\n", &[])
+            .expect_err("an empty dimension must be rejected");
+        assert!(
+            error.contains("--sizes needs at least one value"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_kernel_named_in_a_config_counts_as_explicit() {
+        let error = plan_with_config(
+            "idle",
+            "kernel = [\"static-ikj\"]\nsizes = [8]\nthreads = [16]\n",
+            &[],
+        )
+        .expect_err("a named kernel with nothing to run must be rejected");
+        assert!(
+            error.contains("static-ikj needs at least one row per thread"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_config_counts_as_pinning() {
+        let cli = Cli::try_parse_from(["gemm-bench", "--config", "configs/quick.toml"])
+            .expect("arguments should parse");
+        assert!(!cli.is_unpinned());
     }
 }

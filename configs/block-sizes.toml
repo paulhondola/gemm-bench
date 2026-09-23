@@ -1,0 +1,5 @@
+# Block-size sweep for the tiled kernels at every thread count. rayon-tiled
+# splits rows into about 4 tasks per thread, so its curve tracks cache fit.
+sizes = [512, 1024, 2048]
+precision = ["f32"]
+kernel = ["tiled", "rayon-tiled", "static-tiled"]

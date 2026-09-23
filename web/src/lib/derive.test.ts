@@ -420,3 +420,21 @@ test("singleBlockSizeKernels: a kernel with two block sizes in the dataset is ex
 	expect(single.has("mps")).toBe(true);
 	expect(single.has("ikj")).toBe(false);
 });
+
+test("rows without a block size are not a block size", () => {
+	const withUntiled: Row[] = [
+		...blockRows,
+		{
+			kernel: "rayon-ikj",
+			precision: "f32",
+			n: 64,
+			threads: 4,
+			gops: 40,
+			backend: "cpu",
+			block_size: null,
+		},
+	];
+	expect(blockSizes(withUntiled)).toEqual([32, 64]);
+	expect(blockSizesFor(withUntiled, "f32", 64)).toEqual([32, 64]);
+	expect(defaultBlockSize(withUntiled)).toBe(32);
+});

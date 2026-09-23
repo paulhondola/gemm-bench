@@ -391,3 +391,51 @@ test("the GPU tab's CPU-family line pins to the selected block size, not the max
 	);
 	expect(parallel?.gops).toBe(40);
 });
+
+test("a row without a block size survives any block-size selection", () => {
+	// Old runs recorded block_size=64 for every kernel; new ones leave it empty
+	// for kernels that don't tile. ikj doesn't tile, so its only real block
+	// size is the old 64 (the null row is skipped when collecting sizes) —
+	// singleBlockSizeKernels exempts it, so both its rows survive a selection
+	// pinned to block_size=32, alongside tiled's real block_size=32 row.
+	const mixed: Row[] = [
+		{
+			kernel: "ikj",
+			precision: "f32",
+			n: 256,
+			threads: 1,
+			gops: 10,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0,
+			block_size: 64,
+		},
+		{
+			kernel: "ikj",
+			precision: "f32",
+			n: 256,
+			threads: 1,
+			gops: 11,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0,
+			block_size: null,
+		},
+		{
+			kernel: "tiled",
+			precision: "f32",
+			n: 256,
+			threads: 1,
+			gops: 12,
+			backend: "cpu",
+			median_ms: 1,
+			stddev_ms: 0,
+			block_size: 32,
+		},
+	];
+	const overview = TABS.find((t) => t.id === "overview");
+	expect(overview).toBeDefined();
+	if (!overview) return;
+	const scoped = rowsForTab(overview, mixed, "f32", 32, makeCtx(mixed));
+	expect(scoped.map((r) => r.gops)).toEqual([10, 11, 12]);
+});

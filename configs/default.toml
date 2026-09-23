@@ -1,0 +1,4 @@
+# The default run before --sweep existed. Every omitted key sweeps all of its
+# values (sizes 64-4096, threads 1..all cores, every kernel); flags override keys.
+precision = ["f32"]
+block-size = [64]
