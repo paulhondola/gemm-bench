@@ -394,8 +394,10 @@ test("the GPU tab's CPU-family line pins to the selected block size, not the max
 
 test("a row without a block size survives any block-size selection", () => {
 	// Old runs recorded block_size=64 for every kernel; new ones leave it empty
-	// for kernels that don't tile. Mixed, ikj has two distinct values, so only
-	// the null check keeps its new row on a tab pinned to block_size=32.
+	// for kernels that don't tile. ikj doesn't tile, so its only real block
+	// size is the old 64 (the null row is skipped when collecting sizes) —
+	// singleBlockSizeKernels exempts it, so both its rows survive a selection
+	// pinned to block_size=32, alongside tiled's real block_size=32 row.
 	const mixed: Row[] = [
 		{
 			kernel: "ikj",
@@ -435,5 +437,5 @@ test("a row without a block size survives any block-size selection", () => {
 	expect(overview).toBeDefined();
 	if (!overview) return;
 	const scoped = rowsForTab(overview, mixed, "f32", 32, makeCtx(mixed));
-	expect(scoped.map((r) => r.gops)).toEqual([11, 12]);
+	expect(scoped.map((r) => r.gops)).toEqual([10, 11, 12]);
 });

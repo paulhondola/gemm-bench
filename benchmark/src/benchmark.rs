@@ -69,6 +69,13 @@ fn run_precision<T: Element>(
     records: &mut Vec<BenchmarkRecord>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for &n in &plan.sizes {
+        if plan
+            .kernels
+            .iter()
+            .all(|&k| plan.cells(k, precision, n).is_empty())
+        {
+            continue;
+        }
         let (lhs, rhs) = benchmark_inputs::<T>(n);
         let mut output = Matrix::zeros(n, n);
         let mut reference = Matrix::zeros(n, n);

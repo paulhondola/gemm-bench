@@ -140,6 +140,7 @@ export function defaultBlockSizeFor(
 export function singleBlockSizeKernels(rows: Row[]): Set<string> {
 	const byKernel = new Map<string, Set<number>>();
 	for (const r of rows) {
+		if (!hasBlockSize(r)) continue;
 		const kernel = String(r.kernel);
 		const sizes = byKernel.get(kernel) ?? new Set<number>();
 		sizes.add(Number(r.block_size));

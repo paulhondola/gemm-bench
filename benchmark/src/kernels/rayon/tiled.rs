@@ -26,8 +26,9 @@ impl<T: Element> GemmKernel<T> for RayonTiledGemm {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();
         let block_size = self.block_size;
-        // At least 4 tasks per worker, rounded to a multiple of them: no idle rounds, and
-        // spare tasks let stealing route around slow cores. ponytail: 4 tuned on M1 Pro 8P+2E.
+        // Aims for ~4 tasks per worker (rounding rows up to a whole chunk can leave a few
+        // fewer): no idle rounds, and spare tasks let stealing route around slow cores.
+        // ponytail: 4 tuned on M1 Pro 8P+2E.
         let threads = rayon::current_num_threads();
         let tasks = n.div_ceil(block_size).max(4 * threads).div_ceil(threads) * threads;
         let chunk_rows = n.div_ceil(tasks);

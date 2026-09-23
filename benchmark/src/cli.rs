@@ -34,7 +34,7 @@ pub(crate) struct Cli {
     #[arg(long, value_delimiter = ',')]
     sizes: Vec<usize>,
 
-    /// Worker counts, as a comma-delimited list. Omit to sweep powers of two up to available CPUs.
+    /// Worker counts, as a comma-delimited list. Omit to sweep powers of two below available CPUs, plus that maximum.
     #[arg(long, value_delimiter = ',')]
     threads: Vec<usize>,
 
@@ -181,8 +181,12 @@ impl Cli {
             Some(path) => ConfigFile::load(path)?,
             None => ConfigFile::default(),
         };
-        let file_kernels = file.kernels()?;
-        let file_precisions = file.precisions()?;
+        let file_kernels = file
+            .kernels()
+            .map_err(|error| annotate_config_error(&self.config, error))?;
+        let file_precisions = file
+            .precisions()
+            .map_err(|error| annotate_config_error(&self.config, error))?;
         let explicit_kernels = !self.kernel.is_empty() || file_kernels.is_some();
 
         let sizes = pick(self.sizes, file.sizes, || DEFAULT_SIZES.to_vec());
@@ -350,6 +354,16 @@ impl Precision {
             Self::I32 => "i32",
             Self::I64 => "i64",
         }
+    }
+}
+
+/// Prefixes a config-value error (from `ConfigFile::kernels`/`precisions`)
+/// with the file path, matching `ConfigFile::load`'s error shape. These
+/// errors only occur when a config was actually given.
+fn annotate_config_error(config: &Option<PathBuf>, error: String) -> String {
+    match config {
+        Some(path) => format!("invalid config '{}': {error}", path.display()),
+        None => error,
     }
 }
 
@@ -1087,6 +1101,7 @@ mod tests {
         let error = plan_with_config("bad-kernel", "kernel = [\"ijk\"]\n", &[])
             .expect_err("unknown kernel names must be rejected");
         assert!(error.contains("unknown value 'ijk'"), "{error}");
+        assert!(error.contains("invalid config '"), "{error}");
     }
 
     #[test]
