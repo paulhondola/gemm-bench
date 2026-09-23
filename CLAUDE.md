@@ -7,7 +7,7 @@ Rust GEMM benchmarks (`benchmark/`) plus a Svelte dashboard (`web/`) that querie
 Everything goes through `just` (run from the repo root):
 
 - `just test` / `just check` / `just lint`: tests, clippy (`-D warnings`) + tsc, auto-fix fmt + Biome. Run `just check && just test` before pushing.
-- `just bench --sizes 256,512 --kernel ikj,rayon-ikj --precision f32`: forwards args to the CLI. Every omitted dimension sweeps all of its values, so pin `--precision` (and `--block-size` for tiled kernels) too. With nothing pinned it prints the help; `--sweep` runs everything (hours).
+- `just bench --sizes 256,512 --kernel ikj,rayon-ikj --precision f32`: forwards args to the CLI. Every omitted dimension sweeps all of its values, so pin `--precision` (and `--block-size` for tiled kernels) too. With nothing pinned it prints the help; `--sweep` runs everything (hours). Presets: `just bench --config configs/quick.toml` (see `configs/`).
 - `just data`: validates and merges run CSVs. Requires the DuckDB CLI.
 
 ## Gotchas

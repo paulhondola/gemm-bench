@@ -54,3 +54,31 @@ fn parse_names<T: ValueEnum>(
         })
         .transpose()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{ffi::OsStr, fs, path::Path};
+
+    use super::ConfigFile;
+
+    #[test]
+    fn every_preset_parses() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../configs");
+        let mut presets = 0;
+        for entry in fs::read_dir(&dir).expect("configs/ should exist") {
+            let path = entry.expect("readable entry").path();
+            if path.extension() != Some(OsStr::new("toml")) {
+                continue;
+            }
+            let preset = ConfigFile::load(&path).unwrap_or_else(|error| panic!("{error}"));
+            // precisions.toml names mps, which exists only on macOS.
+            #[cfg(target_os = "macos")]
+            let _kernels = preset.kernels().unwrap_or_else(|error| panic!("{error}"));
+            let _precisions = preset
+                .precisions()
+                .unwrap_or_else(|error| panic!("{error}"));
+            presets += 1;
+        }
+        assert!(presets > 0, "no presets found in {}", dir.display());
+    }
+}

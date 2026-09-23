@@ -92,6 +92,23 @@ Every omitted dimension (`--sizes`, `--threads`, `--kernel`, `--precision`, `--b
 just bench --sweep
 ```
 
+### Presets
+
+A preset is a TOML file whose keys are the flag names. List only what you pin: an omitted key sweeps every value, and a listed key is a fixed snapshot, so a kernel added later won't join a preset that names its kernels. Flags on the command line replace the matching key.
+
+```sh
+just bench --config configs/quick.toml                 # seconds-long sanity check
+just bench --config configs/default.toml               # f32, block 64, everything else swept
+just bench --config configs/default.toml --sizes 1024  # a flag replaces its key
+```
+
+| Preset | Pins | Use |
+| :--- | :--- | :--- |
+| `default.toml` | precision `f32`, block size `64` | The default run before `--sweep` existed |
+| `quick.toml` | sizes `64,256`, `f32`, block `64`, 3 repetitions | Sanity check |
+| `precisions.toml` | size `1024`, block `64`, `ikj,rayon-ikj,mps` | Precision comparison (`mps` is macOS-only) |
+| `block-sizes.toml` | sizes `512,1024,2048`, `f32`, the tiled kernels | Block-size sweep |
+
 ### Targeted Sweeps
 
 #### Compare Cache Locality (Single-Threaded)

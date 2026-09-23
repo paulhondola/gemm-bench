@@ -21,8 +21,11 @@ shown.
 
 Examples:
   gemm-bench --sizes 256,512 --kernel ikj,rayon-ikj --precision f32
-  gemm-bench --sizes 1024 --kernel tiled --precision f32 --block-size 32,64,128
-  gemm-bench --sweep";
+  gemm-bench --config configs/quick.toml
+  gemm-bench --config configs/default.toml --sizes 1024
+  gemm-bench --sweep
+
+Presets in configs/: default, quick, precisions, block-sizes.";
 
 #[derive(Debug, Parser)]
 #[command(about = "Benchmark safe, row-major GEMM kernels", after_help = AFTER_HELP)]
