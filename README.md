@@ -70,7 +70,7 @@ Run `just` with no arguments to list every recipe.
 | `ikj` | Loop interchange ($i \to k \to j$) | Row-wise contiguous streaming in $B$ and $C$; autovectorizes with SIMD instructions. |
 | `tiled` | 2D cache blocking ($B \times B$ tiles) | Partitions working sets into tiles sized for CPU L1/L2 data caches. |
 | `rayon-ikj` | Rayon work-stealing parallel iterator | Dynamically distributes row chunks across a Rayon worker thread pool with `ikj` compute. |
-| `rayon-tiled` | Rayon parallel 2D tiled iterator | Work-stealing scheduling over 2D matrix tiles. |
+| `rayon-tiled` | Rayon parallel 2D tiled iterator | Work-stealing over row chunks of at most one tile, at least 4 per worker and a multiple of the worker count, with 2D tiling inside each chunk. |
 | `static-ikj` | OpenMP-style persistent thread pool | Partitions contiguous row chunks evenly across dedicated threads, eliminating work-stealing overhead. |
 | `static-tiled` | OpenMP-style thread pool with 2D blocking | Combines deterministic row partitioning on a persistent thread pool with L1/L2 cache-blocked compute. |
 

@@ -224,6 +224,17 @@ mod tests {
             kernel.compute(&lhs, &rhs, &mut actual);
             assert_close(&actual, &expected);
         }
+
+        // rayon-tiled sizes its row chunks from the pool's thread count.
+        for threads in 1..=n {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .expect("rayon thread pool should build");
+            let mut actual = Matrix::zeros(n, n);
+            pool.install(|| RayonTiledGemm::new(3).compute(&lhs, &rhs, &mut actual));
+            assert_close(&actual, &expected);
+        }
     }
 
     #[test]
