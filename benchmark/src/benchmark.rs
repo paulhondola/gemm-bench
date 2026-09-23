@@ -76,7 +76,7 @@ fn run_precision<T: Element>(
         let tolerance = tolerance::<T>(n);
 
         for kernel in plan.kernels.iter().copied() {
-            for (thread_count, block_size) in plan.cells(kernel) {
+            for (thread_count, block_size) in plan.cells(kernel, precision, n) {
                 progress.set_target(
                     kernel.label(),
                     n,

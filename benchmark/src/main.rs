@@ -11,6 +11,9 @@ use crate::cli::Cli;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let plan = Cli::parse().into_plan()?;
+    for notice in &plan.skipped {
+        eprintln!("{notice}");
+    }
     let records = benchmark::run(&plan)?;
 
     report::print_results_table(&records);

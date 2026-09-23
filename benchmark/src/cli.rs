@@ -62,16 +62,31 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) output: File,
     pub(crate) output_path: PathBuf,
     pub(crate) no_progress: bool,
+    /// One line per group of skipped cells, printed before the run.
+    pub(crate) skipped: Vec<String>,
 }
 
 impl BenchmarkPlan {
-    /// The (threads, block size) cells measured for one kernel. The single
+    /// The (threads, block size) cells measured for one kernel at one
+    /// precision and size; empty when the kernel can't run there. The single
     /// source for the sweep loop and the configuration count.
-    pub(crate) fn cells(&self, kernel: KernelChoice) -> Vec<(usize, Option<usize>)> {
-        let threads: &[usize] = if kernel.uses_workers() {
-            &self.threads
+    pub(crate) fn cells(
+        &self,
+        kernel: KernelChoice,
+        precision: Precision,
+        n: usize,
+    ) -> Vec<(usize, Option<usize>)> {
+        if !kernel.supports(precision) {
+            return Vec::new();
+        }
+        let threads: Vec<usize> = if kernel.uses_workers() {
+            self.threads
+                .iter()
+                .copied()
+                .filter(|&t| kernel.fits(t, n))
+                .collect()
         } else {
-            &[1]
+            vec![1]
         };
         let blocks: Vec<Option<usize>> = if kernel.uses_blocks() {
             self.block_sizes.iter().copied().map(Some).collect()
@@ -86,8 +101,15 @@ impl BenchmarkPlan {
 
     /// Returns the exact number of configurations that will be measured.
     pub(crate) fn total_configurations(&self) -> usize {
-        let per_matrix: usize = self.kernels.iter().map(|&k| self.cells(k).len()).sum();
-        self.precisions.len() * self.sizes.len() * per_matrix
+        let mut total = 0;
+        for &precision in &self.precisions {
+            for &n in &self.sizes {
+                for &kernel in &self.kernels {
+                    total += self.cells(kernel, precision, n).len();
+                }
+            }
+        }
+        total
     }
 }
 
@@ -134,21 +156,20 @@ impl Cli {
         } else {
             self.precision
         };
+        let explicit_kernels = !self.kernel.is_empty();
         let kernels = if self.kernel.is_empty() {
-            // Defaults run only kernels that support every requested precision.
-            KernelChoice::value_variants()
-                .iter()
-                .copied()
-                .filter(|kernel| precisions.iter().all(|&p| kernel.supports(p)))
-                .collect()
+            // Every kernel; `cells` skips the combinations one can't run.
+            KernelChoice::value_variants().to_vec()
         } else {
             self.kernel
         };
 
         // Validate the resolved sweep before touching the filesystem, so a
         // rejected plan never creates directories or an output file.
-        validate_static_threads(&kernels, &threads, &sizes)?;
-        validate_precisions(&kernels, &precisions)?;
+        if explicit_kernels {
+            reject_idle_kernels(&kernels, &precisions, &threads, &sizes)?;
+        }
+        let skipped = skip_notices(&kernels, &precisions, &threads, &sizes);
         let context = context::capture();
         let devices = Devices::lookup(&kernels);
         let output_path = self
@@ -168,6 +189,7 @@ impl Cli {
             output,
             output_path,
             no_progress: self.no_progress,
+            skipped,
         })
     }
 }
@@ -244,8 +266,15 @@ impl KernelChoice {
         matches!(self, Self::Tiled | Self::RayonTiled | Self::StaticTiled)
     }
 
-    /// Whether this kernel can run at `precision`. The single source for plan
-    /// validation and the default kernel list.
+    /// Whether the kernel can run `threads` workers on `n` rows: the static
+    /// kernels give every worker at least one row.
+    pub(crate) fn fits(self, threads: usize, n: usize) -> bool {
+        !matches!(self, Self::StaticIkj | Self::StaticTiled) || threads <= n
+    }
+
+    /// Whether this kernel can run at `precision`. With `fits`, the single
+    /// source for skipping cells and rejecting a named kernel with nothing to
+    /// run.
     // Off macOS every kernel supports every precision, leaving `precision` unread.
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     pub(crate) fn supports(self, precision: Precision) -> bool {
@@ -294,39 +323,76 @@ fn validate_cli(cli: &Cli) -> Result<(), String> {
     Ok(())
 }
 
-/// `static-ikj` and `static-tiled` give every worker at least one row, so a
-/// worker count above the smallest matrix dimension cannot be honored and is
-/// rejected up front.
-fn validate_static_threads(
+/// A kernel named on the command line that can't run anywhere in the sweep is
+/// a mistake worth stopping for; default kernels are only skipped.
+fn reject_idle_kernels(
     kernels: &[KernelChoice],
+    precisions: &[Precision],
     threads: &[usize],
     sizes: &[usize],
 ) -> Result<(), String> {
-    if !kernels.contains(&KernelChoice::StaticIkj) && !kernels.contains(&KernelChoice::StaticTiled)
-    {
-        return Ok(());
-    }
-    let max_threads = threads.iter().copied().max().unwrap_or(1);
-    let min_size = sizes.iter().copied().min().unwrap_or(usize::MAX);
-    if max_threads > min_size {
-        return Err(format!(
-            "static kernels need at least one row per thread; --threads {max_threads} exceeds --sizes {min_size}"
-        ));
-    }
-    Ok(())
-}
-
-fn validate_precisions(kernels: &[KernelChoice], precisions: &[Precision]) -> Result<(), String> {
     for &kernel in kernels {
-        if let Some(precision) = precisions.iter().find(|&&p| !kernel.supports(p)) {
+        if !precisions.iter().any(|&p| kernel.supports(p)) {
+            let requested: Vec<&str> = precisions.iter().map(|p| p.label()).collect();
             return Err(format!(
                 "{} does not support {} precision",
                 kernel.label(),
-                precision.label()
+                requested.join(", ")
+            ));
+        }
+        let runnable = sizes
+            .iter()
+            .any(|&n| threads.iter().any(|&t| kernel.fits(t, n)));
+        if kernel.uses_workers() && !runnable {
+            return Err(format!(
+                "{} needs at least one row per thread; every --threads value exceeds every --sizes value",
+                kernel.label()
             ));
         }
     }
     Ok(())
+}
+
+/// One stderr line per group of cells `BenchmarkPlan::cells` leaves out.
+fn skip_notices(
+    kernels: &[KernelChoice],
+    precisions: &[Precision],
+    threads: &[usize],
+    sizes: &[usize],
+) -> Vec<String> {
+    let mut notices = Vec::new();
+    for &kernel in kernels {
+        let unsupported: Vec<&str> = precisions
+            .iter()
+            .filter(|&&p| !kernel.supports(p))
+            .map(|p| p.label())
+            .collect();
+        if !unsupported.is_empty() {
+            notices.push(format!(
+                "skipping {} at {} (unsupported precision)",
+                kernel.label(),
+                unsupported.join(", ")
+            ));
+        }
+        if !kernel.uses_workers() {
+            continue;
+        }
+        for &n in sizes {
+            let too_many: Vec<String> = threads
+                .iter()
+                .filter(|&&t| !kernel.fits(t, n))
+                .map(ToString::to_string)
+                .collect();
+            if !too_many.is_empty() {
+                notices.push(format!(
+                    "skipping {} with {} threads at n={n} (needs a row per thread)",
+                    kernel.label(),
+                    too_many.join(",")
+                ));
+            }
+        }
+    }
+    notices
 }
 
 /// Each run gets its own file, so reruns and other machines add data instead
@@ -507,15 +573,17 @@ mod tests {
         .expect("plan should be valid");
 
         assert_eq!(plan.precisions, [Precision::I32, Precision::I64]);
-        // CPU kernels support integers; mps does not, so defaults omit it.
-        assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticTiled));
+        // Defaults keep every kernel; mps (no integer support) just has no cells.
+        assert_eq!(plan.kernels, KernelChoice::value_variants());
+        #[cfg(target_os = "macos")]
+        assert!(plan.cells(KernelChoice::Mps, Precision::I32, 64).is_empty());
         let _ = fs::remove_file(&output);
     }
 
     #[test]
-    fn static_threads_above_the_matrix_dimension_are_rejected_before_running() {
-        let output = temp_output("static-threads");
-        let error = Cli::try_parse_from([
+    fn static_thread_counts_above_a_size_are_skipped_for_that_size() {
+        let output = temp_output("static-skip");
+        let plan = Cli::try_parse_from([
             OsStr::new("gemm-bench"),
             OsStr::new("--sizes"),
             OsStr::new("8,64"),
@@ -523,18 +591,89 @@ mod tests {
             OsStr::new("4,16"),
             OsStr::new("--kernel"),
             OsStr::new("static-ikj"),
+            OsStr::new("--precision"),
+            OsStr::new("f32"),
             OsStr::new("--output"),
             output.as_os_str(),
         ])
         .expect("arguments should parse")
         .into_plan()
-        .expect_err("more static threads than rows must be rejected");
+        .expect("a partly runnable static sweep should be valid");
 
-        assert!(error.contains("--threads 16 exceeds --sizes 8"));
+        assert_eq!(
+            plan.cells(KernelChoice::StaticIkj, Precision::F32, 8),
+            [(4, None)]
+        );
+        assert_eq!(
+            plan.cells(KernelChoice::StaticIkj, Precision::F32, 64),
+            [(4, None), (16, None)]
+        );
+        assert_eq!(plan.total_configurations(), 3);
+        assert_eq!(
+            plan.skipped,
+            ["skipping static-ikj with 16 threads at n=8 (needs a row per thread)"]
+        );
+        let _ = fs::remove_file(&output);
+    }
+
+    #[test]
+    fn a_static_kernel_with_no_runnable_thread_count_is_rejected_before_running() {
+        let output = temp_output("static-idle");
+        let error = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--sizes"),
+            OsStr::new("8"),
+            OsStr::new("--threads"),
+            OsStr::new("16"),
+            OsStr::new("--kernel"),
+            OsStr::new("static-ikj"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect_err("a named kernel with nothing to run must be rejected");
+
+        assert!(
+            error.contains("static-ikj needs at least one row per thread"),
+            "{error}"
+        );
         assert!(
             !output.exists(),
             "a rejected plan must not create the output file"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn default_kernels_skip_mps_at_precisions_it_lacks() {
+        let output = temp_output("mps-skip");
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--sizes"),
+            OsStr::new("64"),
+            OsStr::new("--precision"),
+            OsStr::new("f32,f64"),
+            OsStr::new("--threads"),
+            OsStr::new("1"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect("unsupported cells of a default kernel are skipped, not rejected");
+
+        assert!(plan.kernels.contains(&KernelChoice::Mps));
+        assert_eq!(
+            plan.cells(KernelChoice::Mps, Precision::F32, 64),
+            [(1, None)]
+        );
+        assert!(plan.cells(KernelChoice::Mps, Precision::F64, 64).is_empty());
+        assert_eq!(
+            plan.skipped,
+            ["skipping mps at f64 (unsupported precision)"]
+        );
+        let _ = fs::remove_file(&output);
     }
 
     #[test]
@@ -786,9 +925,12 @@ mod tests {
 
         // ikj 1 + tiled 3 blocks + rayon-tiled 2 threads x 3 blocks = 10
         assert_eq!(plan.total_configurations(), 10);
-        assert_eq!(plan.cells(KernelChoice::Ikj), [(1, None)]);
         assert_eq!(
-            plan.cells(KernelChoice::Tiled),
+            plan.cells(KernelChoice::Ikj, Precision::F32, 64),
+            [(1, None)]
+        );
+        assert_eq!(
+            plan.cells(KernelChoice::Tiled, Precision::F32, 64),
             [(1, Some(32)), (1, Some(64)), (1, Some(128))]
         );
         let _ = fs::remove_file(&output);

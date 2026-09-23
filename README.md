@@ -147,7 +147,7 @@ just bench \
 | :--- | :--- | :--- |
 | `--sizes <N,...>` | Matrix dimensions (square $N \times N$), comma-delimited | `64,128,256,512,1024,2048,4096` |
 | `--threads <T,...>` | Worker thread counts for parallel kernels | Powers of 2 up to CPU count |
-| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `mps`) | All kernels supporting every requested precision (`mps` only on macOS, and omitted for `f64`, `i32`, `i64`) |
+| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `mps`) | All kernels; combinations a kernel can't run are skipped with a notice (`mps` outside `f16`/`f32`, static kernels with more threads than rows) |
 | `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`, `i32`, `i64`; `mps` supports only `f16` and `f32`) | `f32` |
 | `--repetitions <R>` | Timed iterations measured per configuration (median, min, and standard deviation are recorded) | `5` |
 | `--block-size <B,...>` | Tile edge length(s) for the tiled kernels (`tiled`, `rayon-tiled`, `static-tiled`), comma-delimited. Other kernels run once and record an empty `block_size` | `64` |
