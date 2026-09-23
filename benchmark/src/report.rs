@@ -114,6 +114,7 @@ struct TerminalBenchmarkRecord<'a> {
     median_ms: String,
     stddev_ms: String,
     gops: String,
+    err_f64: String,
 }
 
 fn render_results_table(records: &[BenchmarkRecord]) -> String {
@@ -128,6 +129,7 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
         median_ms: format!("{:.3}", record.median_ms),
         stddev_ms: format!("{:.3}", record.stddev_ms),
         gops: format!("{:.3}", record.gops),
+        err_f64: format!("{:.1e}", record.mean_rel_error_f64),
     });
     let mut table = Table::new(rows);
     table.with(Style::psql());
@@ -150,7 +152,7 @@ mod tests {
             n: 256,
             threads: 4,
             gops: 2.5,
-            mean_rel_error_f64: 0.0,
+            mean_rel_error_f64: 0.001_234,
             median_ms: 12.345_67,
             min_ms: 12.0,
             stddev_ms: 0.25,
@@ -177,6 +179,8 @@ mod tests {
         assert!(table.contains("rayon-ikj"));
         assert!(table.contains("12.346"));
         assert!(table.contains("2.500"));
+        assert!(table.contains("err_f64"));
+        assert!(table.contains("1.2e-3"));
     }
 
     #[test]
@@ -212,8 +216,8 @@ mod tests {
         assert_eq!(
             csv_content,
             "kernel,backend,device,precision,n,threads,gops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,block_size,repetitions,host,commit,timestamp\n\
-             rayon-ikj,cpu,Test CPU,f32,256,4,2.5,0.0,12.34567,12.0,0.25,,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
-             tiled,cpu,Test CPU,f32,256,4,2.5,0.0,12.34567,12.0,0.25,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
+             rayon-ikj,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
+             tiled,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
         );
         let _ = std::fs::remove_file(csv_path);
     }

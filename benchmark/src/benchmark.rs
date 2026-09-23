@@ -80,6 +80,9 @@ fn run_precision<T: Element>(
         let mut output = Matrix::zeros(n, n);
         let mut reference = Matrix::zeros(n, n);
         IkjGemm.compute(&lhs, &rhs, &mut reference);
+        // ponytail: for T = f64 this repeats `reference` (~12 s at n=4096);
+        // special-case it only if that shows up next to the timed work.
+        let truth = f64_reference(&lhs, &rhs);
         let tolerance = tolerance::<T>(n);
 
         for kernel in plan.kernels.iter().copied() {
@@ -126,8 +129,7 @@ fn run_precision<T: Element>(
                     n,
                     threads: thread_count,
                     gops,
-                    // ponytail: placeholder until roadmap item 4 measures error against an f64 reference.
-                    mean_rel_error_f64: 0.0,
+                    mean_rel_error_f64: mean_relative_error(&output, &truth),
                     median_ms: stats.median_ms,
                     min_ms: stats.min_ms,
                     stddev_ms: stats.stddev_ms,
@@ -302,6 +304,45 @@ fn max_relative_error<T: Element>(output: &Matrix<T>, reference: &Matrix<T>) -> 
         .fold(0.0, f64::max)
 }
 
+/// The product of the kernel's own inputs, widened to `f64` and multiplied in
+/// `f64`: the ground truth for `mean_rel_error_f64`. Input rounding is not
+/// counted, so the error is purely the kernel's arithmetic.
+fn f64_reference<T: Element>(lhs: &Matrix<T>, rhs: &Matrix<T>) -> Matrix<f64> {
+    let widen = |matrix: &Matrix<T>| {
+        Matrix::from_vec(
+            matrix.rows(),
+            matrix.cols(),
+            matrix
+                .as_slice()
+                .iter()
+                .map(|&value| value.to_f64())
+                .collect(),
+        )
+    };
+    let mut truth = Matrix::zeros(lhs.rows(), rhs.cols());
+    IkjGemm.compute(&widen(lhs), &widen(rhs), &mut truth);
+    truth
+}
+
+/// Mean over every element of `|truth - output| / |truth|`, against the `f64`
+/// ground truth. Informational: it is recorded, never checked against a
+/// tolerance. A NaN anywhere makes it infinite, so a broken kernel stays
+/// visible instead of dropping out of comparisons.
+fn mean_relative_error<T: Element>(output: &Matrix<T>, truth: &Matrix<f64>) -> f64 {
+    let total: f64 = output
+        .as_slice()
+        .iter()
+        .zip(truth.as_slice())
+        .map(|(&out, &expected)| {
+            // An exact zero product (e.g. n = 1, where lhs[0][0] is 0) that the
+            // kernel also gets right is 0 / tiny = 0, not 0 / 0 = NaN.
+            let error = (out.to_f64() - expected).abs() / expected.abs().max(f64::MIN_POSITIVE);
+            if error.is_nan() { f64::INFINITY } else { error }
+        })
+        .sum();
+    total / truth.as_slice().len() as f64
+}
+
 /// Rounding slack for kernels that sum each element's `n` products in a
 /// different order than the reference: those errors random-walk, growing as `sqrt(n)`.
 fn tolerance<T: Element>(n: usize) -> f64 {
@@ -314,7 +355,12 @@ mod tests {
 
     use gemm_bench::Matrix;
 
-    use super::{benchmark_inputs, max_relative_error, summarize, tolerance};
+    use gemm_bench::{GemmKernel, kernels::IkjGemm};
+
+    use super::{
+        benchmark_inputs, f64_reference, max_relative_error, mean_relative_error, summarize,
+        tolerance,
+    };
 
     fn ms(values: &[u64]) -> Vec<Duration> {
         values.iter().map(|&v| Duration::from_millis(v)).collect()
@@ -370,6 +416,51 @@ mod tests {
         assert!(tolerance::<f16>(4096) > tolerance::<f32>(4096));
         assert_eq!(tolerance::<i32>(4096), 0.0);
         assert_eq!(tolerance::<i64>(4096), 0.0);
+    }
+
+    #[test]
+    fn identical_output_has_zero_mean_error() {
+        let truth = Matrix::from_vec(1, 2, vec![1.0_f64, 2.0]);
+        let output = Matrix::from_vec(1, 2, vec![1.0_f32, 2.0]);
+        assert_eq!(mean_relative_error(&output, &truth), 0.0);
+    }
+
+    #[test]
+    fn mean_error_averages_over_every_element() {
+        let truth = Matrix::from_vec(1, 2, vec![100.0_f64, 2.0]);
+        let output = Matrix::from_vec(1, 2, vec![101.0_f32, 2.0]);
+        // (0.01 + 0) / 2
+        assert!((mean_relative_error(&output, &truth) - 0.005).abs() < 1e-12);
+    }
+
+    #[test]
+    fn nan_output_is_an_infinite_mean_error() {
+        let truth = Matrix::from_vec(1, 2, vec![1.0_f64, 2.0]);
+        let output = Matrix::from_vec(1, 2, vec![f32::NAN, 2.0]);
+        assert_eq!(mean_relative_error(&output, &truth), f64::INFINITY);
+    }
+
+    fn ikj_error_vs_f64<T: gemm_bench::Element>(n: usize) -> f64 {
+        let (lhs, rhs) = benchmark_inputs::<T>(n);
+        let mut output = Matrix::zeros(n, n);
+        IkjGemm.compute(&lhs, &rhs, &mut output);
+        mean_relative_error(&output, &f64_reference(&lhs, &rhs))
+    }
+
+    #[test]
+    fn error_vs_f64_orders_precisions_by_mantissa_width() {
+        let n = 64;
+        let (f16, f32, f64) = (
+            ikj_error_vs_f64::<f16>(n),
+            ikj_error_vs_f64::<f32>(n),
+            ikj_error_vs_f64::<f64>(n),
+        );
+        assert!(f16 > f32 && f32 > 0.0, "f16 {f16:e}, f32 {f32:e}");
+        // The reference widens the kernel's own inputs, so f64 and exact
+        // integer products match it bit for bit.
+        assert_eq!(f64, 0.0);
+        assert_eq!(ikj_error_vs_f64::<i32>(n), 0.0);
+        assert_eq!(ikj_error_vs_f64::<i64>(n), 0.0);
     }
 
     #[test]
