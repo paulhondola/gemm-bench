@@ -123,7 +123,7 @@ export const TABS: Tab[] = [
  * its x-axis. Every other tab is scoped to both selected values — except for
  * a kernel with only one distinct block size in the whole dataset (`mps`):
  * the dimension doesn't vary for it, so a block-size selection must not
- * filter it away, whichever tab it appears on. This is the single place
+ * filter it away, whichever tab it appears on. A row with no block size (a kernel that doesn't tile) is never filtered by a block-size selection either. This is the single place
  * scoping happens: visibility and rendering must agree, or a tab can appear
  * and then render nothing.
  */
@@ -138,6 +138,7 @@ export function rowsForTab(
 		(r) =>
 			(tab.inertPrecision || r.precision === precision) &&
 			(tab.inertBlockSize ||
+				r.block_size == null ||
 				ctx.singleBlockSize.has(String(r.kernel)) ||
 				Number(r.block_size) === blockSize),
 	);

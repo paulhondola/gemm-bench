@@ -65,6 +65,9 @@ export function kernels(rows: Row[]): string[] {
 
 const ascending = (a: number, b: number) => a - b;
 
+/** Rows from kernels that don't tile carry no block size (null). */
+const hasBlockSize = (r: Row) => r.block_size != null;
+
 export function sizesFor(rows: Row[], precision: string): number[] {
 	return [
 		...new Set(
@@ -79,7 +82,9 @@ export function allSizes(rows: Row[]): number[] {
 
 /** Every distinct block size present, sorted. */
 export function blockSizes(rows: Row[]): number[] {
-	return [...new Set(rows.map((r) => Number(r.block_size)))].sort(ascending);
+	return [
+		...new Set(rows.filter(hasBlockSize).map((r) => Number(r.block_size))),
+	].sort(ascending);
 }
 
 /** Block sizes available for a given precision and size, for the disabled-pill reason text. */
@@ -91,7 +96,10 @@ export function blockSizesFor(
 	return [
 		...new Set(
 			rows
-				.filter((r) => r.precision === precision && Number(r.n) === n)
+				.filter(
+					(r) =>
+						hasBlockSize(r) && r.precision === precision && Number(r.n) === n,
+				)
 				.map((r) => Number(r.block_size)),
 		),
 	].sort(ascending);

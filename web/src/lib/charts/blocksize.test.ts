@@ -235,3 +235,25 @@ test("the legend lists only the kernels actually plotted", () => {
 	expect(spec.color?.domain).toEqual(expect.arrayContaining(["tiled", "ikj"]));
 	expect(spec.color?.domain).toHaveLength(2);
 });
+
+test("a row without a block size is never plotted", () => {
+	// Mixed old/new data: ikj has 32/64 from old runs plus a new row with no
+	// block size. Number(null) is 0, which a log-scale x-axis cannot place.
+	const withNull: Row[] = [
+		...rows,
+		{
+			kernel: "ikj",
+			precision: "f32",
+			n: 512,
+			threads: 1,
+			gops: 25,
+			backend: "cpu",
+			block_size: null,
+		},
+	];
+	const spec = blockSizeSweep(withNull, f, makeCtx(withNull));
+	expect(spec).not.toBeNull();
+	if (!spec) return;
+	const dot = spec.marks[1] as { data: { block_size: number }[] };
+	expect(dot.data.every((d) => d.block_size > 0)).toBe(true);
+});

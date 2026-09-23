@@ -18,6 +18,7 @@ export const blockSizeSweep: ChartSpec = (rows, f, ctx) => {
 	// the linear y-axis and squash the kernels that do vary.
 	const atSize = rows.filter(
 		(r) =>
+			r.block_size != null &&
 			Number(r.n) === f.n &&
 			ctx.palette.has(String(r.kernel)) &&
 			!ctx.singleBlockSize.has(String(r.kernel)),
