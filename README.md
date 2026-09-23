@@ -84,15 +84,13 @@ Run `just` with no arguments to list every recipe.
 
 ## Running Benchmarks
 
-### Default Sweep
+### The Full Sweep
 
-Without flags, a run sweeps all default sizes (`64, 128, 256, 512, 1024, 2048, 4096`), every CPU kernel (plus `mps` on macOS), and powers-of-two thread counts up to `available_parallelism()` at `f32` precision:
+Every omitted dimension (`--sizes`, `--threads`, `--kernel`, `--precision`, `--block-size`) sweeps all of its values: sizes `64`–`4096`, powers-of-two thread counts up to `available_parallelism()`, every kernel, all five precisions, and block sizes `16`–`256`. With none of them given, `just bench` prints the help instead of starting a run. Opt in to the full sweep, which takes hours, with `--sweep`:
 
 ```sh
-just bench
+just bench --sweep
 ```
-
-The full default sweep includes `naive-ijk` at $N = 4096$, which alone takes minutes. Narrow `--sizes` or `--kernel` for quick runs.
 
 ### Targeted Sweeps
 
@@ -101,7 +99,9 @@ The full default sweep includes `naive-ijk` at $N = 4096$, which alone takes min
 ```sh
 just bench \
   --sizes 128,256,512,1024 \
-  --kernel naive,ikj,tiled
+  --kernel naive,ikj,tiled \
+  --precision f32 \
+  --block-size 64
 ```
 
 #### Parallel Scaling
@@ -111,6 +111,7 @@ just bench \
   --sizes 512,1024,2048 \
   --threads 1,2,4,8,10 \
   --kernel rayon-ikj,static-ikj \
+  --precision f32 \
   --repetitions 5
 ```
 
@@ -138,6 +139,7 @@ just bench \
 just bench \
   --sizes 256,512 \
   --kernel ikj,rayon-ikj \
+  --precision f32 \
   --no-progress
 ```
 
@@ -145,14 +147,15 @@ just bench \
 
 | Flag | Description | Default |
 | :--- | :--- | :--- |
-| `--sizes <N,...>` | Matrix dimensions (square $N \times N$), comma-delimited | `64,128,256,512,1024,2048,4096` |
+| `--sizes <N,...>` | Matrix dimensions (square $N \times N$), comma-delimited | All: `64,128,256,512,1024,2048,4096` |
 | `--threads <T,...>` | Worker thread counts for parallel kernels | Powers of 2 up to CPU count |
 | `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `mps`) | All kernels; combinations a kernel can't run are skipped with a notice (`mps` outside `f16`/`f32`, static kernels with more threads than rows) |
-| `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`, `i32`, `i64`; `mps` supports only `f16` and `f32`) | `f32` |
+| `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`, `i32`, `i64`; `mps` supports only `f16` and `f32`) | All: `f16,f32,f64,i32,i64` |
 | `--repetitions <R>` | Timed iterations measured per configuration (median, min, and standard deviation are recorded) | `5` |
-| `--block-size <B,...>` | Tile edge length(s) for the tiled kernels (`tiled`, `rayon-tiled`, `static-tiled`), comma-delimited. Other kernels run once and record an empty `block_size` | `64` |
+| `--block-size <B,...>` | Tile edge length(s) for the tiled kernels (`tiled`, `rayon-tiled`, `static-tiled`), comma-delimited. Other kernels run once and record an empty `block_size` | All: `16,32,64,128,256` |
 | `--no-progress` | Disables the interactive `indicatif` progress bar | `false` |
 | `--output <FILE.csv>` | Output file; must have a `.csv` extension. Missing parent directories are created. Run via `just bench` so the default lands in the repo's `data/` | `data/runs/<host>/<timestamp>.csv` |
+| `--sweep` | Run with no dimension pinned: every value of every dimension (hours). Without it and with nothing pinned, the help is shown | `false` |
 
 ### Methodology & Output Schema
 

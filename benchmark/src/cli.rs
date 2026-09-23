@@ -9,15 +9,27 @@ use clap::{Parser, ValueEnum};
 use crate::context::{self, RunContext};
 
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
+const DEFAULT_BLOCK_SIZES: [usize; 5] = [16, 32, 64, 128, 256];
+const DEFAULT_REPETITIONS: usize = 5;
+
+const AFTER_HELP: &str = "\
+Every omitted dimension (--sizes, --threads, --kernel, --precision,
+--block-size) sweeps all of its values. With none given, pass --sweep to run
+the full sweep (hours); otherwise this help is shown.
+
+Examples:
+  gemm-bench --sizes 256,512 --kernel ikj,rayon-ikj --precision f32
+  gemm-bench --sizes 1024 --kernel tiled --precision f32 --block-size 32,64,128
+  gemm-bench --sweep";
 
 #[derive(Debug, Parser)]
-#[command(about = "Benchmark safe, row-major GEMM kernels")]
+#[command(about = "Benchmark safe, row-major GEMM kernels", after_help = AFTER_HELP)]
 pub(crate) struct Cli {
-    /// Matrix dimensions, as a comma-delimited list.
+    /// Matrix dimensions, as a comma-delimited list. Omit to sweep 64 through 4096.
     #[arg(long, value_delimiter = ',')]
     sizes: Vec<usize>,
 
-    /// Worker counts, as a comma-delimited list. Defaults to powers of two up to available CPUs.
+    /// Worker counts, as a comma-delimited list. Omit to sweep powers of two up to available CPUs.
     #[arg(long, value_delimiter = ',')]
     threads: Vec<usize>,
 
@@ -25,17 +37,18 @@ pub(crate) struct Cli {
     #[arg(long, value_delimiter = ',', value_enum)]
     kernel: Vec<KernelChoice>,
 
-    /// Element precision(s), as a comma-delimited list. Defaults to f32.
+    /// Element precision(s), as a comma-delimited list. Omit to sweep all of them.
     #[arg(long, value_delimiter = ',', value_enum)]
     precision: Vec<Precision>,
 
-    /// Number of measured runs per configuration, after one untimed warm-up
-    /// run; records contain their median, minimum, and standard deviation.
-    #[arg(long, default_value_t = 5)]
-    repetitions: usize,
+    /// Number of measured runs per configuration (default 5), after one untimed
+    /// warm-up run; records contain their median, minimum, and standard deviation.
+    #[arg(long)]
+    repetitions: Option<usize>,
 
     /// Tile edge length(s) for the tiled kernels, as a comma-delimited list.
-    #[arg(long, value_delimiter = ',', default_values_t = [64])]
+    /// Omit to sweep 16 through 256.
+    #[arg(long, value_delimiter = ',')]
     block_size: Vec<usize>,
 
     /// Output CSV file. Defaults to a new file per run,
@@ -46,6 +59,10 @@ pub(crate) struct Cli {
     /// Disable the interactive progress bar.
     #[arg(long)]
     no_progress: bool,
+
+    /// Run even though no dimension is pinned: the full sweep, which takes hours.
+    #[arg(long)]
+    sweep: bool,
 }
 
 /// Fully resolved configuration used by the benchmark runner.
@@ -138,6 +155,17 @@ impl Devices {
 }
 
 impl Cli {
+    /// True when nothing narrows the sweep and `--sweep` wasn't given; `main`
+    /// shows the help instead of starting an hours-long run.
+    pub(crate) fn is_unpinned(&self) -> bool {
+        !self.sweep
+            && self.sizes.is_empty()
+            && self.threads.is_empty()
+            && self.kernel.is_empty()
+            && self.precision.is_empty()
+            && self.block_size.is_empty()
+    }
+
     pub(crate) fn into_plan(self) -> Result<BenchmarkPlan, String> {
         validate_cli(&self)?;
 
@@ -152,7 +180,7 @@ impl Cli {
             self.threads
         };
         let precisions = if self.precision.is_empty() {
-            vec![Precision::F32]
+            Precision::value_variants().to_vec()
         } else {
             self.precision
         };
@@ -162,6 +190,11 @@ impl Cli {
             KernelChoice::value_variants().to_vec()
         } else {
             self.kernel
+        };
+        let block_sizes = if self.block_size.is_empty() {
+            DEFAULT_BLOCK_SIZES.to_vec()
+        } else {
+            self.block_size
         };
 
         // Validate the resolved sweep before touching the filesystem, so a
@@ -182,8 +215,8 @@ impl Cli {
             threads,
             kernels,
             precisions,
-            repetitions: self.repetitions,
-            block_sizes: self.block_size,
+            repetitions: self.repetitions.unwrap_or(DEFAULT_REPETITIONS),
+            block_sizes,
             context,
             devices,
             output,
@@ -308,7 +341,7 @@ impl Precision {
 }
 
 fn validate_cli(cli: &Cli) -> Result<(), String> {
-    if cli.repetitions == 0 {
+    if cli.repetitions == Some(0) {
         return Err("--repetitions must be greater than zero".into());
     }
     if cli.block_size.contains(&0) {
@@ -511,33 +544,41 @@ mod tests {
     }
 
     #[test]
-    fn empty_sweeps_expand_to_defaults() {
+    fn omitted_dimensions_sweep_every_value() {
         let output = temp_output("defaults");
-        let plan = Cli {
-            sizes: Vec::new(),
-            threads: Vec::new(),
-            kernel: Vec::new(),
-            precision: Vec::new(),
-            repetitions: 1,
-            block_size: vec![64],
-            output: Some(output.clone()),
-            no_progress: false,
-        }
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--sweep"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
         .into_plan()
-        .expect("default plan should be valid");
+        .expect("the full sweep should be valid");
 
         assert_eq!(plan.sizes, [64, 128, 256, 512, 1024, 2048, 4096]);
         assert!(plan.threads.contains(&1));
-        assert_eq!(plan.kernels.first(), Some(&KernelChoice::Naive));
-        #[cfg(target_os = "macos")]
-        assert_eq!(plan.kernels.last(), Some(&KernelChoice::Mps));
-        #[cfg(not(target_os = "macos"))]
-        assert_eq!(plan.kernels.last(), Some(&KernelChoice::StaticTiled));
-        assert_eq!(plan.precisions, [Precision::F32]);
+        assert_eq!(plan.kernels, KernelChoice::value_variants());
+        assert_eq!(plan.precisions, Precision::value_variants());
+        assert_eq!(plan.block_sizes, [16, 32, 64, 128, 256]);
+        assert_eq!(plan.repetitions, 5);
         assert!(!plan.no_progress);
-        assert!(plan.total_configurations() > 0);
         assert!(!plan.context.host.is_empty());
         let _ = fs::remove_file(&output);
+    }
+
+    #[test]
+    fn only_a_pinned_dimension_or_sweep_skips_the_help() {
+        let unpinned = |args: &[&str]| {
+            Cli::try_parse_from(std::iter::once("gemm-bench").chain(args.iter().copied()))
+                .expect("arguments should parse")
+                .is_unpinned()
+        };
+        assert!(unpinned(&[]));
+        assert!(unpinned(&["--no-progress", "--repetitions", "3"]));
+        assert!(!unpinned(&["--sweep"]));
+        assert!(!unpinned(&["--sizes", "64"]));
+        assert!(!unpinned(&["--block-size", "32"]));
     }
 
     #[test]
@@ -810,7 +851,7 @@ mod tests {
             plan.devices.metal, "unknown",
             "a Mac with Metal must name its GPU"
         );
-        assert_eq!(plan.total_configurations(), 7); // 7 default sizes * 1 precision * 1 config
+        assert_eq!(plan.total_configurations(), 14); // 7 default sizes * mps's 2 precisions (f16, f32)
         let _ = fs::remove_file(&output);
     }
 

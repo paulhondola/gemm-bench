@@ -5,12 +5,17 @@ mod cli;
 mod context;
 mod report;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use crate::cli::Cli;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let plan = Cli::parse().into_plan()?;
+    let cli = Cli::parse();
+    if cli.is_unpinned() {
+        Cli::command().print_help()?;
+        return Ok(());
+    }
+    let plan = cli.into_plan()?;
     for notice in &plan.skipped {
         eprintln!("{notice}");
     }
