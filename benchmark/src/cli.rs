@@ -34,9 +34,9 @@ pub(crate) struct Cli {
     #[arg(long, default_value_t = 5)]
     repetitions: usize,
 
-    /// Tile edge length for the blocked kernels.
-    #[arg(long, default_value_t = 64)]
-    block_size: usize,
+    /// Tile edge length(s) for the tiled kernels, as a comma-delimited list.
+    #[arg(long, value_delimiter = ',', default_values_t = [64])]
+    block_size: Vec<usize>,
 
     /// Output CSV file. Defaults to a new file per run,
     /// data/runs/<host>/<timestamp>.csv; missing parent directories are created.
@@ -56,7 +56,7 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) kernels: Vec<KernelChoice>,
     pub(crate) precisions: Vec<Precision>,
     pub(crate) repetitions: usize,
-    pub(crate) block_size: usize,
+    pub(crate) block_sizes: Vec<usize>,
     pub(crate) context: RunContext,
     pub(crate) devices: Devices,
     pub(crate) output: File,
@@ -65,21 +65,29 @@ pub(crate) struct BenchmarkPlan {
 }
 
 impl BenchmarkPlan {
+    /// The (threads, block size) cells measured for one kernel. The single
+    /// source for the sweep loop and the configuration count.
+    pub(crate) fn cells(&self, kernel: KernelChoice) -> Vec<(usize, Option<usize>)> {
+        let threads: &[usize] = if kernel.uses_workers() {
+            &self.threads
+        } else {
+            &[1]
+        };
+        let blocks: Vec<Option<usize>> = if kernel.uses_blocks() {
+            self.block_sizes.iter().copied().map(Some).collect()
+        } else {
+            vec![None]
+        };
+        threads
+            .iter()
+            .flat_map(|&t| blocks.iter().map(move |&b| (t, b)))
+            .collect()
+    }
+
     /// Returns the exact number of configurations that will be measured.
     pub(crate) fn total_configurations(&self) -> usize {
-        let configs_per_matrix: usize = self
-            .kernels
-            .iter()
-            .map(|kernel| {
-                if kernel.uses_workers() {
-                    self.threads.len()
-                } else {
-                    1
-                }
-            })
-            .sum();
-
-        self.precisions.len() * self.sizes.len() * configs_per_matrix
+        let per_matrix: usize = self.kernels.iter().map(|&k| self.cells(k).len()).sum();
+        self.precisions.len() * self.sizes.len() * per_matrix
     }
 }
 
@@ -154,7 +162,7 @@ impl Cli {
             kernels,
             precisions,
             repetitions: self.repetitions,
-            block_size: self.block_size,
+            block_sizes: self.block_size,
             context,
             devices,
             output,
@@ -230,6 +238,12 @@ impl KernelChoice {
         )
     }
 
+    /// Whether the kernel tiles by `--block-size`; the others run once and
+    /// record an empty block size.
+    pub(crate) fn uses_blocks(self) -> bool {
+        matches!(self, Self::Tiled | Self::RayonTiled | Self::StaticTiled)
+    }
+
     /// Whether this kernel can run at `precision`. The single source for plan
     /// validation and the default kernel list.
     // Off macOS every kernel supports every precision, leaving `precision` unread.
@@ -268,8 +282,8 @@ fn validate_cli(cli: &Cli) -> Result<(), String> {
     if cli.repetitions == 0 {
         return Err("--repetitions must be greater than zero".into());
     }
-    if cli.block_size == 0 {
-        return Err("--block-size must be greater than zero".into());
+    if cli.block_size.contains(&0) {
+        return Err("all --block-size values must be greater than zero".into());
     }
     if cli.sizes.contains(&0) {
         return Err("all --sizes values must be greater than zero".into());
@@ -439,7 +453,7 @@ mod tests {
             kernel: Vec::new(),
             precision: Vec::new(),
             repetitions: 1,
-            block_size: 64,
+            block_size: vec![64],
             output: Some(output.clone()),
             no_progress: false,
         }
@@ -707,5 +721,76 @@ mod tests {
             !output.exists(),
             "a rejected plan must not create the output file"
         );
+    }
+
+    #[test]
+    fn block_size_flag_accepts_a_comma_delimited_sweep() {
+        let output = temp_output("block-sizes");
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--block-size"),
+            OsStr::new("32,64,128"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("block-size list should parse")
+        .into_plan()
+        .expect("plan should be valid");
+
+        assert_eq!(plan.block_sizes, [32, 64, 128]);
+        let _ = fs::remove_file(&output);
+    }
+
+    #[test]
+    fn zero_in_the_block_size_list_is_rejected() {
+        let output = temp_output("zero-block");
+        let error = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--block-size"),
+            OsStr::new("32,0"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect_err("a zero block size must be rejected");
+
+        assert!(error.contains("--block-size"), "{error}");
+        assert!(
+            !output.exists(),
+            "a rejected plan must not create the output file"
+        );
+    }
+
+    #[test]
+    fn block_sizes_multiply_only_the_tiled_kernels() {
+        let output = temp_output("block-count");
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--sizes"),
+            OsStr::new("64"),
+            OsStr::new("--precision"),
+            OsStr::new("f32"),
+            OsStr::new("--kernel"),
+            OsStr::new("ikj,tiled,rayon-tiled"),
+            OsStr::new("--threads"),
+            OsStr::new("1,2"),
+            OsStr::new("--block-size"),
+            OsStr::new("32,64,128"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect("plan should be valid");
+
+        // ikj 1 + tiled 3 blocks + rayon-tiled 2 threads x 3 blocks = 10
+        assert_eq!(plan.total_configurations(), 10);
+        assert_eq!(plan.cells(KernelChoice::Ikj), [(1, None)]);
+        assert_eq!(
+            plan.cells(KernelChoice::Tiled),
+            [(1, Some(32)), (1, Some(64)), (1, Some(128))]
+        );
+        let _ = fs::remove_file(&output);
     }
 }

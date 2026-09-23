@@ -32,7 +32,8 @@ pub(crate) struct BenchmarkRecord {
     pub(crate) median_ms: f64,
     pub(crate) min_ms: f64,
     pub(crate) stddev_ms: f64,
-    pub(crate) block_size: usize,
+    /// Empty in the CSV for kernels that don't tile.
+    pub(crate) block_size: Option<usize>,
     pub(crate) repetitions: usize,
     pub(crate) host: String,
     pub(crate) commit: String,
@@ -75,17 +76,18 @@ fn run_precision<T: Element>(
         let tolerance = tolerance::<T>(n);
 
         for kernel in plan.kernels.iter().copied() {
-            let thread_counts: &[usize] = if kernel.uses_workers() {
-                &plan.threads
-            } else {
-                &[1]
-            };
-            for &thread_count in thread_counts {
-                progress.set_target(kernel.label(), n, precision.label(), thread_count);
+            for (thread_count, block_size) in plan.cells(kernel) {
+                progress.set_target(
+                    kernel.label(),
+                    n,
+                    precision.label(),
+                    thread_count,
+                    block_size,
+                );
                 let samples = measure(
                     kernel,
                     thread_count,
-                    plan.block_size,
+                    block_size,
                     plan.repetitions,
                     &lhs,
                     &rhs,
@@ -96,8 +98,10 @@ fn run_precision<T: Element>(
                 // Checked after timing, against the last timed run's output.
                 let error = max_relative_error(&output, &reference);
                 if error > tolerance {
+                    let block =
+                        block_size.map_or_else(String::new, |b| format!(", block size {b}"));
                     return Err(format!(
-                        "{} produced wrong output at n={n}, precision {}, threads {thread_count}: \
+                        "{} produced wrong output at n={n}, precision {}, threads {thread_count}{block}: \
                          max relative error {error:e} exceeds tolerance {tolerance:e}",
                         kernel.label(),
                         precision.label(),
@@ -120,7 +124,7 @@ fn run_precision<T: Element>(
                     median_ms: stats.median_ms,
                     min_ms: stats.min_ms,
                     stddev_ms: stats.stddev_ms,
-                    block_size: plan.block_size,
+                    block_size,
                     repetitions: plan.repetitions,
                     host: plan.context.host.clone(),
                     commit: plan.context.commit.clone(),
@@ -151,12 +155,14 @@ fn benchmark_inputs<T: Element>(n: usize) -> (Matrix<T>, Matrix<T>) {
 fn measure<T: Element>(
     choice: KernelChoice,
     threads: usize,
-    block_size: usize,
+    block_size: Option<usize>,
     repetitions: usize,
     lhs: &Matrix<T>,
     rhs: &Matrix<T>,
     output: &mut Matrix<T>,
 ) -> Result<Vec<Duration>, rayon::ThreadPoolBuildError> {
+    // `BenchmarkPlan::cells` gives every tiled kernel a block size.
+    let block = || block_size.expect("tiled kernels always get a block size");
     let mut samples = Vec::with_capacity(repetitions);
     match choice {
         KernelChoice::Naive => {
@@ -174,7 +180,7 @@ fn measure<T: Element>(
             }
         }
         KernelChoice::Tiled => {
-            let kernel = TiledGemm::new(block_size);
+            let kernel = TiledGemm::new(block());
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
                 samples.push(time_kernel(&kernel, lhs, rhs, output));
@@ -193,7 +199,7 @@ fn measure<T: Element>(
         }
         KernelChoice::RayonTiled => {
             let pool = ThreadPoolBuilder::new().num_threads(threads).build()?;
-            let kernel = RayonTiledGemm::new(block_size);
+            let kernel = RayonTiledGemm::new(block());
             pool.install(|| kernel.compute(lhs, rhs, output));
             for _ in 0..repetitions {
                 let start = Instant::now();
@@ -210,7 +216,7 @@ fn measure<T: Element>(
             }
         }
         KernelChoice::StaticTiled => {
-            let kernel = StaticTiledGemm::new(threads, block_size)?;
+            let kernel = StaticTiledGemm::new(threads, block())?;
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
                 samples.push(time_kernel(&kernel, lhs, rhs, output));

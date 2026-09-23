@@ -150,7 +150,7 @@ just bench \
 | `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `mps`) | All kernels supporting every requested precision (`mps` only on macOS, and omitted for `f64`, `i32`, `i64`) |
 | `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`, `i32`, `i64`; `mps` supports only `f16` and `f32`) | `f32` |
 | `--repetitions <R>` | Timed iterations measured per configuration (median, min, and standard deviation are recorded) | `5` |
-| `--block-size <B>` | Tile edge length for blocked kernels | `64` |
+| `--block-size <B,...>` | Tile edge length(s) for the tiled kernels (`tiled`, `rayon-tiled`, `static-tiled`), comma-delimited. Other kernels run once and record an empty `block_size` | `64` |
 | `--no-progress` | Disables the interactive `indicatif` progress bar | `false` |
 | `--output <FILE.csv>` | Output file; must have a `.csv` extension. Missing parent directories are created. Run via `just bench` so the default lands in the repo's `data/` | `data/runs/<host>/<timestamp>.csv` |
 
@@ -161,7 +161,7 @@ just bench \
 3. **Output Verification**: For each size and precision, serial `ikj` computes an untimed reference. After timing, every kernel's output is compared against it, and the run aborts (leaving the existing output file untouched) if the largest element-wise relative error exceeds $4\sqrt{N}\,\varepsilon$, where $\varepsilon$ is the precision's machine epsilon. CPU kernels that sum in the same order as `ikj` match bit-for-bit; the slack covers kernels such as MPS that sum in a different order. Note that `f16` has $\varepsilon = 2^{-10}$, so its check (25% at $N = 4096$) catches broken kernels, not subtle rounding differences. Integers have $\varepsilon = 0$, so `i32`/`i64` outputs must match `ikj` exactly; integer inputs are the small integer numerators ($0$–$28$) rather than fractions, which keeps outputs far from overflow.
 4. **Up-Front Validation**: Invalid plans fail before any work runs or any file is created. `static-ikj` and `static-tiled` need at least one matrix row per worker thread, `mps` rejects `f64`, `i32`, and `i64`, and `--output` must be a `.csv` file path, not a directory.
 5. **Structured Export**: The output file is opened before the sweep but truncated only when results are written, so a failed run leaves earlier results intact.
-   - Columns: `kernel, backend, device, precision, n, threads, gops, mean_rel_error_f64, median_ms, min_ms, stddev_ms, block_size, repetitions, host, commit, timestamp`.
+   - Columns: `kernel, backend, device, precision, n, threads, gops, mean_rel_error_f64, median_ms, min_ms, stddev_ms, block_size, repetitions, host, commit, timestamp`. `block_size` is empty for kernels that don't tile.
    - `backend` is `cpu` or `metal`. `device` is the CPU model (`sysctl` on macOS, `/proc/cpuinfo` on Linux) or the Metal GPU name.
    - `host` (hostname without domain), `commit` (`git describe --always --dirty`), and `timestamp` (UTC) are captured once per run. Any lookup that fails is written as `unknown`.
    - `mean_rel_error_f64` is `0.0` until accuracy measurement lands.

@@ -36,9 +36,18 @@ impl BenchmarkProgress {
         Self { bar }
     }
 
-    pub(crate) fn set_target(&self, kernel: &str, n: usize, precision: &str, threads: usize) {
-        self.bar
-            .set_message(format!("{kernel:<11} n={n:<4} {precision:<3} t={threads}"));
+    pub(crate) fn set_target(
+        &self,
+        kernel: &str,
+        n: usize,
+        precision: &str,
+        threads: usize,
+        block_size: Option<usize>,
+    ) {
+        let block = block_size.map_or_else(String::new, |b| format!(" b={b}"));
+        self.bar.set_message(format!(
+            "{kernel:<11} n={n:<4} {precision:<3} t={threads}{block}"
+        ));
     }
 
     pub(crate) fn step(&self) {
@@ -100,6 +109,7 @@ struct TerminalBenchmarkRecord<'a> {
     kernel: &'a str,
     n: usize,
     threads: usize,
+    block: String,
     precision: &'a str,
     median_ms: String,
     stddev_ms: String,
@@ -111,6 +121,9 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
         kernel: &record.kernel,
         n: record.n,
         threads: record.threads,
+        block: record
+            .block_size
+            .map_or_else(|| "-".to_owned(), |b| b.to_string()),
         precision: record.precision,
         median_ms: format!("{:.3}", record.median_ms),
         stddev_ms: format!("{:.3}", record.stddev_ms),
@@ -141,7 +154,7 @@ mod tests {
             median_ms: 12.345_67,
             min_ms: 12.0,
             stddev_ms: 0.25,
-            block_size: 64,
+            block_size: None,
             repetitions: 5,
             host: "test-host".to_owned(),
             commit: "abc1234".to_owned(),
@@ -159,6 +172,7 @@ mod tests {
         assert!(table.contains("median_ms"));
         assert!(table.contains("stddev_ms"));
         assert!(table.contains("gops"));
+        assert!(table.contains("block"));
         assert!(table.contains("0.250"));
         assert!(table.contains("rayon-ikj"));
         assert!(table.contains("12.346"));
@@ -168,7 +182,8 @@ mod tests {
     #[test]
     fn progress_bar_lifecycle_disabled() {
         let progress = super::BenchmarkProgress::new(5, true);
-        progress.set_target("naive", 64, "f32", 1);
+        progress.set_target("naive", 64, "f32", 1, None);
+        progress.set_target("tiled", 64, "f32", 1, Some(64));
         progress.step();
         progress.finish();
     }
@@ -184,14 +199,21 @@ mod tests {
         let csv_path =
             std::env::temp_dir().join(format!("gemm-bench-report-test-{}.csv", std::process::id()));
         let csv_file = std::fs::File::create(&csv_path).expect("create csv file");
+        let tiled = BenchmarkRecord {
+            kernel: "tiled".to_owned(),
+            block_size: Some(64),
+            ..record()
+        };
 
-        super::write_records(csv_file, &[record()]).expect("write records");
+        super::write_records(csv_file, &[record(), tiled]).expect("write records");
 
         let csv_content = std::fs::read_to_string(&csv_path).expect("read csv");
+        // Kernels that don't tile leave block_size empty; tiled ones record it.
         assert_eq!(
             csv_content,
             "kernel,backend,device,precision,n,threads,gops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,block_size,repetitions,host,commit,timestamp\n\
-             rayon-ikj,cpu,Test CPU,f32,256,4,2.5,0.0,12.34567,12.0,0.25,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
+             rayon-ikj,cpu,Test CPU,f32,256,4,2.5,0.0,12.34567,12.0,0.25,,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
+             tiled,cpu,Test CPU,f32,256,4,2.5,0.0,12.34567,12.0,0.25,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
         );
         let _ = std::fs::remove_file(csv_path);
     }
