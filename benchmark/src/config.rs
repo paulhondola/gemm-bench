@@ -71,9 +71,14 @@ mod tests {
                 continue;
             }
             let preset = ConfigFile::load(&path).unwrap_or_else(|error| panic!("{error}"));
-            // precisions.toml names mps, which exists only on macOS.
-            #[cfg(target_os = "macos")]
-            let _kernels = preset.kernels().unwrap_or_else(|error| panic!("{error}"));
+            // mps exists only on macOS; elsewhere its name is the one allowed error.
+            if let Err(error) = preset.kernels() {
+                assert!(
+                    cfg!(not(target_os = "macos")) && error.contains("'mps'"),
+                    "{}: {error}",
+                    path.display()
+                );
+            }
             let _precisions = preset
                 .precisions()
                 .unwrap_or_else(|error| panic!("{error}"));
