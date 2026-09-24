@@ -6,7 +6,6 @@ import {
 	bestPerKernel,
 	blockSizes,
 	blockSizesFor,
-	defaultBlockSize,
 	defaultBlockSizeFor,
 	defaultParallelKernel,
 	defaultPrecision,
@@ -348,61 +347,6 @@ test("blockSizesFor narrows to the given precision and n", () => {
 	expect(blockSizesFor(blockRows, "f32", 256)).toEqual([32]);
 });
 
-test("defaultBlockSize picks the block size with the widest n coverage", () => {
-	// 32 covers n = 64/128/256 (3 sizes); 64 covers only 64/128 (2). The bug
-	// this guards: picking the larger block size, or the first one seen,
-	// would return 64 here instead.
-	expect(defaultBlockSize(blockRows)).toBe(32);
-});
-
-test("defaultBlockSize breaks a coverage tie numerically", () => {
-	const tied: Row[] = [
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 10,
-			backend: "cpu",
-			block_size: 128,
-		},
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 128,
-			threads: 1,
-			gops: 12,
-			backend: "cpu",
-			block_size: 128,
-		},
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 9,
-			backend: "cpu",
-			block_size: 64,
-		},
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 128,
-			threads: 1,
-			gops: 11,
-			backend: "cpu",
-			block_size: 64,
-		},
-	];
-	// Both block sizes cover n = 64/128 (a tie); the lower number wins so the
-	// choice is stable rather than depending on array order.
-	expect(defaultBlockSize(tied)).toBe(64);
-});
-
-test("defaultBlockSize is 0 for no rows", () => {
-	expect(defaultBlockSize([])).toBe(0);
-});
-
 test("defaultBlockSizeFor recovers a selection stranded by an n change", () => {
 	// block_size=64 is a real, valid selection at n=128 — the App.svelte
 	// pickSize control's exact scenario is choosing 64 there, then moving to
@@ -451,5 +395,4 @@ test("rows without a block size are not a block size", () => {
 	];
 	expect(blockSizes(withUntiled)).toEqual([32, 64]);
 	expect(blockSizesFor(withUntiled, "f32", 64)).toEqual([32, 64]);
-	expect(defaultBlockSize(withUntiled)).toBe(32);
 });

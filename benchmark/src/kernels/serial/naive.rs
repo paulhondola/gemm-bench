@@ -5,10 +5,6 @@ use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
 pub struct NaiveGemm;
 
 impl<T: Element> GemmKernel<T> for NaiveGemm {
-    fn name(&self) -> &'static str {
-        "naive-ijk"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();

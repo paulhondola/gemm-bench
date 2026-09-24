@@ -55,10 +55,6 @@ unsafe extern "C" {
 pub struct AccelerateBlasGemm;
 
 impl<T: Element> GemmKernel<T> for AccelerateBlasGemm {
-    fn name(&self) -> &'static str {
-        "accelerate-blas"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = c_int::try_from(lhs.rows()).expect("matrix dimension exceeds BLAS's i32 range");

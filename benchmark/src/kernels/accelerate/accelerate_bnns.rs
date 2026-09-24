@@ -76,10 +76,6 @@ impl<T: Element> AccelerateBnnsGemm<T> {
 }
 
 impl<T: Element> GemmKernel<T> for AccelerateBnnsGemm<T> {
-    fn name(&self) -> &'static str {
-        "accelerate-bnns"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         assert_eq!(

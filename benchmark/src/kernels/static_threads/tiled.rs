@@ -23,10 +23,6 @@ impl StaticTiledGemm {
 }
 
 impl<T: Element> GemmKernel<T> for StaticTiledGemm {
-    fn name(&self) -> &'static str {
-        "static-tiled"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();

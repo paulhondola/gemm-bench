@@ -16,10 +16,6 @@ impl TiledGemm {
 }
 
 impl<T: Element> GemmKernel<T> for TiledGemm {
-    fn name(&self) -> &'static str {
-        "tiled"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();

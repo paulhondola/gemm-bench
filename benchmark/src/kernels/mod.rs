@@ -161,8 +161,6 @@ impl_element!(int: i32, i64);
 /// condition at their entry point, then use row slices in the compute loops so
 /// LLVM can eliminate repeated index checks and autovectorize contiguous work.
 pub trait GemmKernel<T: Element>: Send + Sync {
-    fn name(&self) -> &'static str;
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>);
 }
 

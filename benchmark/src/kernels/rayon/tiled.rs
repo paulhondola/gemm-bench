@@ -18,10 +18,6 @@ impl RayonTiledGemm {
 }
 
 impl<T: Element> GemmKernel<T> for RayonTiledGemm {
-    fn name(&self) -> &'static str {
-        "rayon-tiled"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();
