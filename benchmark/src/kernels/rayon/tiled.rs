@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 /// Rayon work-stealing implementation, partitioned into row chunks of at most
 /// `block_size` rows.
@@ -18,10 +18,6 @@ impl RayonTiledGemm {
 }
 
 impl<T: Element> GemmKernel<T> for RayonTiledGemm {
-    fn name(&self) -> &'static str {
-        "rayon-tiled"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();

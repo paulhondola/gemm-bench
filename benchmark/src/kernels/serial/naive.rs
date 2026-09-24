@@ -1,14 +1,10 @@
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 /// Canonical sequential `i-j-k` GEMM baseline.
 pub struct NaiveGemm;
 
 impl<T: Element> GemmKernel<T> for NaiveGemm {
-    fn name(&self) -> &'static str {
-        "naive-ijk"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();

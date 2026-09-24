@@ -6,7 +6,6 @@ import {
 	bestPerKernel,
 	blockSizes,
 	blockSizesFor,
-	defaultBlockSize,
 	defaultBlockSizeFor,
 	defaultParallelKernel,
 	defaultPrecision,
@@ -20,24 +19,11 @@ import {
 	singleBlockSizeKernels,
 	sizesFor,
 } from "./derive";
+import { row } from "./fixtures";
 
 const rows: Row[] = [
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 10,
-		backend: "cpu",
-	},
-	{
-		kernel: "ikj",
-		precision: "f16",
-		n: 64,
-		threads: 1,
-		gops: 20,
-		backend: "cpu",
-	},
+	row({ kernel: "ikj", n: 64, gops: 10 }),
+	row({ kernel: "ikj", precision: "f16", n: 64, gops: 20 }),
 ];
 
 test("precisions lists each precision once, sorted", () => {
@@ -45,54 +31,12 @@ test("precisions lists each precision once, sorted", () => {
 });
 
 const mixed: Row[] = [
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 10,
-		backend: "cpu",
-	},
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 128,
-		threads: 1,
-		gops: 12,
-		backend: "cpu",
-	},
-	{
-		kernel: "rayon-ikj",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 10,
-		backend: "cpu",
-	},
-	{
-		kernel: "rayon-ikj",
-		precision: "f32",
-		n: 64,
-		threads: 4,
-		gops: 38,
-		backend: "cpu",
-	},
-	{
-		kernel: "mps",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 2,
-		backend: "metal",
-	},
-	{
-		kernel: "ikj",
-		precision: "i64",
-		n: 4096,
-		threads: 1,
-		gops: 6,
-		backend: "cpu",
-	},
+	row({ kernel: "ikj", n: 64, gops: 10 }),
+	row({ kernel: "ikj", n: 128, gops: 12 }),
+	row({ kernel: "rayon-ikj", n: 64, gops: 10 }),
+	row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 38 }),
+	row({ kernel: "mps", n: 64, gops: 2, backend: "metal" }),
+	row({ kernel: "ikj", precision: "i64", n: 4096, gops: 6 }),
 ];
 
 test("family comes from the data, not the kernel name", () => {
@@ -104,30 +48,16 @@ test("family comes from the data, not the kernel name", () => {
 
 test("a metal kernel stays gpu even with only single-thread rows", () => {
 	expect(
-		families([
-			{
-				kernel: "mps",
-				precision: "f32",
-				n: 64,
-				threads: 1,
-				gops: 2,
-				backend: "metal",
-			},
-		]).get("mps"),
+		families([row({ kernel: "mps", n: 64, gops: 2, backend: "metal" })]).get(
+			"mps",
+		),
 	).toBe("gpu");
 });
 
 test("an amx kernel is its own family, not serial, despite threads=1", () => {
 	expect(
 		families([
-			{
-				kernel: "accelerate-blas",
-				precision: "f32",
-				n: 64,
-				threads: 1,
-				gops: 400,
-				backend: "amx",
-			},
+			row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "amx" }),
 		]).get("accelerate-blas"),
 	).toBe("amx");
 });
@@ -149,38 +79,10 @@ test("without f32, the default precision is the one with the widest coverage", (
 });
 
 const threaded: Row[] = [
-	{
-		kernel: "rayon-ikj",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 10,
-		backend: "cpu",
-	},
-	{
-		kernel: "rayon-ikj",
-		precision: "f32",
-		n: 64,
-		threads: 4,
-		gops: 38,
-		backend: "cpu",
-	},
-	{
-		kernel: "rayon-ikj",
-		precision: "f32",
-		n: 64,
-		threads: 8,
-		gops: 31,
-		backend: "cpu",
-	},
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 12,
-		backend: "cpu",
-	},
+	row({ kernel: "rayon-ikj", n: 64, gops: 10 }),
+	row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 38 }),
+	row({ kernel: "rayon-ikj", n: 64, threads: 8, gops: 31 }),
+	row({ kernel: "ikj", n: 64, gops: 12 }),
 ];
 
 test("bestPerKernel keeps the peak per kernel and size", () => {
@@ -203,22 +105,8 @@ test("bestPerKernel keeps serial kernels in frame", () => {
 
 test("bestPerKernel keeps the first row on a tie", () => {
 	const tied: Row[] = [
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 10,
-			backend: "cpu",
-		},
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 64,
-			threads: 2,
-			gops: 10,
-			backend: "cpu",
-		},
+		row({ kernel: "ikj", n: 64, gops: 10 }),
+		row({ kernel: "ikj", n: 64, threads: 2, gops: 10 }),
 	];
 	expect(bestPerKernel(tied)[0].threads).toBe(1);
 });
@@ -237,16 +125,13 @@ test("defaultParallelKernel returns empty when the precision has no parallel ker
 	expect(defaultParallelKernel(mixed, "i64")).toBe("");
 });
 
-const validRow: Row = {
+const validRow: Row = row({
 	kernel: "ikj",
-	precision: "f32",
 	n: 64,
-	threads: 1,
 	gops: 10,
-	backend: "cpu",
 	median_ms: 1,
 	stddev_ms: 0.1,
-};
+});
 
 test("isPlottable rejects n = 0", () => {
 	expect(isPlottable({ ...validRow, n: 0 })).toBe(false);
@@ -292,51 +177,11 @@ test("baseline guards detect what a partial sweep is missing", () => {
 });
 
 const blockRows: Row[] = [
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 10,
-		backend: "cpu",
-		block_size: 32,
-	},
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 128,
-		threads: 1,
-		gops: 12,
-		backend: "cpu",
-		block_size: 32,
-	},
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 256,
-		threads: 1,
-		gops: 14,
-		backend: "cpu",
-		block_size: 32,
-	},
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 9,
-		backend: "cpu",
-		block_size: 64,
-	},
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 128,
-		threads: 1,
-		gops: 11,
-		backend: "cpu",
-		block_size: 64,
-	},
+	row({ kernel: "ikj", n: 64, gops: 10, block_size: 32 }),
+	row({ kernel: "ikj", n: 128, gops: 12, block_size: 32 }),
+	row({ kernel: "ikj", n: 256, gops: 14, block_size: 32 }),
+	row({ kernel: "ikj", n: 64, gops: 9, block_size: 64 }),
+	row({ kernel: "ikj", n: 128, gops: 11, block_size: 64 }),
 ];
 
 test("blockSizes lists each block size once, sorted", () => {
@@ -346,61 +191,6 @@ test("blockSizes lists each block size once, sorted", () => {
 test("blockSizesFor narrows to the given precision and n", () => {
 	expect(blockSizesFor(blockRows, "f32", 64)).toEqual([32, 64]);
 	expect(blockSizesFor(blockRows, "f32", 256)).toEqual([32]);
-});
-
-test("defaultBlockSize picks the block size with the widest n coverage", () => {
-	// 32 covers n = 64/128/256 (3 sizes); 64 covers only 64/128 (2). The bug
-	// this guards: picking the larger block size, or the first one seen,
-	// would return 64 here instead.
-	expect(defaultBlockSize(blockRows)).toBe(32);
-});
-
-test("defaultBlockSize breaks a coverage tie numerically", () => {
-	const tied: Row[] = [
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 10,
-			backend: "cpu",
-			block_size: 128,
-		},
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 128,
-			threads: 1,
-			gops: 12,
-			backend: "cpu",
-			block_size: 128,
-		},
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 9,
-			backend: "cpu",
-			block_size: 64,
-		},
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 128,
-			threads: 1,
-			gops: 11,
-			backend: "cpu",
-			block_size: 64,
-		},
-	];
-	// Both block sizes cover n = 64/128 (a tie); the lower number wins so the
-	// choice is stable rather than depending on array order.
-	expect(defaultBlockSize(tied)).toBe(64);
-});
-
-test("defaultBlockSize is 0 for no rows", () => {
-	expect(defaultBlockSize([])).toBe(0);
 });
 
 test("defaultBlockSizeFor recovers a selection stranded by an n change", () => {
@@ -421,15 +211,7 @@ test("defaultBlockSizeFor is 0 when nothing exists for that precision/n", () => 
 test("singleBlockSizeKernels: a kernel with two block sizes in the dataset is excluded, a kernel with one is included", () => {
 	const mixed: Row[] = [
 		...blockRows, // ikj: block_size 32 and 64 -> not single
-		{
-			kernel: "mps",
-			precision: "f32",
-			n: 256,
-			threads: 1,
-			gops: 900,
-			backend: "metal",
-			block_size: 32,
-		},
+		row({ kernel: "mps", n: 256, gops: 900, backend: "metal", block_size: 32 }),
 	];
 	const single = singleBlockSizeKernels(mixed);
 	expect(single.has("mps")).toBe(true);
@@ -439,17 +221,8 @@ test("singleBlockSizeKernels: a kernel with two block sizes in the dataset is ex
 test("rows without a block size are not a block size", () => {
 	const withUntiled: Row[] = [
 		...blockRows,
-		{
-			kernel: "rayon-ikj",
-			precision: "f32",
-			n: 64,
-			threads: 4,
-			gops: 40,
-			backend: "cpu",
-			block_size: null,
-		},
+		row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 40, block_size: null }),
 	];
 	expect(blockSizes(withUntiled)).toEqual([32, 64]);
 	expect(blockSizesFor(withUntiled, "f32", 64)).toEqual([32, 64]);
-	expect(defaultBlockSize(withUntiled)).toBe(32);
 });

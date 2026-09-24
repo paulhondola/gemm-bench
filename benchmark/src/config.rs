@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use clap::ValueEnum;
 use serde::Deserialize;
 
-use crate::cli::{KernelChoice, Precision};
+use crate::kernel::{KernelChoice, Precision};
 
 /// A preset: the sweep dimensions under the same names as the CLI flags.
 /// Omitted keys sweep every value; flags on the command line override keys.

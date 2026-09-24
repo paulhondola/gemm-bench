@@ -2,8 +2,8 @@ use std::sync::Mutex;
 
 use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 use super::static_row_counts;
 
@@ -23,10 +23,6 @@ impl StaticTiledGemm {
 }
 
 impl<T: Element> GemmKernel<T> for StaticTiledGemm {
-    fn name(&self) -> &'static str {
-        "static-tiled"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();

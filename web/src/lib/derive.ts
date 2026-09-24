@@ -108,24 +108,9 @@ export function blockSizesFor(
 }
 
 /**
- * The block size with the widest coverage (most distinct `n` values), ties
- * broken numerically so the choice is stable. 0 when there are no rows.
- */
-export function defaultBlockSize(rows: Row[]): number {
-	const sizes = blockSizes(rows);
-	if (!sizes.length) return 0;
-	const coverage = (b: number) =>
-		new Set(
-			rows.filter((r) => Number(r.block_size) === b).map((r) => Number(r.n)),
-		).size;
-	return sizes.slice().sort((a, b) => coverage(b) - coverage(a) || a - b)[0];
-}
-
-/**
  * The block size to fall back to when the current selection is invalid for
  * this specific (precision, n) — the smallest one actually available there.
- * Unlike `defaultBlockSize`, which picks once over the whole dataset for
- * boot, this must stay valid as precision/n change, so it reads the exact
+ * It must stay valid as precision/n change, so it reads the exact
  * combination the fallback needs to hold for.
  */
 export function defaultBlockSizeFor(
@@ -151,20 +136,6 @@ export function singleBlockSizeKernels(rows: Row[]): Set<string> {
 	return new Set(
 		[...byKernel].filter(([, sizes]) => sizes.size === 1).map(([k]) => k),
 	);
-}
-
-export function threadsFor(
-	rows: Row[],
-	precision: string,
-	n: number,
-): number[] {
-	return [
-		...new Set(
-			rows
-				.filter((r) => r.precision === precision && Number(r.n) === n)
-				.map((r) => Number(r.threads)),
-		),
-	].sort(ascending);
 }
 
 /**

@@ -1,5 +1,5 @@
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 /// Sequential cache-blocked GEMM. A block size of 64 is a practical default,
 /// while the CLI permits empirical tuning per target CPU and precision.
@@ -16,10 +16,6 @@ impl TiledGemm {
 }
 
 impl<T: Element> GemmKernel<T> for TiledGemm {
-    fn name(&self) -> &'static str {
-        "tiled"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();

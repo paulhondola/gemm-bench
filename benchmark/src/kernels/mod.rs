@@ -9,151 +9,18 @@ pub mod rayon;
 pub mod serial;
 pub mod static_threads;
 
-use std::ops::{Add, AddAssign, Mul};
-
 #[cfg(target_os = "macos")]
 pub use accelerate::AccelerateBlasGemm;
 #[cfg(target_os = "macos")]
 pub use accelerate::AccelerateBnnsGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
-pub use mps::{MpsElement, MpsGemm};
+pub use mps::MpsGemm;
 pub use rayon::{RayonIkjGemm, RayonTiledGemm};
 pub use serial::{IkjGemm, NaiveGemm, TiledGemm};
 pub use static_threads::{StaticIkjGemm, StaticTiledGemm};
 
-use crate::Matrix;
-
-/// Helper trait dispatching MPS benchmarks for supported element types.
-pub trait MpsBench: Sized {
-    #[cfg(target_os = "macos")]
-    fn run_mps(
-        lhs: &Matrix<Self>,
-        rhs: &Matrix<Self>,
-        output: &mut Matrix<Self>,
-        repetitions: usize,
-    ) -> Vec<std::time::Duration>;
-}
-
-#[cfg(target_os = "macos")]
-impl MpsBench for f16 {
-    fn run_mps(
-        lhs: &Matrix<Self>,
-        rhs: &Matrix<Self>,
-        output: &mut Matrix<Self>,
-        repetitions: usize,
-    ) -> Vec<std::time::Duration> {
-        let kernel = MpsGemm::<f16>::new().expect("Failed to initialize Metal Performance Shaders");
-        kernel.benchmark(lhs, rhs, output, repetitions)
-    }
-}
-
-#[cfg(target_os = "macos")]
-impl MpsBench for f32 {
-    fn run_mps(
-        lhs: &Matrix<Self>,
-        rhs: &Matrix<Self>,
-        output: &mut Matrix<Self>,
-        repetitions: usize,
-    ) -> Vec<std::time::Duration> {
-        let kernel = MpsGemm::<f32>::new().expect("Failed to initialize Metal Performance Shaders");
-        kernel.benchmark(lhs, rhs, output, repetitions)
-    }
-}
-
-/// Precisions `MPSMatrixMultiplication` cannot run; plan validation rejects
-/// them before `measure` is reached.
-macro_rules! impl_mps_unsupported {
-    ($($element:ty),*) => {
-        $(
-            #[cfg(target_os = "macos")]
-            impl MpsBench for $element {
-                fn run_mps(
-                    _lhs: &Matrix<Self>,
-                    _rhs: &Matrix<Self>,
-                    _output: &mut Matrix<Self>,
-                    _repetitions: usize,
-                ) -> Vec<std::time::Duration> {
-                    panic!(concat!(
-                        "MPS GEMM does not support ",
-                        stringify!($element),
-                        " precision; validation should have rejected this"
-                    ))
-                }
-            }
-        )*
-    };
-}
-
-impl_mps_unsupported!(f64, i32, i64);
-
-#[cfg(not(target_os = "macos"))]
-impl<T: Element> MpsBench for T {}
-
-/// A numeric element type the kernels can multiply.
-///
-/// `Default` supplies zero for clearing outputs and starting sums. `EPSILON`
-/// and the conversions let callers build inputs and compare results
-/// independently of precision.
-pub trait Element:
-    Copy
-    + Default
-    + Send
-    + Sync
-    + Add<Output = Self>
-    + Mul<Output = Self>
-    + AddAssign
-    + MpsBench
-    + 'static
-{
-    /// Machine epsilon of the element type, widened to `f64`. Zero for
-    /// integers, whose products are exact in any summation order.
-    const EPSILON: f64;
-
-    /// Builds an input value from `numerator / denominator`. Integers keep
-    /// only the numerator, since the fraction would truncate to zero.
-    fn from_ratio(numerator: usize, denominator: usize) -> Self;
-
-    fn to_f64(self) -> f64;
-}
-
-macro_rules! impl_element {
-    (float: $($float:ty),*) => {
-        $(
-            impl Element for $float {
-                const EPSILON: f64 = <$float>::EPSILON as f64;
-
-                fn from_ratio(numerator: usize, denominator: usize) -> Self {
-                    (numerator as f64 / denominator as f64) as $float
-                }
-
-                fn to_f64(self) -> f64 {
-                    self as f64
-                }
-            }
-        )*
-    };
-    (int: $($int:ty),*) => {
-        $(
-            impl Element for $int {
-                const EPSILON: f64 = 0.0;
-
-                // ponytail: no overflow check; benchmark outputs peak at 616·n,
-                // far inside i32 for any n that fits in memory.
-                fn from_ratio(numerator: usize, _denominator: usize) -> Self {
-                    numerator as $int
-                }
-
-                fn to_f64(self) -> f64 {
-                    self as f64
-                }
-            }
-        )*
-    };
-}
-
-impl_element!(float: f16, f32, f64);
-impl_element!(int: i32, i64);
+use crate::{Element, Matrix};
 
 /// A dense matrix product kernel that computes `output = lhs * rhs`.
 ///
@@ -161,8 +28,6 @@ impl_element!(int: i32, i64);
 /// condition at their entry point, then use row slices in the compute loops so
 /// LLVM can eliminate repeated index checks and autovectorize contiguous work.
 pub trait GemmKernel<T: Element>: Send + Sync {
-    fn name(&self) -> &'static str;
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>);
 }
 
@@ -294,6 +159,13 @@ mod tests {
     fn accelerate_bnns_has_no_graph_for_other_precisions() {
         assert!(super::AccelerateBnnsGemm::<f64>::new(7).is_none());
         assert!(super::AccelerateBnnsGemm::<i32>::new(7).is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mps_has_no_kernel_for_other_precisions() {
+        assert!(super::MpsGemm::<f64>::new().is_none());
+        assert!(super::MpsGemm::<i32>::new().is_none());
     }
 
     #[cfg(target_os = "macos")]

@@ -64,6 +64,10 @@ jobs:
         run: bun run typecheck
         working-directory: web
 
+      - name: Web Tests
+        run: bun test
+        working-directory: web
+
       - name: Build Web App
         run: bun run build
         working-directory: web

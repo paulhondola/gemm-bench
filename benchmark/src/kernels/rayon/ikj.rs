@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions, ikj_rows};
+use crate::{Element, Matrix};
 
 /// Rayon work-stealing implementation of the contiguous `i-k-j` kernel.
 ///
@@ -11,10 +11,6 @@ use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
 pub struct RayonIkjGemm;
 
 impl<T: Element> GemmKernel<T> for RayonIkjGemm {
-    fn name(&self) -> &'static str {
-        "rayon-ikj"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = lhs.cols();

@@ -4,18 +4,19 @@ use std::{
 };
 
 #[cfg(target_os = "macos")]
-use gemm_bench::kernels::{AccelerateBlasGemm, AccelerateBnnsGemm};
+use gemm_bench::kernels::{AccelerateBlasGemm, AccelerateBnnsGemm, MpsGemm};
 use gemm_bench::{
     Element, GemmKernel, Matrix,
     kernels::{
         IkjGemm, NaiveGemm, RayonIkjGemm, RayonTiledGemm, StaticIkjGemm, StaticTiledGemm, TiledGemm,
     },
 };
-use rayon::ThreadPoolBuilder;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 use serde::Serialize;
 
 use crate::{
-    cli::{BenchmarkPlan, KernelChoice, Precision},
+    kernel::{KernelChoice, Precision},
+    plan::BenchmarkPlan,
     report::BenchmarkProgress,
 };
 
@@ -126,7 +127,7 @@ fn run_precision<T: Element>(
                 records.push(BenchmarkRecord {
                     kernel: kernel.label().to_owned(),
                     backend: kernel.backend(),
-                    device: kernel.device(&plan.devices).to_owned(),
+                    device: plan.devices.of(kernel).to_owned(),
                     precision: precision.label(),
                     n,
                     threads: thread_count,
@@ -160,9 +161,9 @@ fn benchmark_inputs<T: Element>(n: usize) -> (Matrix<T>, Matrix<T>) {
 
 /// Returns the durations of `repetitions` timed runs.
 ///
-/// Every arm first runs the kernel once untimed, after any pool is built, so
-/// one-time costs (the process's first Rayon call, a fresh pool's idle
-/// workers) stay out of the measured samples.
+/// Kernel setup (a pool, a compiled graph, a Metal queue) happens here,
+/// before `sample`'s untimed warm-up run, so one-time costs (the process's
+/// first Rayon call, a fresh pool's idle workers) stay out of the samples.
 fn measure<T: Element>(
     choice: KernelChoice,
     threads: usize,
@@ -174,90 +175,62 @@ fn measure<T: Element>(
 ) -> Result<Vec<Duration>, rayon::ThreadPoolBuildError> {
     // `BenchmarkPlan::cells` gives every tiled kernel a block size.
     let block = || block_size.expect("tiled kernels always get a block size");
-    let mut samples = Vec::with_capacity(repetitions);
-    match choice {
-        KernelChoice::Naive => {
-            let kernel = NaiveGemm;
-            kernel.compute(lhs, rhs, output);
-            for _ in 0..repetitions {
-                samples.push(time_kernel(&kernel, lhs, rhs, output));
-            }
-        }
-        KernelChoice::Ikj => {
-            let kernel = IkjGemm;
-            kernel.compute(lhs, rhs, output);
-            for _ in 0..repetitions {
-                samples.push(time_kernel(&kernel, lhs, rhs, output));
-            }
-        }
-        KernelChoice::Tiled => {
-            let kernel = TiledGemm::new(block());
-            kernel.compute(lhs, rhs, output);
-            for _ in 0..repetitions {
-                samples.push(time_kernel(&kernel, lhs, rhs, output));
-            }
-        }
-        KernelChoice::RayonIkj => {
-            let pool = ThreadPoolBuilder::new().num_threads(threads).build()?;
-            let kernel = RayonIkjGemm;
-            pool.install(|| kernel.compute(lhs, rhs, output));
-            for _ in 0..repetitions {
-                let start = Instant::now();
-                pool.install(|| kernel.compute(black_box(lhs), black_box(rhs), black_box(output)));
-                black_box(output.as_slice());
-                samples.push(start.elapsed());
-            }
-        }
+    let io = (lhs, rhs, output, repetitions);
+    Ok(match choice {
+        KernelChoice::Naive => sample(&NaiveGemm, io),
+        KernelChoice::Ikj => sample(&IkjGemm, io),
+        KernelChoice::Tiled => sample(&TiledGemm::new(block()), io),
+        KernelChoice::RayonIkj => sample(&InPool::new(threads, RayonIkjGemm)?, io),
         KernelChoice::RayonTiled => {
-            let pool = ThreadPoolBuilder::new().num_threads(threads).build()?;
-            let kernel = RayonTiledGemm::new(block());
-            pool.install(|| kernel.compute(lhs, rhs, output));
-            for _ in 0..repetitions {
-                let start = Instant::now();
-                pool.install(|| kernel.compute(black_box(lhs), black_box(rhs), black_box(output)));
-                black_box(output.as_slice());
-                samples.push(start.elapsed());
-            }
+            sample(&InPool::new(threads, RayonTiledGemm::new(block()))?, io)
         }
-        KernelChoice::StaticIkj => {
-            let kernel = StaticIkjGemm::new(threads)?;
-            kernel.compute(lhs, rhs, output);
-            for _ in 0..repetitions {
-                samples.push(time_kernel(&kernel, lhs, rhs, output));
-            }
-        }
-        KernelChoice::StaticTiled => {
-            let kernel = StaticTiledGemm::new(threads, block())?;
-            kernel.compute(lhs, rhs, output);
-            for _ in 0..repetitions {
-                samples.push(time_kernel(&kernel, lhs, rhs, output));
-            }
-        }
+        KernelChoice::StaticIkj => sample(&StaticIkjGemm::new(threads)?, io),
+        KernelChoice::StaticTiled => sample(&StaticTiledGemm::new(threads, block())?, io),
         #[cfg(target_os = "macos")]
-        KernelChoice::AccelerateBlas => {
-            let kernel = AccelerateBlasGemm;
-            kernel.compute(lhs, rhs, output);
-            for _ in 0..repetitions {
-                samples.push(time_kernel(&kernel, lhs, rhs, output));
-            }
-        }
+        KernelChoice::AccelerateBlas => sample(&AccelerateBlasGemm, io),
         #[cfg(target_os = "macos")]
-        KernelChoice::AccelerateBnns => {
-            // Compiling the graph for this size is setup, like building a pool.
-            let kernel = AccelerateBnnsGemm::<T>::new(lhs.rows())
-                .expect("accelerate-bnns needs macOS 26 (the BNNSGraph builder)");
-            kernel.compute(lhs, rhs, output);
-            for _ in 0..repetitions {
-                samples.push(time_kernel(&kernel, lhs, rhs, output));
-            }
-        }
+        KernelChoice::AccelerateBnns => sample(
+            &AccelerateBnnsGemm::<T>::new(lhs.rows())
+                .expect("accelerate-bnns needs macOS 26 (the BNNSGraph builder)"),
+            io,
+        ),
+        // MPS times only the GPU dispatch, so it runs its own loop.
         #[cfg(target_os = "macos")]
-        KernelChoice::Mps => {
-            return Ok(T::run_mps(lhs, rhs, output, repetitions));
-        }
-    }
+        KernelChoice::Mps => MpsGemm::<T>::new()
+            .expect("MPS needs a Metal device and f16 or f32")
+            .benchmark(lhs, rhs, io.2, repetitions),
+    })
+}
 
-    Ok(samples)
+/// One untimed warm-up run, then `repetitions` timed ones.
+fn sample<T: Element>(
+    kernel: &impl GemmKernel<T>,
+    (lhs, rhs, output, repetitions): (&Matrix<T>, &Matrix<T>, &mut Matrix<T>, usize),
+) -> Vec<Duration> {
+    kernel.compute(lhs, rhs, output);
+    (0..repetitions)
+        .map(|_| time_kernel(kernel, lhs, rhs, output))
+        .collect()
+}
+
+/// Runs a Rayon kernel on its own pool of `threads` workers. `install` is
+/// part of `compute`, so every timed run includes it.
+struct InPool<K> {
+    pool: ThreadPool,
+    kernel: K,
+}
+
+impl<K> InPool<K> {
+    fn new(threads: usize, kernel: K) -> Result<Self, rayon::ThreadPoolBuildError> {
+        let pool = ThreadPoolBuilder::new().num_threads(threads).build()?;
+        Ok(Self { pool, kernel })
+    }
+}
+
+impl<T: Element, K: GemmKernel<T>> GemmKernel<T> for InPool<K> {
+    fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
+        self.pool.install(|| self.kernel.compute(lhs, rhs, output));
+    }
 }
 
 fn time_kernel<T: Element>(

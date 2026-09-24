@@ -7,7 +7,7 @@ A kernel is not done until every place below knows about it. Do them in order, t
 
 ## 1. Implement
 
-Put the kernel in the family module that matches its strategy: `benchmark/src/kernels/{serial,rayon,static_threads}/<name>.rs`. Implement `GemmKernel<T: Element>` (`name()` + `compute()`), following the closest existing sibling. Rules from `kernels/mod.rs`:
+Put the kernel in the family module that matches its strategy: `benchmark/src/kernels/{serial,rayon,static_threads}/<name>.rs`. Implement `GemmKernel<T: Element>` (`compute()`), following the closest existing sibling. Rules from `kernels/mod.rs`:
 
 - Validate dimensions at the entry point with `assert_gemm_dimensions`, and overwrite (not accumulate into) `output`.
 - Use row slices in the inner loops so LLVM can autovectorize; reuse `ikj_rows` where the strategy is ikj-based.
@@ -15,13 +15,13 @@ Put the kernel in the family module that matches its strategy: `benchmark/src/ke
 
 Re-export from the family `mod.rs`, then from `kernels/mod.rs` (`pub use ...`).
 
-## 2. Wire the CLI (`benchmark/src/cli.rs`)
+## 2. Describe it (`benchmark/src/kernel.rs`)
 
-Add a `KernelChoice` variant, then update **every** match: `label()` (the CSV/dashboard name, kebab-case), `backend()` (`"cpu"`), `device()`, and `uses_workers()` if it takes `--threads`. `supports()` only needs a change for precision restrictions. Update `validate_static_threads` if it has a rows-per-thread constraint.
+Add a `KernelChoice` variant and its row in `KernelChoice::info()`: the `label` (the CSV/dashboard name, kebab-case), plus only the fields that differ from `KernelInfo::serial`: `workers` if it takes `--threads`, `blocks` if it takes `--block-size`, `row_per_worker` if every worker needs at least one row, `precisions` if it can't run all five. The CLI, the sweep, and the skip notices all read that row.
 
 ## 3. Wire the harness (`benchmark/src/benchmark.rs`)
 
-Add the import and a `measure` arm. Copy the sibling's pattern exactly: one untimed `compute` first (after any pool is built), then `time_kernel` per repetition. Rayon-style kernels run inside `pool.install`.
+Add the import and a one-line `measure` arm: `sample(&MyGemm::new(..)?, io)`. `sample` runs the untimed warm-up and the timed repetitions; build any pool or setup in the arm, before it. Rayon-style kernels go through `InPool::new(threads, kernel)?`, which keeps `pool.install` inside each timed run.
 
 ## 4. Test
 

@@ -4,8 +4,8 @@
 use std::any::TypeId;
 use std::ffi::c_int;
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 const CBLAS_ROW_MAJOR: c_int = 101;
 const CBLAS_NO_TRANS: c_int = 111;
@@ -55,10 +55,6 @@ unsafe extern "C" {
 pub struct AccelerateBlasGemm;
 
 impl<T: Element> GemmKernel<T> for AccelerateBlasGemm {
-    fn name(&self) -> &'static str {
-        "accelerate-blas"
-    }
-
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         assert_gemm_dimensions(lhs, rhs, output);
         let n = c_int::try_from(lhs.rows()).expect("matrix dimension exceeds BLAS's i32 range");
@@ -67,9 +63,9 @@ impl<T: Element> GemmKernel<T> for AccelerateBlasGemm {
             rhs.as_slice().as_ptr(),
             output.as_mut_slice().as_mut_ptr(),
         );
-        // ponytail: TypeId dispatch instead of a per-precision supertrait on
-        // `Element` (the `MpsBench` pattern); both branches fold away after
-        // monomorphization.
+        // ponytail: TypeId dispatch, like BNNS and MPS, instead of a
+        // per-precision supertrait on `Element`; both branches fold away
+        // after monomorphization.
         // SAFETY: the TypeId check proves `T` is the pointee type each cast
         // names; the asserted dimensions make every buffer n*n long and
         // row-major with leading dimension n; `output` is borrowed mutably,

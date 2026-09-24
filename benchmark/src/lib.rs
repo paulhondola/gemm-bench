@@ -6,8 +6,10 @@
 
 #![feature(f16)]
 
+pub mod element;
 pub mod kernels;
 pub mod matrix;
 
-pub use kernels::{Element, GemmKernel};
+pub use element::Element;
+pub use kernels::GemmKernel;
 pub use matrix::Matrix;
