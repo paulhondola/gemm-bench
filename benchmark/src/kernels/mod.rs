@@ -17,78 +17,12 @@ pub use accelerate::AccelerateBlasGemm;
 pub use accelerate::AccelerateBnnsGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
-pub use mps::{MpsElement, MpsGemm};
+pub use mps::MpsGemm;
 pub use rayon::{RayonIkjGemm, RayonTiledGemm};
 pub use serial::{IkjGemm, NaiveGemm, TiledGemm};
 pub use static_threads::{StaticIkjGemm, StaticTiledGemm};
 
 use crate::Matrix;
-
-/// Helper trait dispatching MPS benchmarks for supported element types.
-pub trait MpsBench: Sized {
-    #[cfg(target_os = "macos")]
-    fn run_mps(
-        lhs: &Matrix<Self>,
-        rhs: &Matrix<Self>,
-        output: &mut Matrix<Self>,
-        repetitions: usize,
-    ) -> Vec<std::time::Duration>;
-}
-
-#[cfg(target_os = "macos")]
-impl MpsBench for f16 {
-    fn run_mps(
-        lhs: &Matrix<Self>,
-        rhs: &Matrix<Self>,
-        output: &mut Matrix<Self>,
-        repetitions: usize,
-    ) -> Vec<std::time::Duration> {
-        let kernel = MpsGemm::<f16>::new().expect("Failed to initialize Metal Performance Shaders");
-        kernel.benchmark(lhs, rhs, output, repetitions)
-    }
-}
-
-#[cfg(target_os = "macos")]
-impl MpsBench for f32 {
-    fn run_mps(
-        lhs: &Matrix<Self>,
-        rhs: &Matrix<Self>,
-        output: &mut Matrix<Self>,
-        repetitions: usize,
-    ) -> Vec<std::time::Duration> {
-        let kernel = MpsGemm::<f32>::new().expect("Failed to initialize Metal Performance Shaders");
-        kernel.benchmark(lhs, rhs, output, repetitions)
-    }
-}
-
-/// Precisions `MPSMatrixMultiplication` cannot run; plan validation rejects
-/// them before `measure` is reached.
-macro_rules! impl_mps_unsupported {
-    ($($element:ty),*) => {
-        $(
-            #[cfg(target_os = "macos")]
-            impl MpsBench for $element {
-                fn run_mps(
-                    _lhs: &Matrix<Self>,
-                    _rhs: &Matrix<Self>,
-                    _output: &mut Matrix<Self>,
-                    _repetitions: usize,
-                ) -> Vec<std::time::Duration> {
-                    panic!(concat!(
-                        "MPS GEMM does not support ",
-                        stringify!($element),
-                        " precision; validation should have rejected this"
-                    ))
-                }
-            }
-        )*
-    };
-}
-
-impl_mps_unsupported!(f64, i32, i64);
-
-#[cfg(not(target_os = "macos"))]
-impl<T: Element> MpsBench for T {}
 
 /// A numeric element type the kernels can multiply.
 ///
@@ -96,15 +30,7 @@ impl<T: Element> MpsBench for T {}
 /// and the conversions let callers build inputs and compare results
 /// independently of precision.
 pub trait Element:
-    Copy
-    + Default
-    + Send
-    + Sync
-    + Add<Output = Self>
-    + Mul<Output = Self>
-    + AddAssign
-    + MpsBench
-    + 'static
+    Copy + Default + Send + Sync + Add<Output = Self> + Mul<Output = Self> + AddAssign + 'static
 {
     /// Machine epsilon of the element type, widened to `f64`. Zero for
     /// integers, whose products are exact in any summation order.
@@ -292,6 +218,13 @@ mod tests {
     fn accelerate_bnns_has_no_graph_for_other_precisions() {
         assert!(super::AccelerateBnnsGemm::<f64>::new(7).is_none());
         assert!(super::AccelerateBnnsGemm::<i32>::new(7).is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mps_has_no_kernel_for_other_precisions() {
+        assert!(super::MpsGemm::<f64>::new().is_none());
+        assert!(super::MpsGemm::<i32>::new().is_none());
     }
 
     #[cfg(target_os = "macos")]

@@ -63,9 +63,9 @@ impl<T: Element> GemmKernel<T> for AccelerateBlasGemm {
             rhs.as_slice().as_ptr(),
             output.as_mut_slice().as_mut_ptr(),
         );
-        // ponytail: TypeId dispatch instead of a per-precision supertrait on
-        // `Element` (the `MpsBench` pattern); both branches fold away after
-        // monomorphization.
+        // ponytail: TypeId dispatch, like BNNS and MPS, instead of a
+        // per-precision supertrait on `Element`; both branches fold away
+        // after monomorphization.
         // SAFETY: the TypeId check proves `T` is the pointee type each cast
         // names; the asserted dimensions make every buffer n*n long and
         // row-major with leading dimension n; `output` is borrowed mutably,
