@@ -2,6 +2,7 @@
 //! timing loop that every kernel's `encode` plugs into.
 
 pub mod mps;
+pub mod shader;
 
 use std::marker::PhantomData;
 use std::time::{Duration, Instant};
@@ -14,6 +15,7 @@ use objc2_metal::{
 };
 
 pub use mps::MpsGemm;
+pub use shader::{Shader, ShaderGemm};
 
 use crate::kernels::assert_gemm_dimensions;
 use crate::{Element, Matrix};
