@@ -633,11 +633,7 @@ fn default_thread_counts() -> Vec<usize> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        ffi::{OsStr, OsString},
-        fs,
-        path::PathBuf,
-    };
+    use std::{ffi::OsString, fs, path::PathBuf};
 
     use clap::{Parser, ValueEnum};
 
@@ -688,16 +684,7 @@ mod tests {
 
     #[test]
     fn omitted_dimensions_sweep_every_value() {
-        let output = temp_output("defaults");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--sweep"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
-        .expect("the full sweep should be valid");
+        let plan = plan_for("defaults", &["--sweep"]).expect("the full sweep should be valid");
 
         assert_eq!(plan.sizes, [64, 128, 256, 512, 1024, 2048, 4096]);
         assert!(plan.threads.contains(&1));
@@ -707,7 +694,6 @@ mod tests {
         assert_eq!(plan.repetitions, 5);
         assert!(!plan.no_progress);
         assert!(!plan.context.host.is_empty());
-        let _ = fs::remove_file(&output);
     }
 
     #[test]
@@ -726,62 +712,38 @@ mod tests {
 
     #[test]
     fn precision_flag_accepts_a_comma_delimited_sweep() {
-        let output = temp_output("precision");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--precision"),
-            OsStr::new("f16,f64"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("precision list should parse")
-        .into_plan()
-        .expect("plan should be valid");
+        let plan =
+            plan_for("precision", &["--precision", "f16,f64"]).expect("plan should be valid");
 
         assert_eq!(plan.precisions, [Precision::F16, Precision::F64]);
-        let _ = fs::remove_file(&output);
     }
 
     #[test]
     fn precision_flag_accepts_integer_precisions() {
-        let output = temp_output("integers");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--precision"),
-            OsStr::new("i32,i64"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("integer precisions should parse")
-        .into_plan()
-        .expect("plan should be valid");
+        let plan = plan_for("integers", &["--precision", "i32,i64"]).expect("plan should be valid");
 
         assert_eq!(plan.precisions, [Precision::I32, Precision::I64]);
         // Defaults keep every kernel; mps (no integer support) just has no cells.
         assert_eq!(plan.kernels, KernelChoice::value_variants());
         #[cfg(target_os = "macos")]
         assert!(plan.cells(KernelChoice::Mps, Precision::I32, 64).is_empty());
-        let _ = fs::remove_file(&output);
     }
 
     #[test]
     fn static_thread_counts_above_a_size_are_skipped_for_that_size() {
-        let output = temp_output("static-skip");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--sizes"),
-            OsStr::new("8,64"),
-            OsStr::new("--threads"),
-            OsStr::new("4,16"),
-            OsStr::new("--kernel"),
-            OsStr::new("static-ikj"),
-            OsStr::new("--precision"),
-            OsStr::new("f32"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
+        let plan = plan_for(
+            "static-skip",
+            &[
+                "--sizes",
+                "8,64",
+                "--threads",
+                "4,16",
+                "--kernel",
+                "static-ikj",
+                "--precision",
+                "f32",
+            ],
+        )
         .expect("a partly runnable static sweep should be valid");
 
         assert_eq!(
@@ -797,54 +759,29 @@ mod tests {
             plan.skipped,
             ["skipping static-ikj with 16 threads at n=8 (needs a row per thread)"]
         );
-        let _ = fs::remove_file(&output);
     }
 
     #[test]
     fn a_static_kernel_with_no_runnable_thread_count_is_rejected_before_running() {
-        let output = temp_output("static-idle");
-        let error = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--sizes"),
-            OsStr::new("8"),
-            OsStr::new("--threads"),
-            OsStr::new("16"),
-            OsStr::new("--kernel"),
-            OsStr::new("static-ikj"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
+        let error = plan_for(
+            "static-idle",
+            &["--sizes", "8", "--threads", "16", "--kernel", "static-ikj"],
+        )
         .expect_err("a named kernel with nothing to run must be rejected");
 
         assert!(
             error.contains("static-ikj needs at least one row per thread"),
             "{error}"
         );
-        assert!(
-            !output.exists(),
-            "a rejected plan must not create the output file"
-        );
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn default_kernels_skip_mps_at_precisions_it_lacks() {
-        let output = temp_output("mps-skip");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--sizes"),
-            OsStr::new("64"),
-            OsStr::new("--precision"),
-            OsStr::new("f32,f64"),
-            OsStr::new("--threads"),
-            OsStr::new("1"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
+        let plan = plan_for(
+            "mps-skip",
+            &["--sizes", "64", "--precision", "f32,f64", "--threads", "1"],
+        )
         .expect("unsupported cells of a default kernel are skipped, not rejected");
 
         assert!(plan.kernels.contains(&KernelChoice::Mps));
@@ -860,7 +797,6 @@ mod tests {
                 "skipping mps at f64 (unsupported precision)"
             ]
         );
-        let _ = fs::remove_file(&output);
     }
 
     #[test]
@@ -937,60 +873,36 @@ mod tests {
 
     #[test]
     fn no_progress_flag_is_parsed() {
-        let output = temp_output("no_progress");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--no-progress"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
-        .expect("plan should be valid");
+        let plan = plan_for("no_progress", &["--no-progress"]).expect("plan should be valid");
 
         assert!(plan.no_progress);
-        let _ = fs::remove_file(&output);
     }
 
     #[test]
     fn total_configurations_counts_worker_and_single_thread_kernels_correctly() {
-        let output = temp_output("count");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--sizes"),
-            OsStr::new("64,128"),
-            OsStr::new("--precision"),
-            OsStr::new("f32,f64"),
-            OsStr::new("--kernel"),
-            OsStr::new("naive,rayon-ikj"),
-            OsStr::new("--threads"),
-            OsStr::new("1,2,4"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
+        let plan = plan_for(
+            "count",
+            &[
+                "--sizes",
+                "64,128",
+                "--precision",
+                "f32,f64",
+                "--kernel",
+                "naive,rayon-ikj",
+                "--threads",
+                "1,2,4",
+            ],
+        )
         .expect("plan should be valid");
 
         // 2 precisions * 2 sizes * (1 for naive + 3 for rayon-ikj) = 2 * 2 * 4 = 16
         assert_eq!(plan.total_configurations(), 16);
-        let _ = fs::remove_file(&output);
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn mps_parses_as_a_kernel_choice() {
-        let output = temp_output("mps");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--kernel"),
-            OsStr::new("mps"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("mps kernel should parse")
-        .into_plan()
-        .expect("mps plan should be valid");
+        let plan = plan_for("mps", &["--kernel", "mps"]).expect("mps plan should be valid");
 
         assert_eq!(plan.kernels, [KernelChoice::Mps]);
         assert_ne!(
@@ -998,48 +910,36 @@ mod tests {
             "a Mac with Metal must name its GPU"
         );
         assert_eq!(plan.total_configurations(), 14); // 7 default sizes * mps's 2 precisions (f16, f32)
-        let _ = fs::remove_file(&output);
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn mps_with_f64_precision_is_rejected_before_running() {
-        let output = temp_output("mps_f64");
-        let error = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--kernel"),
-            OsStr::new("mps"),
-            OsStr::new("--precision"),
-            OsStr::new("f64"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
-        .expect_err("mps with f64 must be rejected");
-
-        assert!(error.contains("mps does not support f64 precision"));
-        assert!(
-            !output.exists(),
-            "a rejected plan must not create the output file"
-        );
+    fn a_named_kernel_at_a_precision_it_lacks_is_rejected_before_running() {
+        for (kernel, precision) in [
+            ("mps", "f64"),
+            ("mps", "i32"),
+            ("accelerate-blas", "f16"),
+            ("accelerate-bnns", "f64"),
+        ] {
+            let error = plan_for(
+                &format!("{kernel}-{precision}"),
+                &["--kernel", kernel, "--precision", precision],
+            )
+            .expect_err("a named kernel with nothing to run must be rejected");
+            assert!(
+                error.contains(&format!("{kernel} does not support {precision} precision")),
+                "{error}"
+            );
+        }
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn accelerate_blas_parses_as_a_single_thread_cpu_kernel() {
-        let output = temp_output("accelerate");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--kernel"),
-            OsStr::new("accelerate-blas"),
-            OsStr::new("--threads"),
-            OsStr::new("1,4"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("accelerate-blas kernel should parse")
-        .into_plan()
+        let plan = plan_for(
+            "accelerate",
+            &["--kernel", "accelerate-blas", "--threads", "1,4"],
+        )
         .expect("accelerate-blas plan should be valid");
 
         assert_eq!(plan.kernels, [KernelChoice::AccelerateBlas]);
@@ -1048,50 +948,15 @@ mod tests {
             [(1, None)]
         );
         assert_eq!(plan.total_configurations(), 14); // 7 default sizes * (f32, f64)
-        let _ = fs::remove_file(&output);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn accelerate_blas_with_f16_precision_is_rejected_before_running() {
-        let output = temp_output("accelerate_f16");
-        let error = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--kernel"),
-            OsStr::new("accelerate-blas"),
-            OsStr::new("--precision"),
-            OsStr::new("f16"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
-        .expect_err("accelerate-blas with f16 must be rejected");
-
-        assert!(error.contains("accelerate-blas does not support f16 precision"));
-        assert!(
-            !output.exists(),
-            "a rejected plan must not create the output file"
-        );
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn default_kernels_skip_accelerate_blas_at_f16() {
-        let output = temp_output("accelerate-skip");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--sizes"),
-            OsStr::new("64"),
-            OsStr::new("--precision"),
-            OsStr::new("f16,f32"),
-            OsStr::new("--threads"),
-            OsStr::new("1"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
+        let plan = plan_for(
+            "accelerate-skip",
+            &["--sizes", "64", "--precision", "f16,f32", "--threads", "1"],
+        )
         .expect("unsupported cells of a default kernel are skipped, not rejected");
 
         assert!(
@@ -1106,24 +971,15 @@ mod tests {
             plan.skipped,
             ["skipping accelerate-blas at f16 (unsupported precision)"]
         );
-        let _ = fs::remove_file(&output);
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn accelerate_bnns_runs_f16_and_f32_on_one_caller_thread() {
-        let output = temp_output("accelerate-bnns");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--kernel"),
-            OsStr::new("accelerate-bnns"),
-            OsStr::new("--threads"),
-            OsStr::new("1,4"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("accelerate-bnns kernel should parse")
-        .into_plan()
+        let plan = plan_for(
+            "accelerate-bnns",
+            &["--kernel", "accelerate-bnns", "--threads", "1,4"],
+        )
         .expect("accelerate-bnns plan should be valid");
 
         assert_eq!(plan.kernels, [KernelChoice::AccelerateBnns]);
@@ -1132,7 +988,6 @@ mod tests {
             [(1, None)]
         );
         assert_eq!(plan.total_configurations(), 14); // 7 default sizes * (f16, f32)
-        let _ = fs::remove_file(&output);
     }
 
     #[cfg(target_os = "macos")]
@@ -1152,113 +1007,39 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn accelerate_bnns_with_f64_precision_is_rejected_before_running() {
-        let output = temp_output("accelerate_bnns_f64");
-        let error = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--kernel"),
-            OsStr::new("accelerate-bnns"),
-            OsStr::new("--precision"),
-            OsStr::new("f64"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
-        .expect_err("accelerate-bnns with f64 must be rejected");
-
-        assert!(error.contains("accelerate-bnns does not support f64 precision"));
-        assert!(
-            !output.exists(),
-            "a rejected plan must not create the output file"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn mps_with_integer_precision_is_rejected_before_running() {
-        let output = temp_output("mps_i32");
-        let error = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--kernel"),
-            OsStr::new("mps"),
-            OsStr::new("--precision"),
-            OsStr::new("i32"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
-        .expect_err("mps with i32 must be rejected");
-
-        assert!(error.contains("mps does not support i32 precision"));
-        assert!(
-            !output.exists(),
-            "a rejected plan must not create the output file"
-        );
-    }
-
     #[test]
     fn block_size_flag_accepts_a_comma_delimited_sweep() {
-        let output = temp_output("block-sizes");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--block-size"),
-            OsStr::new("32,64,128"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("block-size list should parse")
-        .into_plan()
-        .expect("plan should be valid");
+        let plan =
+            plan_for("block-sizes", &["--block-size", "32,64,128"]).expect("plan should be valid");
 
         assert_eq!(plan.block_sizes, [32, 64, 128]);
-        let _ = fs::remove_file(&output);
     }
 
     #[test]
     fn zero_in_the_block_size_list_is_rejected() {
-        let output = temp_output("zero-block");
-        let error = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--block-size"),
-            OsStr::new("32,0"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
-        .expect_err("a zero block size must be rejected");
+        let error = plan_for("zero-block", &["--block-size", "32,0"])
+            .expect_err("a zero block size must be rejected");
 
         assert!(error.contains("--block-size"), "{error}");
-        assert!(
-            !output.exists(),
-            "a rejected plan must not create the output file"
-        );
     }
 
     #[test]
     fn block_sizes_multiply_only_the_tiled_kernels() {
-        let output = temp_output("block-count");
-        let plan = Cli::try_parse_from([
-            OsStr::new("gemm-bench"),
-            OsStr::new("--sizes"),
-            OsStr::new("64"),
-            OsStr::new("--precision"),
-            OsStr::new("f32"),
-            OsStr::new("--kernel"),
-            OsStr::new("ikj,tiled,rayon-tiled"),
-            OsStr::new("--threads"),
-            OsStr::new("1,2"),
-            OsStr::new("--block-size"),
-            OsStr::new("32,64,128"),
-            OsStr::new("--output"),
-            output.as_os_str(),
-        ])
-        .expect("arguments should parse")
-        .into_plan()
+        let plan = plan_for(
+            "block-count",
+            &[
+                "--sizes",
+                "64",
+                "--precision",
+                "f32",
+                "--kernel",
+                "ikj,tiled,rayon-tiled",
+                "--threads",
+                "1,2",
+                "--block-size",
+                "32,64,128",
+            ],
+        )
         .expect("plan should be valid");
 
         // ikj 1 + tiled 3 blocks + rayon-tiled 2 threads x 3 blocks = 10
@@ -1271,7 +1052,6 @@ mod tests {
             plan.cells(KernelChoice::Tiled, Precision::F32, 64),
             [(1, Some(32)), (1, Some(64)), (1, Some(128))]
         );
-        let _ = fs::remove_file(&output);
     }
 
     fn temp_config(name: &str, body: &str) -> PathBuf {
@@ -1283,13 +1063,12 @@ mod tests {
         path
     }
 
-    fn plan_with_config(name: &str, body: &str, flags: &[&str]) -> Result<BenchmarkPlan, String> {
-        let config = temp_config(name, body);
+    /// Plans `flags` with a temp `--output`, removed afterwards. Every
+    /// rejected plan is also checked to have left no output file behind.
+    fn plan_for(name: &str, flags: &[&str]) -> Result<BenchmarkPlan, String> {
         let output = temp_output(name);
         let mut args: Vec<OsString> = vec![
             "gemm-bench".into(),
-            "--config".into(),
-            config.clone().into(),
             "--output".into(),
             output.clone().into(),
         ];
@@ -1297,8 +1076,21 @@ mod tests {
         let plan = Cli::try_parse_from(args)
             .expect("arguments should parse")
             .into_plan();
-        let _ = fs::remove_file(config);
+        if plan.is_err() {
+            assert!(
+                !output.exists(),
+                "a rejected plan must not create the output file"
+            );
+        }
         let _ = fs::remove_file(output);
+        plan
+    }
+
+    fn plan_with_config(name: &str, body: &str, flags: &[&str]) -> Result<BenchmarkPlan, String> {
+        let config = temp_config(name, body);
+        let config_arg = config.to_str().expect("temp paths are UTF-8");
+        let plan = plan_for(name, &[&["--config", config_arg], flags].concat());
+        let _ = fs::remove_file(config);
         plan
     }
 

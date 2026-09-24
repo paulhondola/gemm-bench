@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
+import { row } from "../fixtures";
 import { throughputByPrecision } from "./precision";
 import { type Filters, makeCtx } from "./types";
 
@@ -12,38 +13,10 @@ const f: Filters = {
 };
 
 const rows: Row[] = [
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 30,
-		backend: "cpu",
-	},
-	{
-		kernel: "ikj",
-		precision: "i64",
-		n: 64,
-		threads: 1,
-		gops: 6,
-		backend: "cpu",
-	},
-	{
-		kernel: "rayon-ikj",
-		precision: "f32",
-		n: 64,
-		threads: 4,
-		gops: 90,
-		backend: "cpu",
-	},
-	{
-		kernel: "rayon-ikj",
-		precision: "i64",
-		n: 64,
-		threads: 4,
-		gops: 20,
-		backend: "cpu",
-	},
+	row({ kernel: "ikj", n: 64, gops: 30 }),
+	row({ kernel: "ikj", precision: "i64", n: 64, gops: 6 }),
+	row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 90 }),
+	row({ kernel: "rayon-ikj", precision: "i64", n: 64, threads: 4, gops: 20 }),
 ];
 
 test("the precision chart builds when two precisions exist at the size", () => {
@@ -63,14 +36,7 @@ test("precisions are ordered by descending best throughput", () => {
 test("the legend lists only the kernels plotted, not the whole palette", () => {
 	const withUnplotted: Row[] = [
 		...rows,
-		{
-			kernel: "tiled",
-			precision: "f32",
-			n: 128,
-			threads: 1,
-			gops: 40,
-			backend: "cpu",
-		},
+		row({ kernel: "tiled", n: 128, gops: 40 }),
 	];
 	// tiled only has an n=128 row, so at f.n=64 it must not appear in the legend.
 	const spec = throughputByPrecision(withUnplotted, f, makeCtx(withUnplotted));
@@ -88,14 +54,7 @@ test("a row at a different size does not leak into the pinned size", () => {
 	// the real n=64 ikj/i64 result (6).
 	const multiSize: Row[] = [
 		...rows,
-		{
-			kernel: "ikj",
-			precision: "i64",
-			n: 128,
-			threads: 1,
-			gops: 999,
-			backend: "cpu",
-		},
+		row({ kernel: "ikj", precision: "i64", n: 128, gops: 999 }),
 	];
 	const spec = throughputByPrecision(multiSize, f, makeCtx(multiSize));
 	expect(spec).not.toBeNull();

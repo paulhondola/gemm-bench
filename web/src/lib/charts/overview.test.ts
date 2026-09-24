@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
+import { row } from "../fixtures";
 import { UNPALETTED_FILL } from "../palette";
 import {
 	canShowSpeedup,
@@ -18,46 +19,24 @@ const f: Filters = {
 };
 
 const rows: Row[] = [
-	{
-		kernel: "naive-ijk",
-		precision: "f32",
-		n: 64,
-		threads: 1,
-		gops: 2,
-		backend: "cpu",
-		stddev_ms: 0.1,
-		median_ms: 1,
-	},
-	{
-		kernel: "naive-ijk",
-		precision: "f32",
-		n: 128,
-		threads: 1,
-		gops: 3,
-		backend: "cpu",
-		stddev_ms: 0.1,
-		median_ms: 1,
-	},
-	{
+	row({ kernel: "naive-ijk", n: 64, gops: 2, stddev_ms: 0.1, median_ms: 1 }),
+	row({ kernel: "naive-ijk", n: 128, gops: 3, stddev_ms: 0.1, median_ms: 1 }),
+	row({
 		kernel: "rayon-ikj",
-		precision: "f32",
 		n: 64,
 		threads: 4,
 		gops: 30,
-		backend: "cpu",
 		stddev_ms: 0.1,
 		median_ms: 1,
-	},
-	{
+	}),
+	row({
 		kernel: "rayon-ikj",
-		precision: "f32",
 		n: 128,
 		threads: 4,
 		gops: 90,
-		backend: "cpu",
 		stddev_ms: 0.1,
 		median_ms: 1,
-	},
+	}),
 ];
 
 test("the headline chart builds when two sizes exist", () => {
@@ -105,57 +84,24 @@ test("serialOnly drops the parallel kernels", () => {
 
 test("a kernel missing a row at one size gets an explicit gap, not a line straight through it", () => {
 	const ragged: Row[] = [
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 30,
-			backend: "cpu",
-			median_ms: 1,
-			stddev_ms: 0.01,
-		},
+		row({ kernel: "ikj", n: 64, gops: 30, median_ms: 1, stddev_ms: 0.01 }),
 		// ikj has no n=128 row; naive-ijk does, so the union x-axis includes 128.
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 256,
-			threads: 1,
-			gops: 50,
-			backend: "cpu",
-			median_ms: 1,
-			stddev_ms: 0.01,
-		},
-		{
+		row({ kernel: "ikj", n: 256, gops: 50, median_ms: 1, stddev_ms: 0.01 }),
+		row({ kernel: "naive-ijk", n: 64, gops: 3, median_ms: 1, stddev_ms: 0.01 }),
+		row({
 			kernel: "naive-ijk",
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 3,
-			backend: "cpu",
-			median_ms: 1,
-			stddev_ms: 0.01,
-		},
-		{
-			kernel: "naive-ijk",
-			precision: "f32",
 			n: 128,
-			threads: 1,
 			gops: 4,
-			backend: "cpu",
 			median_ms: 1,
 			stddev_ms: 0.01,
-		},
-		{
+		}),
+		row({
 			kernel: "naive-ijk",
-			precision: "f32",
 			n: 256,
-			threads: 1,
 			gops: 5,
-			backend: "cpu",
 			median_ms: 1,
 			stddev_ms: 0.01,
-		},
+		}),
 	];
 	const spec = throughputVsSize(ragged, f, makeCtx(ragged));
 	expect(spec).not.toBeNull();
@@ -174,26 +120,8 @@ test("a kernel missing a row at one size gets an explicit gap, not a line straig
 
 test("the stddev band stays finite when stddev exceeds the median", () => {
 	const noisy: Row[] = [
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 20,
-			backend: "cpu",
-			median_ms: 1,
-			stddev_ms: 1.5,
-		},
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 128,
-			threads: 1,
-			gops: 25,
-			backend: "cpu",
-			median_ms: 1,
-			stddev_ms: 0.01,
-		},
+		row({ kernel: "ikj", n: 64, gops: 20, median_ms: 1, stddev_ms: 1.5 }),
+		row({ kernel: "ikj", n: 128, gops: 25, median_ms: 1, stddev_ms: 0.01 }),
 	];
 	const spec = throughputVsSize(noisy, f, makeCtx(noisy));
 	expect(spec).not.toBeNull();
@@ -227,14 +155,7 @@ test("a kernel outside the palette still gets a visible, defined fill when it wi
 			gops: 10,
 			backend: "cpu",
 		})),
-		{
-			kernel: "packed-simd",
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 999,
-			backend: "cpu",
-		},
+		row({ kernel: "packed-simd", n: 64, gops: 999 }),
 	];
 	const ctx = makeCtx(elevenKernels);
 	// 9 slots + the baseline ink; an 11th kernel has no entry.

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
+import { row } from "../fixtures";
 import {
 	canShowScaling,
 	parallelEfficiency,
@@ -16,62 +17,37 @@ const f: Filters = {
 };
 
 const rows: Row[] = [
-	{
-		kernel: "rayon-ikj",
-		precision: "f16",
-		n: 1024,
-		threads: 1,
-		gops: 52.9,
-		backend: "cpu",
-	},
-	{
+	row({ kernel: "rayon-ikj", precision: "f16", n: 1024, gops: 52.9 }),
+	row({
 		kernel: "rayon-ikj",
 		precision: "f16",
 		n: 1024,
 		threads: 4,
 		gops: 199.5,
-		backend: "cpu",
-	},
-	{
+	}),
+	row({
 		kernel: "rayon-ikj",
 		precision: "f16",
 		n: 1024,
 		threads: 10,
 		gops: 394.1,
-		backend: "cpu",
-	},
-	{
-		kernel: "static-ikj",
-		precision: "f16",
-		n: 1024,
-		threads: 1,
-		gops: 52.8,
-		backend: "cpu",
-	},
-	{
+	}),
+	row({ kernel: "static-ikj", precision: "f16", n: 1024, gops: 52.8 }),
+	row({
 		kernel: "static-ikj",
 		precision: "f16",
 		n: 1024,
 		threads: 4,
 		gops: 199.9,
-		backend: "cpu",
-	},
-	{
+	}),
+	row({
 		kernel: "static-ikj",
 		precision: "f16",
 		n: 1024,
 		threads: 10,
 		gops: 304.8,
-		backend: "cpu",
-	},
-	{
-		kernel: "ikj",
-		precision: "f16",
-		n: 1024,
-		threads: 1,
-		gops: 52.5,
-		backend: "cpu",
-	},
+	}),
+	row({ kernel: "ikj", precision: "f16", n: 1024, gops: 52.5 }),
 ];
 
 test("the scaling chart builds when a kernel has two thread counts", () => {
@@ -130,30 +106,21 @@ test("parallelEfficiency hides when the pinned kernel has no rows", () => {
 test("the scaling chart plots only the selected size", () => {
 	const twoSizes: Row[] = [
 		...rows,
-		{
-			kernel: "rayon-ikj",
-			precision: "f16",
-			n: 256,
-			threads: 1,
-			gops: 9,
-			backend: "cpu",
-		},
-		{
+		row({ kernel: "rayon-ikj", precision: "f16", n: 256, gops: 9 }),
+		row({
 			kernel: "rayon-ikj",
 			precision: "f16",
 			n: 256,
 			threads: 4,
 			gops: 33,
-			backend: "cpu",
-		},
-		{
+		}),
+		row({
 			kernel: "rayon-ikj",
 			precision: "f16",
 			n: 256,
 			threads: 10,
 			gops: 70,
-			backend: "cpu",
-		},
+		}),
 	];
 	const spec = throughputVsThreads(twoSizes, f, makeCtx(twoSizes));
 	expect(spec).not.toBeNull();

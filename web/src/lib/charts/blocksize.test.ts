@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
+import { row } from "../fixtures";
 import { blockSizeSweep } from "./blocksize";
 import { type Filters, makeCtx } from "./types";
 
@@ -13,43 +14,11 @@ const f: Filters = {
 
 const rows: Row[] = [
 	// tiled blocks: its gops actually moves between block sizes.
-	{
-		kernel: "tiled",
-		precision: "f32",
-		n: 512,
-		threads: 1,
-		gops: 30,
-		backend: "cpu",
-		block_size: 32,
-	},
-	{
-		kernel: "tiled",
-		precision: "f32",
-		n: 512,
-		threads: 1,
-		gops: 50,
-		backend: "cpu",
-		block_size: 64,
-	},
+	row({ kernel: "tiled", n: 512, gops: 30, block_size: 32 }),
+	row({ kernel: "tiled", n: 512, gops: 50, block_size: 64 }),
 	// ikj doesn't block: the two rows are repeat runs, near-identical.
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 512,
-		threads: 1,
-		gops: 20,
-		backend: "cpu",
-		block_size: 32,
-	},
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 512,
-		threads: 1,
-		gops: 20.1,
-		backend: "cpu",
-		block_size: 64,
-	},
+	row({ kernel: "ikj", n: 512, gops: 20, block_size: 32 }),
+	row({ kernel: "ikj", n: 512, gops: 20.1, block_size: 64 }),
 ];
 
 test("the sweep chart builds when two block sizes exist", () => {
@@ -68,15 +37,7 @@ test("no rows, no chart", () => {
 test("pins n: a row at a different size does not leak into the sweep", () => {
 	const otherSize: Row[] = [
 		...rows,
-		{
-			kernel: "tiled",
-			precision: "f32",
-			n: 1024,
-			threads: 1,
-			gops: 999,
-			backend: "cpu",
-			block_size: 128,
-		},
+		row({ kernel: "tiled", n: 1024, gops: 999, block_size: 128 }),
 	];
 	const spec = blockSizeSweep(otherSize, f, makeCtx(otherSize));
 	expect(spec).not.toBeNull();
@@ -90,33 +51,9 @@ test("pins n: a row at a different size does not leak into the sweep", () => {
 
 test("takes the best result per (kernel, block_size), not an arbitrary thread row", () => {
 	const withThreads: Row[] = [
-		{
-			kernel: "rayon-ikj",
-			precision: "f32",
-			n: 512,
-			threads: 1,
-			gops: 10,
-			backend: "cpu",
-			block_size: 32,
-		},
-		{
-			kernel: "rayon-ikj",
-			precision: "f32",
-			n: 512,
-			threads: 4,
-			gops: 90,
-			backend: "cpu",
-			block_size: 32,
-		},
-		{
-			kernel: "rayon-ikj",
-			precision: "f32",
-			n: 512,
-			threads: 4,
-			gops: 95,
-			backend: "cpu",
-			block_size: 64,
-		},
+		row({ kernel: "rayon-ikj", n: 512, gops: 10, block_size: 32 }),
+		row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 90, block_size: 32 }),
+		row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 95, block_size: 64 }),
 	];
 	const spec = blockSizeSweep(withThreads, f, makeCtx(withThreads));
 	expect(spec).not.toBeNull();
@@ -130,46 +67,14 @@ test("takes the best result per (kernel, block_size), not an arbitrary thread ro
 
 test("a kernel missing a block size gets an explicit gap, not a line straight through it", () => {
 	const ragged: Row[] = [
-		{
-			kernel: "tiled",
-			precision: "f32",
-			n: 512,
-			threads: 1,
-			gops: 30,
-			backend: "cpu",
-			block_size: 32,
-		},
-		{
-			kernel: "tiled",
-			precision: "f32",
-			n: 512,
-			threads: 1,
-			gops: 50,
-			backend: "cpu",
-			block_size: 64,
-		},
+		row({ kernel: "tiled", n: 512, gops: 30, block_size: 32 }),
+		row({ kernel: "tiled", n: 512, gops: 50, block_size: 64 }),
 		// ikj has no block_size=64 row at n=512.
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 512,
-			threads: 1,
-			gops: 20,
-			backend: "cpu",
-			block_size: 32,
-		},
+		row({ kernel: "ikj", n: 512, gops: 20, block_size: 32 }),
 		// ikj does have a block_size=64 row elsewhere (n=1024), so across the
 		// dataset it's a genuinely swept kernel, not a single-block-size one —
 		// the gap below is raggedness at n=512, not the whole kernel missing.
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 1024,
-			threads: 1,
-			gops: 22,
-			backend: "cpu",
-			block_size: 64,
-		},
+		row({ kernel: "ikj", n: 1024, gops: 22, block_size: 64 }),
 	];
 	const spec = blockSizeSweep(ragged, f, makeCtx(ragged));
 	expect(spec).not.toBeNull();
@@ -187,15 +92,7 @@ test("a kernel with only one block size is excluded, even at a dominant gops", (
 	// comparison (tiled 30->50) into a sliver at the bottom.
 	const withDominant: Row[] = [
 		...rows,
-		{
-			kernel: "mps",
-			precision: "f32",
-			n: 512,
-			threads: 1,
-			gops: 660,
-			backend: "gpu",
-			block_size: 32,
-		},
+		row({ kernel: "mps", n: 512, gops: 660, backend: "gpu", block_size: 32 }),
 	];
 	const spec = blockSizeSweep(withDominant, f, makeCtx(withDominant));
 	expect(spec).not.toBeNull();
@@ -215,15 +112,13 @@ test("the legend lists only the kernels actually plotted", () => {
 	// Reverting rowsForTab back to the raw palette keys would still include it.
 	const withUnplottedKernel: Row[] = [
 		...rows,
-		{
+		row({
 			kernel: "rayon-ikj",
-			precision: "f32",
 			n: 1024,
 			threads: 4,
 			gops: 200,
-			backend: "cpu",
 			block_size: 32,
-		},
+		}),
 	];
 	const spec = blockSizeSweep(
 		withUnplottedKernel,
@@ -241,15 +136,7 @@ test("a row without a block size is never plotted", () => {
 	// block size. Number(null) is 0, which a log-scale x-axis cannot place.
 	const withNull: Row[] = [
 		...rows,
-		{
-			kernel: "ikj",
-			precision: "f32",
-			n: 512,
-			threads: 1,
-			gops: 25,
-			backend: "cpu",
-			block_size: null,
-		},
+		row({ kernel: "ikj", n: 512, gops: 25, block_size: null }),
 	];
 	const spec = blockSizeSweep(withNull, f, makeCtx(withNull));
 	expect(spec).not.toBeNull();
@@ -266,42 +153,16 @@ test("a kernel with old @64 and new null rows is still excluded as single-block-
 	// stops exempting it, and its lone old @64 row reaches this chart as a fake
 	// swept point.
 	const mixedOldAndNew: Row[] = [
-		{
-			kernel: "tiled",
-			precision: "f32",
-			n: 512,
-			threads: 1,
-			gops: 30,
-			backend: "cpu",
-			block_size: 32,
-		},
-		{
-			kernel: "tiled",
-			precision: "f32",
-			n: 512,
-			threads: 1,
-			gops: 50,
-			backend: "cpu",
-			block_size: 64,
-		},
-		{
+		row({ kernel: "tiled", n: 512, gops: 30, block_size: 32 }),
+		row({ kernel: "tiled", n: 512, gops: 50, block_size: 64 }),
+		row({ kernel: "mps", n: 512, gops: 900, backend: "metal", block_size: 64 }),
+		row({
 			kernel: "mps",
-			precision: "f32",
 			n: 512,
-			threads: 1,
-			gops: 900,
-			backend: "metal",
-			block_size: 64,
-		},
-		{
-			kernel: "mps",
-			precision: "f32",
-			n: 512,
-			threads: 1,
 			gops: 910,
 			backend: "metal",
 			block_size: null,
-		},
+		}),
 	];
 	const spec = blockSizeSweep(mixedOldAndNew, f, makeCtx(mixedOldAndNew));
 	expect(spec).not.toBeNull();

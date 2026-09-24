@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
+import { row } from "../fixtures";
 import { gpuRatio, gpuVsCpu, hasGpu } from "./gpu";
 import { type Filters, makeCtx } from "./types";
 
@@ -12,54 +13,12 @@ const f: Filters = {
 };
 
 const rows: Row[] = [
-	{
-		kernel: "mps",
-		precision: "f32",
-		n: 256,
-		threads: 1,
-		gops: 93,
-		backend: "metal",
-	},
-	{
-		kernel: "mps",
-		precision: "f32",
-		n: 512,
-		threads: 1,
-		gops: 738,
-		backend: "metal",
-	},
-	{
-		kernel: "rayon-ikj",
-		precision: "f32",
-		n: 256,
-		threads: 4,
-		gops: 138,
-		backend: "cpu",
-	},
-	{
-		kernel: "rayon-ikj",
-		precision: "f32",
-		n: 512,
-		threads: 4,
-		gops: 194,
-		backend: "cpu",
-	},
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 256,
-		threads: 1,
-		gops: 30,
-		backend: "cpu",
-	},
-	{
-		kernel: "ikj",
-		precision: "f32",
-		n: 512,
-		threads: 1,
-		gops: 32,
-		backend: "cpu",
-	},
+	row({ kernel: "mps", n: 256, gops: 93, backend: "metal" }),
+	row({ kernel: "mps", n: 512, gops: 738, backend: "metal" }),
+	row({ kernel: "rayon-ikj", n: 256, threads: 4, gops: 138 }),
+	row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 194 }),
+	row({ kernel: "ikj", n: 256, gops: 30 }),
+	row({ kernel: "ikj", n: 512, gops: 32 }),
 ];
 
 test("the GPU tab is present only with metal rows", () => {
@@ -82,47 +41,12 @@ test("neither GPU chart builds without metal rows", () => {
 
 test("the gpu family gets an explicit gap where it has no row, instead of a line straight through it", () => {
 	const ragged: Row[] = [
-		{
-			kernel: "mps",
-			precision: "f32",
-			n: 256,
-			threads: 1,
-			gops: 93,
-			backend: "metal",
-		},
+		row({ kernel: "mps", n: 256, gops: 93, backend: "metal" }),
 		// mps has no n=512 row; rayon-ikj does, so the union x-axis includes 512.
-		{
-			kernel: "mps",
-			precision: "f32",
-			n: 1024,
-			threads: 1,
-			gops: 900,
-			backend: "metal",
-		},
-		{
-			kernel: "rayon-ikj",
-			precision: "f32",
-			n: 256,
-			threads: 4,
-			gops: 138,
-			backend: "cpu",
-		},
-		{
-			kernel: "rayon-ikj",
-			precision: "f32",
-			n: 512,
-			threads: 4,
-			gops: 194,
-			backend: "cpu",
-		},
-		{
-			kernel: "rayon-ikj",
-			precision: "f32",
-			n: 1024,
-			threads: 4,
-			gops: 250,
-			backend: "cpu",
-		},
+		row({ kernel: "mps", n: 1024, gops: 900, backend: "metal" }),
+		row({ kernel: "rayon-ikj", n: 256, threads: 4, gops: 138 }),
+		row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 194 }),
+		row({ kernel: "rayon-ikj", n: 1024, threads: 4, gops: 250 }),
 	];
 	const spec = gpuVsCpu(ragged, f, makeCtx(ragged));
 	expect(spec).not.toBeNull();
