@@ -68,9 +68,11 @@ impl<T: Element> GpuOperands<T> {
 
     fn upload(&self, lhs: &Matrix<T>, rhs: &Matrix<T>) {
         let count = self.n * self.n;
+        assert_eq!(lhs.as_slice().len(), count, "lhs does not match n * n");
+        assert_eq!(rhs.as_slice().len(), count, "rhs does not match n * n");
         // SAFETY: each buffer holds `n * n` elements of `T` (see `new`), the
-        // matrices hold as many (`time_dispatch` asserts their shape), and
-        // shared-storage buffers are CPU-addressable.
+        // asserts above confirm `lhs`/`rhs` hold as many, and shared-storage
+        // buffers are CPU-addressable.
         unsafe {
             std::ptr::copy_nonoverlapping(
                 lhs.as_slice().as_ptr(),
@@ -86,12 +88,20 @@ impl<T: Element> GpuOperands<T> {
     }
 
     fn download(&self, output: &mut Matrix<T>) {
-        // SAFETY: as in `upload`; no command buffer is in flight when this runs.
+        let count = self.n * self.n;
+        assert_eq!(
+            output.as_slice().len(),
+            count,
+            "output does not match n * n"
+        );
+        // SAFETY: the assert above confirms `output` holds `n * n` elements of
+        // `T`, matching the buffer (see `new`); no command buffer is in
+        // flight when this runs.
         unsafe {
             std::ptr::copy_nonoverlapping(
                 self.output.contents().as_ptr().cast(),
                 output.as_mut_slice().as_mut_ptr(),
-                self.n * self.n,
+                count,
             );
         }
     }
@@ -102,6 +112,15 @@ pub(crate) trait GpuDispatch<T: Element> {
     fn context(&self) -> &MetalContext;
 
     /// Records one `output = lhs * rhs` into `cmd_buf`, without committing it.
+    ///
+    /// Contract for implementors:
+    /// - Any encoder opened on `cmd_buf` must be `endEncoding()`'d before
+    ///   this returns; committing with an open encoder aborts the process.
+    /// - `encode` must never commit, wait on, or create command buffers
+    ///   itself — that would break the gpu/e2e timing split, and
+    ///   `time_dispatch` commits `cmd_buf` right after this returns, so a
+    ///   second commit here aborts the process too.
+    /// - Dispatches must stay within `operands.n` × `operands.n`.
     fn encode(
         &self,
         cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
