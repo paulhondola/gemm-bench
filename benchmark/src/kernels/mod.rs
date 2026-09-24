@@ -2,8 +2,6 @@
 
 #[cfg(target_os = "macos")]
 pub mod accelerate;
-#[cfg(target_os = "macos")]
-pub mod accelerate_bnns;
 pub(crate) mod common;
 #[cfg(target_os = "macos")]
 pub mod mps;
@@ -16,7 +14,7 @@ use std::ops::{Add, AddAssign, Mul};
 #[cfg(target_os = "macos")]
 pub use accelerate::AccelerateBlasGemm;
 #[cfg(target_os = "macos")]
-pub use accelerate_bnns::AccelerateBnnsGemm;
+pub use accelerate::AccelerateBnnsGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
 pub use mps::{MpsElement, MpsGemm};
