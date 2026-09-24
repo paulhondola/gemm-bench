@@ -4,7 +4,7 @@
 pub mod accelerate;
 pub(crate) mod common;
 #[cfg(target_os = "macos")]
-pub mod mps;
+pub mod metal;
 pub mod rayon;
 pub mod serial;
 pub mod static_threads;
@@ -15,7 +15,7 @@ pub use accelerate::AccelerateBlasGemm;
 pub use accelerate::AccelerateBnnsGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
-pub use mps::MpsGemm;
+pub use metal::MpsGemm;
 pub use rayon::{RayonIkjGemm, RayonTiledGemm};
 pub use serial::{IkjGemm, NaiveGemm, TiledGemm};
 pub use static_threads::{StaticIkjGemm, StaticTiledGemm};
@@ -190,5 +190,26 @@ mod tests {
             mps.compute(&lhs, &rhs, &mut actual);
             assert_close(&actual, &expected);
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mps_benchmark_times_every_repetition_both_ways() {
+        let n = 16;
+        let (lhs, rhs) = inputs::<f32>(n);
+        let mut output = Matrix::zeros(n, n);
+        let mps = super::MpsGemm::<f32>::new().expect("MPS should initialize");
+        let samples = mps
+            .benchmark(&lhs, &rhs, &mut output, 3)
+            .expect("the dispatch should succeed");
+        assert_eq!((samples.gpu.len(), samples.e2e.len()), (3, 3));
+        // End-to-end wraps the GPU-only window, so it can never be shorter.
+        assert!(
+            samples
+                .gpu
+                .iter()
+                .zip(&samples.e2e)
+                .all(|(gpu, e2e)| gpu <= e2e)
+        );
     }
 }

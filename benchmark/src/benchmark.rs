@@ -172,7 +172,7 @@ fn measure<T: Element>(
     lhs: &Matrix<T>,
     rhs: &Matrix<T>,
     output: &mut Matrix<T>,
-) -> Result<Vec<Duration>, rayon::ThreadPoolBuildError> {
+) -> Result<Vec<Duration>, Box<dyn std::error::Error>> {
     // `BenchmarkPlan::cells` gives every tiled kernel a block size.
     let block = || block_size.expect("tiled kernels always get a block size");
     let io = (lhs, rhs, output, repetitions);
@@ -196,9 +196,12 @@ fn measure<T: Element>(
         ),
         // MPS times only the GPU dispatch, so it runs its own loop.
         #[cfg(target_os = "macos")]
-        KernelChoice::Mps => MpsGemm::<T>::new()
-            .expect("MPS needs a Metal device and f16 or f32")
-            .benchmark(lhs, rhs, io.2, repetitions),
+        KernelChoice::Mps => {
+            MpsGemm::<T>::new()
+                .expect("MPS needs a Metal device and f16 or f32")
+                .benchmark(lhs, rhs, io.2, repetitions)?
+                .gpu
+        }
     })
 }
 

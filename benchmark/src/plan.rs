@@ -85,7 +85,7 @@ impl Devices {
             #[cfg(target_os = "macos")]
             metal: kernels
                 .contains(&KernelChoice::Mps)
-                .then(gemm_bench::kernels::mps::default_device_name)
+                .then(gemm_bench::kernels::metal::default_device_name)
                 .flatten()
                 .unwrap_or_else(|| context::UNKNOWN.to_owned()),
         }
