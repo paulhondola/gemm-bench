@@ -1,9 +1,12 @@
+import { BASELINE_KERNEL } from "./derive";
+
 /**
  * The eight validated categorical slots for the dark surface (#15181b).
  * Worst adjacent CVD ΔE 8.4, worst adjacent normal-vision ΔE 19.3, all eight
  * at or above 3:1 contrast. Do not substitute or re-step these values, and
  * never extend the list with a generated hue: a ninth series folds into the
- * best-per-family view instead.
+ * best-per-family view instead. The baseline kernel sits outside the slots in
+ * BASELINE_INK, which is what makes room for nine kernels.
  */
 const SLOTS = [
 	"#3987e5", // 1 blue
@@ -30,11 +33,19 @@ export const REFERENCE_INK = "#5b636b";
 export const UNPALETTED_FILL = "#9aa1a8";
 
 /**
+ * Neutral ink for naive-ijk, the reference every "× vs naive-ijk" view divides
+ * by. Lighter than every slot on purpose: mid grays collide with the aqua,
+ * magenta and red slots under CVD. Validated pairwise against all eight: CVD
+ * ΔE ≥ 8 and normal-vision ΔE ≥ 15 each, ≥ 3:1 contrast.
+ */
+export const BASELINE_INK = "#b4bac0";
+
+/**
  * Fixed assignment order, arranged so the most-compared pairs land on
  * adjacent slots — adjacent pairs are the validated worst case.
  */
 const ORDER = [
-	"naive-ijk",
+	"accelerate",
 	"ikj",
 	"tiled",
 	"rayon-ikj",
@@ -58,11 +69,12 @@ export function paletteFor(allKernels: string[]): Map<string, string> {
 		const slot = ORDER.indexOf(kernel);
 		if (slot !== -1) out.set(kernel, SLOTS[slot]);
 	}
+	if (present.includes(BASELINE_KERNEL)) out.set(BASELINE_KERNEL, BASELINE_INK);
 
 	// Unknown kernels fill only the slots no known kernel claimed, in sorted
 	// order, and never receive a generated hue once those run out.
 	const free = SLOTS.filter((_, i) => !out.has(ORDER[i]));
-	const unknown = present.filter((k) => !ORDER.includes(k)).sort();
+	const unknown = present.filter((k) => !out.has(k)).sort();
 	for (let i = 0; i < Math.min(unknown.length, free.length); i++) {
 		out.set(unknown[i], free[i]);
 	}

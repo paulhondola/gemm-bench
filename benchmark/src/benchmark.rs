@@ -3,6 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(target_os = "macos")]
+use gemm_bench::kernels::AccelerateGemm;
 use gemm_bench::{
     Element, GemmKernel, Matrix,
     kernels::{
@@ -226,6 +228,14 @@ fn measure<T: Element>(
         }
         KernelChoice::StaticTiled => {
             let kernel = StaticTiledGemm::new(threads, block())?;
+            kernel.compute(lhs, rhs, output);
+            for _ in 0..repetitions {
+                samples.push(time_kernel(&kernel, lhs, rhs, output));
+            }
+        }
+        #[cfg(target_os = "macos")]
+        KernelChoice::Accelerate => {
+            let kernel = AccelerateGemm;
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
                 samples.push(time_kernel(&kernel, lhs, rhs, output));

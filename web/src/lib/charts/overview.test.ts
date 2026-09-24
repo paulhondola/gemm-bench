@@ -205,8 +205,9 @@ test("the stddev band stays finite when stddev exceeds the median", () => {
 	}
 });
 
-test("a 9th kernel outside the 8-slot palette still gets a visible, defined fill when it wins a size", () => {
-	const eightKnown = [
+test("a kernel outside the palette still gets a visible, defined fill when it wins a size", () => {
+	const nineKnown = [
+		"accelerate",
 		"naive-ijk",
 		"ikj",
 		"tiled",
@@ -216,8 +217,8 @@ test("a 9th kernel outside the 8-slot palette still gets a visible, defined fill
 		"static-tiled",
 		"mps",
 	];
-	const nineKernels: Row[] = [
-		...eightKnown.map((kernel) => ({
+	const tenKernels: Row[] = [
+		...nineKnown.map((kernel) => ({
 			kernel,
 			precision: "f32",
 			n: 64,
@@ -226,7 +227,7 @@ test("a 9th kernel outside the 8-slot palette still gets a visible, defined fill
 			backend: "cpu",
 		})),
 		{
-			kernel: "accelerate",
+			kernel: "packed-simd",
 			precision: "f32",
 			n: 64,
 			threads: 1,
@@ -234,15 +235,15 @@ test("a 9th kernel outside the 8-slot palette still gets a visible, defined fill
 			backend: "cpu",
 		},
 	];
-	const ctx = makeCtx(nineKernels);
-	// The palette caps at 8 slots by design; a 9th kernel has no entry.
-	expect(ctx.palette.has("accelerate")).toBe(false);
+	const ctx = makeCtx(tenKernels);
+	// 8 slots + the baseline ink; a 10th kernel has no entry.
+	expect(ctx.palette.has("packed-simd")).toBe(false);
 
-	const spec = fastestPerSize(nineKernels, f, ctx);
+	const spec = fastestPerSize(tenKernels, f, ctx);
 	expect(spec).not.toBeNull();
 	if (!spec) return;
 	const color = spec.color as { domain: string[]; range: string[] };
-	const idx = color.domain.indexOf("accelerate");
+	const idx = color.domain.indexOf("packed-simd");
 	expect(idx).not.toBe(-1);
 	expect(color.range[idx]).toBe(UNPALETTED_FILL);
 });

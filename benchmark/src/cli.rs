@@ -254,6 +254,8 @@ pub(crate) enum KernelChoice {
     StaticIkj,
     StaticTiled,
     #[cfg(target_os = "macos")]
+    Accelerate,
+    #[cfg(target_os = "macos")]
     #[value(name = "mps")]
     Mps,
 }
@@ -268,6 +270,8 @@ impl KernelChoice {
             Self::RayonTiled => "rayon-tiled",
             Self::StaticIkj => "static-ikj",
             Self::StaticTiled => "static-tiled",
+            #[cfg(target_os = "macos")]
+            Self::Accelerate => "accelerate",
             #[cfg(target_os = "macos")]
             Self::Mps => "mps",
         }
@@ -284,6 +288,9 @@ impl KernelChoice {
             | Self::RayonTiled
             | Self::StaticIkj
             | Self::StaticTiled => "cpu",
+            // The AMX matrix coprocessor, reached only through Accelerate.
+            #[cfg(target_os = "macos")]
+            Self::Accelerate => "amx",
             #[cfg(target_os = "macos")]
             Self::Mps => "metal",
         }
@@ -298,6 +305,8 @@ impl KernelChoice {
             | Self::RayonTiled
             | Self::StaticIkj
             | Self::StaticTiled => &devices.cpu,
+            #[cfg(target_os = "macos")]
+            Self::Accelerate => &devices.cpu,
             #[cfg(target_os = "macos")]
             Self::Mps => &devices.metal,
         }
@@ -329,6 +338,8 @@ impl KernelChoice {
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     pub(crate) fn supports(self, precision: Precision) -> bool {
         match self {
+            #[cfg(target_os = "macos")]
+            Self::Accelerate => matches!(precision, Precision::F32 | Precision::F64),
             #[cfg(target_os = "macos")]
             Self::Mps => matches!(precision, Precision::F16 | Precision::F32),
             _ => true,
@@ -584,6 +595,11 @@ mod tests {
             #[cfg(target_os = "macos")]
             if kernel == KernelChoice::Mps {
                 assert_eq!(kernel.backend(), "metal");
+                continue;
+            }
+            #[cfg(target_os = "macos")]
+            if kernel == KernelChoice::Accelerate {
+                assert_eq!(kernel.backend(), "amx");
                 continue;
             }
             assert_eq!(kernel.backend(), "cpu", "{}", kernel.label());
@@ -936,6 +952,90 @@ mod tests {
             !output.exists(),
             "a rejected plan must not create the output file"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accelerate_parses_as_a_single_thread_cpu_kernel() {
+        let output = temp_output("accelerate");
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--kernel"),
+            OsStr::new("accelerate"),
+            OsStr::new("--threads"),
+            OsStr::new("1,4"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("accelerate kernel should parse")
+        .into_plan()
+        .expect("accelerate plan should be valid");
+
+        assert_eq!(plan.kernels, [KernelChoice::Accelerate]);
+        assert_eq!(
+            plan.cells(KernelChoice::Accelerate, Precision::F64, 64),
+            [(1, None)]
+        );
+        assert_eq!(plan.total_configurations(), 14); // 7 default sizes * (f32, f64)
+        let _ = fs::remove_file(&output);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accelerate_with_f16_precision_is_rejected_before_running() {
+        let output = temp_output("accelerate_f16");
+        let error = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--kernel"),
+            OsStr::new("accelerate"),
+            OsStr::new("--precision"),
+            OsStr::new("f16"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect_err("accelerate with f16 must be rejected");
+
+        assert!(error.contains("accelerate does not support f16 precision"));
+        assert!(
+            !output.exists(),
+            "a rejected plan must not create the output file"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn default_kernels_skip_accelerate_at_f16() {
+        let output = temp_output("accelerate-skip");
+        let plan = Cli::try_parse_from([
+            OsStr::new("gemm-bench"),
+            OsStr::new("--sizes"),
+            OsStr::new("64"),
+            OsStr::new("--precision"),
+            OsStr::new("f16,f32"),
+            OsStr::new("--threads"),
+            OsStr::new("1"),
+            OsStr::new("--output"),
+            output.as_os_str(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect("unsupported cells of a default kernel are skipped, not rejected");
+
+        assert!(
+            plan.cells(KernelChoice::Accelerate, Precision::F16, 64)
+                .is_empty()
+        );
+        assert_eq!(
+            plan.cells(KernelChoice::Accelerate, Precision::F32, 64),
+            [(1, None)]
+        );
+        assert_eq!(
+            plan.skipped,
+            ["skipping accelerate at f16 (unsupported precision)"]
+        );
+        let _ = fs::remove_file(&output);
     }
 
     #[cfg(target_os = "macos")]

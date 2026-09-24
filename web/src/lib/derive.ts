@@ -34,7 +34,7 @@ export function partitionPlottable(rows: Row[]): {
 	return { rows: usable, dropped: rows.length - usable.length };
 }
 
-export type Family = "serial" | "parallel" | "gpu";
+export type Family = "serial" | "parallel" | "amx" | "gpu";
 
 /**
  * Kernel family, read off the rows rather than the kernel's name. A prefix
@@ -45,11 +45,13 @@ export function families(rows: Row[]): Map<string, Family> {
 	const out = new Map<string, Family>();
 	for (const r of rows) {
 		const kernel = String(r.kernel);
-		if (r.backend === "metal") {
-			out.set(kernel, "gpu");
+		// Vendor backends manage their own threading and record threads=1,
+		// so their family comes from the backend, not the thread count.
+		if (r.backend === "metal" || r.backend === "amx") {
+			out.set(kernel, r.backend === "metal" ? "gpu" : "amx");
 			continue;
 		}
-		if (out.get(kernel) === "gpu") continue;
+		if (out.get(kernel) === "gpu" || out.get(kernel) === "amx") continue;
 		if (Number(r.threads) > 1 || out.get(kernel) === "parallel") {
 			out.set(kernel, "parallel");
 		} else if (!out.has(kernel)) {
