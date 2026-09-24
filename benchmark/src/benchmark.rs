@@ -15,7 +15,8 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use serde::Serialize;
 
 use crate::{
-    cli::{BenchmarkPlan, KernelChoice, Precision},
+    kernel::{KernelChoice, Precision},
+    plan::BenchmarkPlan,
     report::BenchmarkProgress,
 };
 
@@ -126,7 +127,7 @@ fn run_precision<T: Element>(
                 records.push(BenchmarkRecord {
                     kernel: kernel.label().to_owned(),
                     backend: kernel.backend(),
-                    device: kernel.device(&plan.devices).to_owned(),
+                    device: plan.devices.of(kernel).to_owned(),
                     precision: precision.label(),
                     n,
                     threads: thread_count,

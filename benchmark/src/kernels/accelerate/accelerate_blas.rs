@@ -4,8 +4,8 @@
 use std::any::TypeId;
 use std::ffi::c_int;
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 const CBLAS_ROW_MAJOR: c_int = 101;
 const CBLAS_NO_TRANS: c_int = 111;

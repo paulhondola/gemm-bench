@@ -1,5 +1,4 @@
-use super::Element;
-use crate::Matrix;
+use crate::{Element, Matrix};
 
 pub(crate) fn assert_gemm_dimensions<T>(lhs: &Matrix<T>, rhs: &Matrix<T>, output: &Matrix<T>) {
     assert!(

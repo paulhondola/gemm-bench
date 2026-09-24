@@ -7,7 +7,9 @@ use std::{
 use clap::{Parser, ValueEnum};
 
 use crate::config::ConfigFile;
-use crate::context::{self, RunContext};
+use crate::context;
+use crate::kernel::{KernelChoice, Precision};
+use crate::plan::{BenchmarkPlan, Devices};
 
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 const DEFAULT_BLOCK_SIZES: [usize; 5] = [16, 32, 64, 128, 256];
@@ -72,95 +74,6 @@ pub(crate) struct Cli {
     /// TOML preset whose keys are these flags' names; flags given here override it.
     #[arg(long)]
     config: Option<PathBuf>,
-}
-
-/// Fully resolved configuration used by the benchmark runner.
-#[derive(Debug)]
-pub(crate) struct BenchmarkPlan {
-    pub(crate) sizes: Vec<usize>,
-    pub(crate) threads: Vec<usize>,
-    pub(crate) kernels: Vec<KernelChoice>,
-    pub(crate) precisions: Vec<Precision>,
-    pub(crate) repetitions: usize,
-    pub(crate) block_sizes: Vec<usize>,
-    pub(crate) context: RunContext,
-    pub(crate) devices: Devices,
-    pub(crate) output: File,
-    pub(crate) output_path: PathBuf,
-    pub(crate) no_progress: bool,
-    /// One line per group of skipped cells, printed before the run.
-    pub(crate) skipped: Vec<String>,
-}
-
-impl BenchmarkPlan {
-    /// The (threads, block size) cells measured for one kernel at one
-    /// precision and size; empty when the kernel can't run there. The single
-    /// source for the sweep loop and the configuration count.
-    pub(crate) fn cells(
-        &self,
-        kernel: KernelChoice,
-        precision: Precision,
-        n: usize,
-    ) -> Vec<(usize, Option<usize>)> {
-        if !kernel.supports(precision) {
-            return Vec::new();
-        }
-        let threads: Vec<usize> = if kernel.uses_workers() {
-            self.threads
-                .iter()
-                .copied()
-                .filter(|&t| kernel.fits(t, n))
-                .collect()
-        } else {
-            vec![1]
-        };
-        let blocks: Vec<Option<usize>> = if kernel.uses_blocks() {
-            self.block_sizes.iter().copied().map(Some).collect()
-        } else {
-            vec![None]
-        };
-        threads
-            .iter()
-            .flat_map(|&t| blocks.iter().map(move |&b| (t, b)))
-            .collect()
-    }
-
-    /// Returns the exact number of configurations that will be measured.
-    pub(crate) fn total_configurations(&self) -> usize {
-        let mut total = 0;
-        for &precision in &self.precisions {
-            for &n in &self.sizes {
-                for &kernel in &self.kernels {
-                    total += self.cells(kernel, precision, n).len();
-                }
-            }
-        }
-        total
-    }
-}
-
-/// Device names, looked up once per backend before any kernel runs.
-#[derive(Debug)]
-pub(crate) struct Devices {
-    pub(crate) cpu: String,
-    #[cfg(target_os = "macos")]
-    pub(crate) metal: String,
-}
-
-impl Devices {
-    // Off macOS only the CPU is looked up, leaving `kernels` unread.
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-    fn lookup(kernels: &[KernelChoice]) -> Self {
-        Self {
-            cpu: context::cpu_name(),
-            #[cfg(target_os = "macos")]
-            metal: kernels
-                .contains(&KernelChoice::Mps)
-                .then(gemm_bench::kernels::mps::default_device_name)
-                .flatten()
-                .unwrap_or_else(|| context::UNKNOWN.to_owned()),
-        }
-    }
 }
 
 impl Cli {
@@ -249,167 +162,6 @@ impl Cli {
             no_progress: self.no_progress,
             skipped,
         })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub(crate) enum KernelChoice {
-    Naive,
-    Ikj,
-    Tiled,
-    RayonIkj,
-    RayonTiled,
-    StaticIkj,
-    StaticTiled,
-    #[cfg(target_os = "macos")]
-    AccelerateBlas,
-    #[cfg(target_os = "macos")]
-    AccelerateBnns,
-    #[cfg(target_os = "macos")]
-    Mps,
-}
-
-/// Everything the harness needs to know about a kernel, in one row.
-struct KernelInfo {
-    /// The `kernel` column in the CSV.
-    label: &'static str,
-    /// Hardware family. Needed next to `device` because Apple Silicon reports
-    /// the same name for its CPU and GPU.
-    backend: &'static str,
-    precisions: &'static [Precision],
-    /// Sweeps `--threads`; the others run on one caller thread.
-    workers: bool,
-    /// Tiles by `--block-size`; the others record an empty block size.
-    blocks: bool,
-    /// Gives every worker at least one row, so needs `threads <= n`.
-    row_per_worker: bool,
-}
-
-impl KernelInfo {
-    /// A single-threaded, untiled CPU kernel at every precision; each row in
-    /// `KernelChoice::info` overrides what differs.
-    fn serial(label: &'static str) -> Self {
-        Self {
-            label,
-            backend: "cpu",
-            precisions: Precision::value_variants(),
-            workers: false,
-            blocks: false,
-            row_per_worker: false,
-        }
-    }
-}
-
-impl KernelChoice {
-    fn info(self) -> KernelInfo {
-        #[cfg(target_os = "macos")]
-        use Precision::{F16, F32, F64};
-        let serial = KernelInfo::serial;
-        match self {
-            Self::Naive => serial("naive-ijk"),
-            Self::Ikj => serial("ikj"),
-            Self::Tiled => KernelInfo {
-                blocks: true,
-                ..serial("tiled")
-            },
-            Self::RayonIkj => KernelInfo {
-                workers: true,
-                ..serial("rayon-ikj")
-            },
-            Self::RayonTiled => KernelInfo {
-                workers: true,
-                blocks: true,
-                ..serial("rayon-tiled")
-            },
-            Self::StaticIkj => KernelInfo {
-                workers: true,
-                row_per_worker: true,
-                ..serial("static-ikj")
-            },
-            Self::StaticTiled => KernelInfo {
-                workers: true,
-                blocks: true,
-                row_per_worker: true,
-                ..serial("static-tiled")
-            },
-            // The AMX matrix coprocessor, reached only through Accelerate,
-            // which picks its own threading: one caller thread.
-            #[cfg(target_os = "macos")]
-            Self::AccelerateBlas => KernelInfo {
-                backend: "amx",
-                precisions: &[F32, F64],
-                ..serial("accelerate-blas")
-            },
-            #[cfg(target_os = "macos")]
-            Self::AccelerateBnns => KernelInfo {
-                backend: "amx",
-                precisions: &[F16, F32],
-                ..serial("accelerate-bnns")
-            },
-            #[cfg(target_os = "macos")]
-            Self::Mps => KernelInfo {
-                backend: "metal",
-                precisions: &[F16, F32],
-                ..serial("mps")
-            },
-        }
-    }
-
-    pub(crate) fn label(self) -> &'static str {
-        self.info().label
-    }
-
-    pub(crate) fn backend(self) -> &'static str {
-        self.info().backend
-    }
-
-    pub(crate) fn device(self, devices: &Devices) -> &str {
-        #[cfg(target_os = "macos")]
-        if self == Self::Mps {
-            return &devices.metal;
-        }
-        &devices.cpu
-    }
-
-    pub(crate) fn uses_workers(self) -> bool {
-        self.info().workers
-    }
-
-    pub(crate) fn uses_blocks(self) -> bool {
-        self.info().blocks
-    }
-
-    /// Whether the kernel can run `threads` workers on `n` rows.
-    pub(crate) fn fits(self, threads: usize, n: usize) -> bool {
-        !self.info().row_per_worker || threads <= n
-    }
-
-    /// Whether this kernel can run at `precision`. With `fits`, the single
-    /// source for skipping cells and rejecting a named kernel with nothing to
-    /// run.
-    pub(crate) fn supports(self, precision: Precision) -> bool {
-        self.info().precisions.contains(&precision)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub(crate) enum Precision {
-    F16,
-    F32,
-    F64,
-    I32,
-    I64,
-}
-
-impl Precision {
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::F16 => "f16",
-            Self::F32 => "f32",
-            Self::F64 => "f64",
-            Self::I32 => "i32",
-            Self::I64 => "i64",
-        }
     }
 }
 
@@ -639,47 +391,14 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     use super::drop_unavailable_bnns;
-    use super::{
-        BenchmarkPlan, Cli, Devices, KernelChoice, Precision, default_output_path, open_output,
-        validate_output_path,
-    };
+    use super::{Cli, default_output_path, open_output, validate_output_path};
+    use crate::kernel::{KernelChoice, Precision};
+    use crate::plan::BenchmarkPlan;
 
     /// A per-process `.csv` path under the system temp directory, so tests never
     /// write into the repository and parallel test runs do not collide.
     fn temp_output(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("gemm-bench-test-{}-{name}.csv", std::process::id()))
-    }
-
-    #[test]
-    fn every_kernel_names_its_backend() {
-        for &kernel in KernelChoice::value_variants() {
-            #[cfg(target_os = "macos")]
-            if kernel == KernelChoice::Mps {
-                assert_eq!(kernel.backend(), "metal");
-                continue;
-            }
-            #[cfg(target_os = "macos")]
-            if matches!(
-                kernel,
-                KernelChoice::AccelerateBlas | KernelChoice::AccelerateBnns
-            ) {
-                assert_eq!(kernel.backend(), "amx");
-                continue;
-            }
-            assert_eq!(kernel.backend(), "cpu", "{}", kernel.label());
-        }
-    }
-
-    #[test]
-    fn kernels_report_the_device_of_their_backend() {
-        let devices = Devices {
-            cpu: "Test CPU".to_owned(),
-            #[cfg(target_os = "macos")]
-            metal: "Test GPU".to_owned(),
-        };
-        assert_eq!(KernelChoice::RayonTiled.device(&devices), "Test CPU");
-        #[cfg(target_os = "macos")]
-        assert_eq!(KernelChoice::Mps.device(&devices), "Test GPU");
     }
 
     #[test]

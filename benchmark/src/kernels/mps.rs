@@ -15,8 +15,8 @@ use objc2_metal_performance_shaders::{
     MPSDataType, MPSMatrix, MPSMatrixDescriptor, MPSMatrixMultiplication,
 };
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 /// The MPS data type for `T`: Metal Performance Shaders multiplies half
 /// (`f16`) and single (`f32`) precision only; Apple Silicon GPUs have no `f64`.

@@ -2,8 +2,8 @@ use std::sync::Mutex;
 
 use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions, ikj_rows};
+use crate::{Element, Matrix};
 
 use super::static_row_counts;
 

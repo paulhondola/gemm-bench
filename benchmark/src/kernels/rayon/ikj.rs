@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions, ikj_rows};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions, ikj_rows};
+use crate::{Element, Matrix};
 
 /// Rayon work-stealing implementation of the contiguous `i-k-j` kernel.
 ///

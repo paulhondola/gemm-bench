@@ -9,8 +9,8 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::sync::Mutex;
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 unsafe extern "C" {
     fn bnns_graph_make_f16(n: isize) -> *mut c_void;

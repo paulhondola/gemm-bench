@@ -1,5 +1,5 @@
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 /// Canonical sequential `i-j-k` GEMM baseline.
 pub struct NaiveGemm;

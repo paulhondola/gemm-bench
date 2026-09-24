@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 
-use crate::Matrix;
-use crate::kernels::{Element, GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::{Element, Matrix};
 
 /// Rayon work-stealing implementation, partitioned into row chunks of at most
 /// `block_size` rows.

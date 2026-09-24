@@ -4,6 +4,8 @@ mod benchmark;
 mod cli;
 mod config;
 mod context;
+mod kernel;
+mod plan;
 mod report;
 
 use clap::{CommandFactory, Parser};
