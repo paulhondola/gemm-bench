@@ -4,7 +4,7 @@ use std::{
 };
 
 #[cfg(target_os = "macos")]
-use gemm_bench::kernels::AccelerateGemm;
+use gemm_bench::kernels::{AccelerateBlasGemm, AccelerateBnnsGemm};
 use gemm_bench::{
     Element, GemmKernel, Matrix,
     kernels::{
@@ -234,8 +234,18 @@ fn measure<T: Element>(
             }
         }
         #[cfg(target_os = "macos")]
-        KernelChoice::Accelerate => {
-            let kernel = AccelerateGemm;
+        KernelChoice::AccelerateBlas => {
+            let kernel = AccelerateBlasGemm;
+            kernel.compute(lhs, rhs, output);
+            for _ in 0..repetitions {
+                samples.push(time_kernel(&kernel, lhs, rhs, output));
+            }
+        }
+        #[cfg(target_os = "macos")]
+        KernelChoice::AccelerateBnns => {
+            // Compiling the graph for this size is setup, like building a pool.
+            let kernel = AccelerateBnnsGemm::<T>::new(lhs.rows())
+                .expect("accelerate-bnns needs macOS 26 (the BNNSGraph builder)");
             kernel.compute(lhs, rhs, output);
             for _ in 0..repetitions {
                 samples.push(time_kernel(&kernel, lhs, rhs, output));

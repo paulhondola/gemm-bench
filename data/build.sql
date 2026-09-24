@@ -29,7 +29,10 @@ WHERE kernel IS NULL OR backend IS NULL OR device IS NULL OR precision IS NULL
 HAVING count(*) > 0;
 
 COPY (
-  SELECT kernel, backend, device, precision, n, threads,
+  -- The BLAS kernel was `accelerate` before `accelerate-bnns` joined it;
+  -- publish old runs under the new name so they share one series.
+  SELECT CASE kernel WHEN 'accelerate' THEN 'accelerate-blas' ELSE kernel END AS kernel,
+         backend, device, precision, n, threads,
          gops,
          -- Runs before accuracy measurement landed wrote a 0.0 placeholder,
          -- which would read as "exact"; publish it as unknown instead.

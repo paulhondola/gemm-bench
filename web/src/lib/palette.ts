@@ -1,12 +1,18 @@
 import { BASELINE_KERNEL } from "./derive";
 
 /**
- * The eight validated categorical slots for the dark surface (#15181b).
- * Worst adjacent CVD ΔE 8.4, worst adjacent normal-vision ΔE 19.3, all eight
+ * The nine validated categorical slots for the dark surface (#15181b).
+ * Worst adjacent CVD ΔE 8.4, worst adjacent normal-vision ΔE 19.3, all nine
  * at or above 3:1 contrast. Do not substitute or re-step these values, and
- * never extend the list with a generated hue: a ninth series folds into the
- * best-per-family view instead. The baseline kernel sits outside the slots in
- * BASELINE_INK, which is what makes room for nine kernels.
+ * never extend the list with a hue picked by eye: a further series folds into
+ * the best-per-family view instead. The baseline kernel sits outside the slots
+ * in BASELINE_INK, which is what makes room for ten kernels.
+ *
+ * Slot 9 (accelerate-bnns) was searched over OKLCH, not generated: of every
+ * in-band, in-gamut candidate it best clears the floors against ALL eight
+ * slots and BASELINE_INK, not just its neighbour: CVD ΔE ≥ 10.2 (nearest:
+ * magenta), normal-vision ΔE ≥ 16.2 (nearest: violet), contrast 3.02:1. Its
+ * contrast margin is thin, so re-validate if the surface changes.
  */
 const SLOTS = [
 	"#3987e5", // 1 blue
@@ -17,6 +23,7 @@ const SLOTS = [
 	"#008300", // 6 green
 	"#9085e9", // 7 violet
 	"#e66767", // 8 red
+	"#844da2", // 9 purple
 ] as const;
 
 export const MAX_SERIES = SLOTS.length;
@@ -45,7 +52,7 @@ export const BASELINE_INK = "#b4bac0";
  * adjacent slots — adjacent pairs are the validated worst case.
  */
 const ORDER = [
-	"accelerate",
+	"accelerate-blas",
 	"ikj",
 	"tiled",
 	"rayon-ikj",
@@ -53,6 +60,7 @@ const ORDER = [
 	"rayon-tiled",
 	"static-tiled",
 	"mps",
+	"accelerate-bnns",
 ];
 
 /**

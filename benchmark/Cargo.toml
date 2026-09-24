@@ -17,3 +17,7 @@ objc2 = "0.6.4"
 objc2-foundation = "0.3.2"
 objc2-metal = "0.3.2"
 objc2-metal-performance-shaders = "0.3.2"
+
+# Host-gated like `build.rs`'s own cfg: only a macOS build compiles the Swift shim.
+[target.'cfg(target_os = "macos")'.build-dependencies]
+swift-rs = { version = "1.0.8", features = ["build"] }
