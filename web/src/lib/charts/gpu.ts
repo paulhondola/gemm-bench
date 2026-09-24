@@ -53,7 +53,7 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 	// dashed at a constant dasharray, everything else solid.
 	const otherLine = lineData.filter((p) => p.family !== "gpu");
 	const gpuLine = lineData.filter((p) => p.family === "gpu");
-	// Runs without accelerate have no amx rows; keep it out of their legend.
+	// Runs without an Accelerate kernel have no amx rows; keep it out of their legend.
 	const inked = Object.entries(FAMILY_INK).filter(([family]) =>
 		points.some((p) => p.family === family),
 	);

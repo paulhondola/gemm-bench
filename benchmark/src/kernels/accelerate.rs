@@ -52,11 +52,11 @@ unsafe extern "C" {
 ///
 /// Accelerate picks its own threading, so one call may use AMX and several
 /// cores; the harness records it as one caller thread.
-pub struct AccelerateGemm;
+pub struct AccelerateBlasGemm;
 
-impl<T: Element> GemmKernel<T> for AccelerateGemm {
+impl<T: Element> GemmKernel<T> for AccelerateBlasGemm {
     fn name(&self) -> &'static str {
-        "accelerate"
+        "accelerate-blas"
     }
 
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {

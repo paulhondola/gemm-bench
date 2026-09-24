@@ -2,6 +2,8 @@
 
 #[cfg(target_os = "macos")]
 pub mod accelerate;
+#[cfg(target_os = "macos")]
+pub mod accelerate_bnns;
 pub(crate) mod common;
 #[cfg(target_os = "macos")]
 pub mod mps;
@@ -12,7 +14,9 @@ pub mod static_threads;
 use std::ops::{Add, AddAssign, Mul};
 
 #[cfg(target_os = "macos")]
-pub use accelerate::AccelerateGemm;
+pub use accelerate::AccelerateBlasGemm;
+#[cfg(target_os = "macos")]
+pub use accelerate_bnns::AccelerateBnnsGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
 pub use mps::{MpsElement, MpsGemm};
@@ -251,21 +255,47 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    fn accelerate_matches_naive<T: Element>() {
+    fn accelerate_blas_matches_naive<T: Element>() {
         let n = 7;
         let (lhs, rhs) = inputs::<T>(n);
         let mut expected = Matrix::zeros(n, n);
         NaiveGemm.compute(&lhs, &rhs, &mut expected);
         let mut actual = Matrix::zeros(n, n);
-        super::AccelerateGemm.compute(&lhs, &rhs, &mut actual);
+        super::AccelerateBlasGemm.compute(&lhs, &rhs, &mut actual);
         assert_close(&actual, &expected);
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn accelerate_matches_naive_on_f32_and_f64() {
-        accelerate_matches_naive::<f32>();
-        accelerate_matches_naive::<f64>();
+    fn accelerate_blas_matches_naive_on_f32_and_f64() {
+        accelerate_blas_matches_naive::<f32>();
+        accelerate_blas_matches_naive::<f64>();
+    }
+
+    #[cfg(target_os = "macos")]
+    fn accelerate_bnns_matches_naive<T: Element>() {
+        let n = 7;
+        let (lhs, rhs) = inputs::<T>(n);
+        let mut expected = Matrix::zeros(n, n);
+        NaiveGemm.compute(&lhs, &rhs, &mut expected);
+        let kernel = super::AccelerateBnnsGemm::<T>::new(n).expect("BNNSGraph needs macOS 26");
+        let mut actual = Matrix::zeros(n, n);
+        kernel.compute(&lhs, &rhs, &mut actual);
+        assert_close(&actual, &expected);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accelerate_bnns_matches_naive_on_f16_and_f32() {
+        accelerate_bnns_matches_naive::<f16>();
+        accelerate_bnns_matches_naive::<f32>();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accelerate_bnns_has_no_graph_for_other_precisions() {
+        assert!(super::AccelerateBnnsGemm::<f64>::new(7).is_none());
+        assert!(super::AccelerateBnnsGemm::<i32>::new(7).is_none());
     }
 
     #[cfg(target_os = "macos")]

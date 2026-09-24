@@ -1,0 +1,3 @@
+# SwiftPM / SourceKit-LSP state; swift-rs builds into Cargo's OUT_DIR instead.
+.build/
+.swiftpm/

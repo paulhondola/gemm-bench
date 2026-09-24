@@ -206,8 +206,9 @@ test("the stddev band stays finite when stddev exceeds the median", () => {
 });
 
 test("a kernel outside the palette still gets a visible, defined fill when it wins a size", () => {
-	const nineKnown = [
-		"accelerate",
+	const tenKnown = [
+		"accelerate-blas",
+		"accelerate-bnns",
 		"naive-ijk",
 		"ikj",
 		"tiled",
@@ -217,8 +218,8 @@ test("a kernel outside the palette still gets a visible, defined fill when it wi
 		"static-tiled",
 		"mps",
 	];
-	const tenKernels: Row[] = [
-		...nineKnown.map((kernel) => ({
+	const elevenKernels: Row[] = [
+		...tenKnown.map((kernel) => ({
 			kernel,
 			precision: "f32",
 			n: 64,
@@ -235,11 +236,11 @@ test("a kernel outside the palette still gets a visible, defined fill when it wi
 			backend: "cpu",
 		},
 	];
-	const ctx = makeCtx(tenKernels);
-	// 8 slots + the baseline ink; a 10th kernel has no entry.
+	const ctx = makeCtx(elevenKernels);
+	// 9 slots + the baseline ink; an 11th kernel has no entry.
 	expect(ctx.palette.has("packed-simd")).toBe(false);
 
-	const spec = fastestPerSize(tenKernels, f, ctx);
+	const spec = fastestPerSize(elevenKernels, f, ctx);
 	expect(spec).not.toBeNull();
 	if (!spec) return;
 	const color = spec.color as { domain: string[]; range: string[] };

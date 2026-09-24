@@ -121,14 +121,14 @@ test("an amx kernel is its own family, not serial, despite threads=1", () => {
 	expect(
 		families([
 			{
-				kernel: "accelerate",
+				kernel: "accelerate-blas",
 				precision: "f32",
 				n: 64,
 				threads: 1,
 				gops: 400,
 				backend: "amx",
 			},
-		]).get("accelerate"),
+		]).get("accelerate-blas"),
 	).toBe("amx");
 });
 
