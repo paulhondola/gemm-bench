@@ -263,7 +263,8 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn accelerate_matches_naive_on_f32_and_f64() {
+    fn accelerate_matches_naive_on_f16_f32_and_f64() {
+        accelerate_matches_naive::<f16>();
         accelerate_matches_naive::<f32>();
         accelerate_matches_naive::<f64>();
     }

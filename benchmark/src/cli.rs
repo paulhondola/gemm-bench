@@ -339,7 +339,9 @@ impl KernelChoice {
     pub(crate) fn supports(self, precision: Precision) -> bool {
         match self {
             #[cfg(target_os = "macos")]
-            Self::Accelerate => matches!(precision, Precision::F32 | Precision::F64),
+            Self::Accelerate => {
+                matches!(precision, Precision::F16 | Precision::F32 | Precision::F64)
+            }
             #[cfg(target_os = "macos")]
             Self::Mps => matches!(precision, Precision::F16 | Precision::F32),
             _ => true,
@@ -976,28 +978,28 @@ mod tests {
             plan.cells(KernelChoice::Accelerate, Precision::F64, 64),
             [(1, None)]
         );
-        assert_eq!(plan.total_configurations(), 14); // 7 default sizes * (f32, f64)
+        assert_eq!(plan.total_configurations(), 21); // 7 default sizes * (f16, f32, f64)
         let _ = fs::remove_file(&output);
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn accelerate_with_f16_precision_is_rejected_before_running() {
-        let output = temp_output("accelerate_f16");
+    fn accelerate_with_i32_precision_is_rejected_before_running() {
+        let output = temp_output("accelerate_i32");
         let error = Cli::try_parse_from([
             OsStr::new("gemm-bench"),
             OsStr::new("--kernel"),
             OsStr::new("accelerate"),
             OsStr::new("--precision"),
-            OsStr::new("f16"),
+            OsStr::new("i32"),
             OsStr::new("--output"),
             output.as_os_str(),
         ])
         .expect("arguments should parse")
         .into_plan()
-        .expect_err("accelerate with f16 must be rejected");
+        .expect_err("accelerate with i32 must be rejected");
 
-        assert!(error.contains("accelerate does not support f16 precision"));
+        assert!(error.contains("accelerate does not support i32 precision"));
         assert!(
             !output.exists(),
             "a rejected plan must not create the output file"
@@ -1006,14 +1008,14 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn default_kernels_skip_accelerate_at_f16() {
+    fn default_kernels_skip_accelerate_at_i32() {
         let output = temp_output("accelerate-skip");
         let plan = Cli::try_parse_from([
             OsStr::new("gemm-bench"),
             OsStr::new("--sizes"),
             OsStr::new("64"),
             OsStr::new("--precision"),
-            OsStr::new("f16,f32"),
+            OsStr::new("i32,f32"),
             OsStr::new("--threads"),
             OsStr::new("1"),
             OsStr::new("--output"),
@@ -1024,16 +1026,16 @@ mod tests {
         .expect("unsupported cells of a default kernel are skipped, not rejected");
 
         assert!(
-            plan.cells(KernelChoice::Accelerate, Precision::F16, 64)
+            plan.cells(KernelChoice::Accelerate, Precision::I32, 64)
                 .is_empty()
         );
         assert_eq!(
             plan.cells(KernelChoice::Accelerate, Precision::F32, 64),
             [(1, None)]
         );
-        assert_eq!(
-            plan.skipped,
-            ["skipping accelerate at f16 (unsupported precision)"]
+        assert!(
+            plan.skipped
+                .contains(&"skipping accelerate at i32 (unsupported precision)".to_owned())
         );
         let _ = fs::remove_file(&output);
     }
