@@ -54,7 +54,7 @@ Run `just` with no arguments to list every recipe.
 | `just build` | `just build-bench`, then `just build-web` | Produce the optimized benchmark binary (`benchmark/target/release/gemm-bench`) and the static dashboard (`web/dist/`). Run one half with `just build-bench` (`cargo build --release`) or `just build-web` (`just data`, then `bun install && bun run build`). |
 | `just data` | `duckdb -bail < data/build.sql` | Validate every `data/runs/**/*.csv` and merge them into `web/public/results.parquet`, the file the dashboard queries. A run file missing a required value fails with its filename. `just dev` and `just build` run it first. |
 | `just dev` | `bun dev` in `web/` | Start the Vite dev server with hot reload for the dashboard. |
-| `just test` | `cargo test --manifest-path benchmark/Cargo.toml` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests. There is no `test-web` target: `web/` has no tests yet. |
+| `just test` | `just test-bench`, then `just test-web` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests, then the dashboard's data and chart tests. Run one half with `just test-bench` (`cargo test --manifest-path benchmark/Cargo.toml`) or `just test-web` (`bun test` in `web/`, which runs `web/src/**/*.test.ts`). |
 | `just lint` | `just lint-bench`, then `just lint-web` | Auto-fix formatting and lint issues in both halves. Run one half with `just lint-bench` (`cargo fmt`) or `just lint-web` (`bun run lint:fix`, Biome). |
 | `just check` | `just check-bench`, then `just check-web` | Run the static checks that CI enforces, without modifying files. Run one half with `just check-bench` (`cargo clippy --all-targets -- -D warnings`) or `just check-web` (`bun run typecheck`, `tsc --noEmit`). For Svelte component type checking, run `bun run check` in `web/`. |
 
@@ -73,7 +73,7 @@ Run `just` with no arguments to list every recipe.
 | `rayon-tiled` | Rayon parallel 2D tiled iterator | Work-stealing over row chunks of at most one tile, about 4 per worker, with 2D tiling inside each chunk. |
 | `static-ikj` | OpenMP-style persistent thread pool | Partitions contiguous row chunks evenly across dedicated threads, eliminating work-stealing overhead. |
 | `static-tiled` | OpenMP-style thread pool with 2D blocking | Combines deterministic row partitioning on a persistent thread pool with L1/L2 cache-blocked compute. |
-| `accelerate-blas` | Vendor BLAS (`cblas_sgemm` / `cblas_dgemm` from Apple Accelerate), macOS only | Apple's CPU reference: on Apple Silicon, Accelerate's Level-3 BLAS runs on the AMX matrix coprocessor. Supports `f32` and `f64` (BLAS has no half-precision or integer GEMM). Accelerate picks its own threading, so its `threads = 1` rows mean one calling thread, not one core; set `VECLIB_MAXIMUM_THREADS` yourself to pin it for experiments. Runs recorded before the BNNS kernel existed are labelled `accelerate` in their CSVs; `data/build.sql` publishes them as `accelerate-blas`. |
+| `accelerate-blas` | Vendor BLAS (`cblas_sgemm` / `cblas_dgemm` from Apple Accelerate), macOS only | Apple's CPU reference: on Apple Silicon, Accelerate's Level-3 BLAS runs on the AMX matrix coprocessor. Supports `f32` and `f64` (BLAS has no half-precision or integer GEMM). Accelerate picks its own threading, so its `threads = 1` rows mean one calling thread, not one core; set `VECLIB_MAXIMUM_THREADS` yourself to pin it for experiments. Runs recorded before the BNNS kernel existed are labelled `accelerate` in their CSVs; `data/build.sql` publishes them as `accelerate-blas`. The CLI name changed too: `--kernel accelerate` is now `--kernel accelerate-blas` (clap suggests `accelerate-bnns`, which is a different kernel). |
 | `accelerate-bnns` | BNNSGraph matmul (Apple Accelerate, macOS 26+), through a Swift shim | The same AMX coprocessor through BNNS's graph API, compiled once per size outside the timed region. Supports `f16` and `f32` (BNNSGraph has no `f64`, and integer matmul graphs don't execute). **`f16` accumulates in `f16`**, like the CPU kernels and unlike BLAS-style widening, so it is fast but its error grows with n. Threads are recorded as for `accelerate-blas`. |
 
 ### Apple Silicon GPU (macOS only)
@@ -212,7 +212,7 @@ The dashboard in [`web/`](web) is a Vite + Svelte 5 + TypeScript app linted and 
 - **Build:** `just build` (or `bun run build` in `web/`) writes static files to `web/dist/`. Preview them with `bun run preview`.
 - **Deploy:** every push to `main` builds `web/` and publishes `web/dist/` to GitHub Pages via [`deploy.yml`](.github/workflows/deploy.yml).
 
-> **Status:** the dashboard is still the Vite + Svelte starter. Loading `data/` and charting the results are not implemented yet.
+It loads `web/public/results.parquet` into DuckDB-WASM in the browser and charts it with [Observable Plot](https://observablehq.com/plot/) in five tabs: Overview, CPU threading, Precision, GPU, and Block size. Pickers narrow each tab by precision, matrix size, block size, or kernel, and a Relative toggle switches from GOP/s to speedup over `naive-ijk`. Chart definitions live in `web/src/lib/charts/`, each with a `bun test` suite next to it.
 
 ---
 

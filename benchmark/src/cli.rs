@@ -195,7 +195,8 @@ impl Cli {
             Precision::value_variants().to_vec()
         });
         // Every kernel by default; `cells` skips the combinations one can't run.
-        let kernels = pick(self.kernel, file_kernels, || {
+        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+        let mut kernels = pick(self.kernel, file_kernels, || {
             KernelChoice::value_variants().to_vec()
         });
         let block_sizes = pick(self.block_size, file.block_size, || {
@@ -219,7 +220,14 @@ impl Cli {
         if explicit_kernels {
             reject_idle_kernels(&kernels, &precisions, &threads, &sizes)?;
         }
-        let skipped = skip_notices(&kernels, &precisions, &threads, &sizes);
+        #[cfg(target_os = "macos")]
+        let bnns_skip = drop_unavailable_bnns(&mut kernels, explicit_kernels, || {
+            gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_some()
+        })?;
+        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+        let mut skipped = skip_notices(&kernels, &precisions, &threads, &sizes);
+        #[cfg(target_os = "macos")]
+        skipped.extend(bnns_skip);
         let context = context::capture();
         let devices = Devices::lookup(&kernels);
         let output_path = self
@@ -458,6 +466,24 @@ fn reject_idle_kernels(
     Ok(())
 }
 
+/// `accelerate-bnns` is compiled into every macOS build but needs macOS 26 at
+/// run time: stop if it was named, otherwise drop it with a notice.
+#[cfg(target_os = "macos")]
+fn drop_unavailable_bnns(
+    kernels: &mut Vec<KernelChoice>,
+    explicit: bool,
+    available: impl FnOnce() -> bool,
+) -> Result<Option<String>, String> {
+    if !kernels.contains(&KernelChoice::AccelerateBnns) || available() {
+        return Ok(None);
+    }
+    if explicit {
+        return Err("accelerate-bnns needs macOS 26 (the BNNSGraph builder)".to_owned());
+    }
+    kernels.retain(|&kernel| kernel != KernelChoice::AccelerateBnns);
+    Ok(Some("skipping accelerate-bnns (needs macOS 26)".to_owned()))
+}
+
 /// One stderr line per group of cells `BenchmarkPlan::cells` leaves out.
 fn skip_notices(
     kernels: &[KernelChoice],
@@ -584,6 +610,8 @@ mod tests {
 
     use clap::{Parser, ValueEnum};
 
+    #[cfg(target_os = "macos")]
+    use super::drop_unavailable_bnns;
     use super::{
         BenchmarkPlan, Cli, Devices, KernelChoice, Precision, default_output_path, open_output,
         validate_output_path,
@@ -1074,6 +1102,23 @@ mod tests {
         );
         assert_eq!(plan.total_configurations(), 14); // 7 default sizes * (f16, f32)
         let _ = fs::remove_file(&output);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accelerate_bnns_before_macos_26_is_dropped_by_default_and_rejected_when_named() {
+        let mut kernels = vec![KernelChoice::Ikj, KernelChoice::AccelerateBnns];
+        let error = drop_unavailable_bnns(&mut kernels, true, || false)
+            .expect_err("a named accelerate-bnns must be rejected");
+        assert!(error.contains("needs macOS 26"));
+
+        let notice = drop_unavailable_bnns(&mut kernels, false, || false)
+            .expect("a default accelerate-bnns is only skipped");
+        assert_eq!(kernels, [KernelChoice::Ikj]);
+        assert_eq!(
+            notice.as_deref(),
+            Some("skipping accelerate-bnns (needs macOS 26)")
+        );
     }
 
     #[cfg(target_os = "macos")]
