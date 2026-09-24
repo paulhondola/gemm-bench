@@ -11,7 +11,7 @@ export function hasGpu(rows: Row[]): boolean {
 type FamilyPoint = { n: number; family: string; gops: number };
 type FamilyGapPoint = { n: number; family: string; gops: null };
 
-/** Best gpu / parallel / serial result at each size — one line per family. */
+/** Best result of each family at each size — one line per family. */
 function byFamily(rows: Row[], ctx: Ctx): FamilyPoint[] {
 	const out = new Map<string, { n: number; family: string; gops: number }>();
 	for (const r of bestPerKernel(rows)) {
@@ -27,6 +27,7 @@ function byFamily(rows: Row[], ctx: Ctx): FamilyPoint[] {
 
 const FAMILY_INK = {
 	gpu: "#e66767",
+	amx: "#3987e5",
 	parallel: "#c98500",
 	serial: "#199e70",
 } as const;
@@ -52,6 +53,10 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 	// dashed at a constant dasharray, everything else solid.
 	const otherLine = lineData.filter((p) => p.family !== "gpu");
 	const gpuLine = lineData.filter((p) => p.family === "gpu");
+	// Runs without accelerate have no amx rows; keep it out of their legend.
+	const inked = Object.entries(FAMILY_INK).filter(([family]) =>
+		points.some((p) => p.family === family),
+	);
 
 	return {
 		...BASE,
@@ -60,8 +65,8 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
 		y: { type: "log", label: "GOP/s", labelAnchor: "top" },
 		color: {
-			domain: Object.keys(FAMILY_INK),
-			range: Object.values(FAMILY_INK),
+			domain: inked.map(([family]) => family),
+			range: inked.map(([, ink]) => ink),
 			legend: true,
 		},
 		marks: [
@@ -81,7 +86,7 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 				strokeDasharray: "5 4",
 			}),
 			Plot.dot(points, { x: "n", y: "gops", fill: "family", r: 4 }),
-			// Three series, so direct labels as well as the legend.
+			// Up to four series, so direct labels as well as the legend.
 			Plot.text(
 				points.filter((p) => p.n === sizes[sizes.length - 1]),
 				{
@@ -127,7 +132,11 @@ export const gpuRatio: ChartSpec = (rows, _f, ctx) => {
 	return {
 		...BASE,
 		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		y: { type: "log", label: "GPU ÷ best CPU", labelAnchor: "top" },
+		y: {
+			type: "log",
+			label: "GPU ÷ best parallel CPU",
+			labelAnchor: "top",
+		},
 		marks: [
 			Plot.ruleY([1], { stroke: REFERENCE_INK, strokeDasharray: "5 5" }),
 			Plot.line(ratios, {

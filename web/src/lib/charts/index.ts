@@ -96,8 +96,8 @@ export const TABS: Tab[] = [
 				spec: gpuVsCpu,
 			},
 			{
-				title: "GPU ÷ best CPU",
-				note: "Crosses 1.0 where the GPU starts winning",
+				title: "GPU ÷ best parallel CPU",
+				note: "Crosses 1.0 where the GPU overtakes the hand-written parallel kernels; AMX is compared in the chart above",
 				spec: gpuRatio,
 			},
 		],

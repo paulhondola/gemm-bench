@@ -117,6 +117,21 @@ test("a metal kernel stays gpu even with only single-thread rows", () => {
 	).toBe("gpu");
 });
 
+test("an amx kernel is its own family, not serial, despite threads=1", () => {
+	expect(
+		families([
+			{
+				kernel: "accelerate",
+				precision: "f32",
+				n: 64,
+				threads: 1,
+				gops: 400,
+				backend: "amx",
+			},
+		]).get("accelerate"),
+	).toBe("amx");
+});
+
 test("sizesFor narrows to the precision; allSizes does not", () => {
 	expect(sizesFor(mixed, "f32")).toEqual([64, 128]);
 	expect(sizesFor(mixed, "i64")).toEqual([4096]);

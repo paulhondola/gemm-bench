@@ -1,5 +1,7 @@
 //! Dense GEMM kernels sharing one overwrite-style interface.
 
+#[cfg(target_os = "macos")]
+pub mod accelerate;
 pub(crate) mod common;
 #[cfg(target_os = "macos")]
 pub mod mps;
@@ -9,6 +11,8 @@ pub mod static_threads;
 
 use std::ops::{Add, AddAssign, Mul};
 
+#[cfg(target_os = "macos")]
+pub use accelerate::AccelerateGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
 pub use mps::{MpsElement, MpsGemm};
@@ -244,6 +248,24 @@ mod tests {
         every_kernel_matches_naive::<f64>();
         every_kernel_matches_naive::<i32>();
         every_kernel_matches_naive::<i64>();
+    }
+
+    #[cfg(target_os = "macos")]
+    fn accelerate_matches_naive<T: Element>() {
+        let n = 7;
+        let (lhs, rhs) = inputs::<T>(n);
+        let mut expected = Matrix::zeros(n, n);
+        NaiveGemm.compute(&lhs, &rhs, &mut expected);
+        let mut actual = Matrix::zeros(n, n);
+        super::AccelerateGemm.compute(&lhs, &rhs, &mut actual);
+        assert_close(&actual, &expected);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accelerate_matches_naive_on_f32_and_f64() {
+        accelerate_matches_naive::<f32>();
+        accelerate_matches_naive::<f64>();
     }
 
     #[cfg(target_os = "macos")]
