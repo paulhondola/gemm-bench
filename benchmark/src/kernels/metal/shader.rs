@@ -117,11 +117,11 @@ impl<T: Element> GpuDispatch<T> for ShaderGemm<T> {
         cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
         operands: &GpuOperands<T>,
     ) -> Result<(), String> {
+        let n = u32::try_from(operands.n).map_err(|_| "n does not fit the shader's uint")?;
         let encoder = cmd_buf
             .computeCommandEncoder()
             .ok_or("failed to create a Metal compute encoder")?;
         encoder.setComputePipelineState(&self.pipeline);
-        let n = u32::try_from(operands.n).map_err(|_| "n does not fit the shader's uint")?;
         // SAFETY: indices 0-3 match the [[buffer(i)]] slots in gemm.metal, and
         // `setBytes` copies `n` before this call returns.
         unsafe {
