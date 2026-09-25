@@ -82,7 +82,7 @@ Run `just` with no arguments to list every recipe.
 | :--- | :--- | :--- |
 | `mps` | `MPSMatrixMultiplication` (Metal Performance Shaders) | Runs on the GPU through unified-memory (`StorageModeShared`) buffers. Supports `f16` and `f32`; Apple GPUs have no `f64`. The timed region is GPU execution only (`commit` → `waitUntilCompleted`); an `mps-e2e` record from the same runs adds the buffer copies and command encoding (see Methodology). MPS does **not** use the AMX matrix coprocessor, which is only reachable from the CPU through Accelerate (BLAS or BNNS). |
 | `metal-naive` | Hand-written Metal compute shader (`benchmark/src/kernels/metal/gemm.metal`), compiled from source at runtime | One GPU thread per output element, reading A and B straight from device memory. Supports `f16`, `f32`, `i32` and `i64` (MSL `half`, `float`, `int`, `long`; Apple GPUs have no `double`). Accumulates in the element type, like the CPU kernels; `i64` multiplies are emulated in software on Apple GPUs. Timed like `mps`, with a `metal-naive-e2e` record. |
-| `metal-tiled` | Same shader source | Each 16×16 threadgroup stages one tile of A and one of B in threadgroup memory per step, so each device-memory element is read once per threadgroup instead of once per thread. The tile is fixed; `--block-size` does not apply. Same precisions, accumulation and timing as `metal-naive`, with a `metal-tiled-e2e` record. |
+| `metal-tiled` | Same shader source | Each 16×16 threadgroup stages one tile of A and one of B in threadgroup memory per step, so each device-memory element is read once per threadgroup instead of once per thread. The tile is fixed; `--block-size` does not apply. Same precisions, accumulation and timing as `metal-naive`, with a `metal-tiled-e2e` record. At `i64` it runs slower than `metal-naive` on Apple GPUs (measured on an M1 Pro: ~200 vs ~218 GOPS at n=1024-2048) — Apple GPUs emulate 64-bit multiplies in software, so `i64` is compute-bound and tiling saves no memory traffic that matters, while still paying for two threadgroup barriers per 16 multiply-adds. |
 
 ---
 
@@ -170,8 +170,8 @@ just bench \
 | :--- | :--- | :--- |
 | `--sizes <N,...>` | Matrix dimensions (square $N \times N$), comma-delimited | All: `64,128,256,512,1024,2048,4096` |
 | `--threads <T,...>` | Worker thread counts for parallel kernels | Powers of 2 below CPU count, plus the maximum |
-| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `accelerate-blas`, `accelerate-bnns`, `mps`) | All kernels; combinations a kernel can't run are skipped with a notice (`accelerate-blas` outside `f32`/`f64`, `accelerate-bnns` and `mps` outside `f16`/`f32`, static kernels with more threads than rows) |
-| `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`, `i32`, `i64`; `accelerate-blas` supports only `f32` and `f64`, `accelerate-bnns` and `mps` only `f16` and `f32`) | All: `f16,f32,f64,i32,i64` |
+| `--kernel <K,...>` | Kernel(s) to benchmark (`naive`, `ikj`, `tiled`, `rayon-ikj`, `rayon-tiled`, `static-ikj`, `static-tiled`, `accelerate-blas`, `accelerate-bnns`, `mps`, `metal-naive`, `metal-tiled`) | All kernels; combinations a kernel can't run are skipped with a notice (`accelerate-blas` outside `f32`/`f64`, `accelerate-bnns` and `mps` outside `f16`/`f32`, `metal-naive` and `metal-tiled` outside `f16`/`f32`/`i32`/`i64`, static kernels with more threads than rows) |
+| `--precision <P,...>` | Precision(s) to benchmark (`f16`, `f32`, `f64`, `i32`, `i64`; `accelerate-blas` supports only `f32` and `f64`, `accelerate-bnns` and `mps` only `f16` and `f32`, `metal-naive` and `metal-tiled` skip `f64`) | All: `f16,f32,f64,i32,i64` |
 | `--repetitions <R>` | Timed iterations measured per configuration (median, min, and standard deviation are recorded) | `5` |
 | `--block-size <B,...>` | Tile edge length(s) for the tiled kernels (`tiled`, `rayon-tiled`, `static-tiled`), comma-delimited. Other kernels run once and record an empty `block_size` | All: `16,32,64,128,256` |
 | `--no-progress` | Disables the interactive `indicatif` progress bar | `false` |
@@ -240,4 +240,4 @@ After `lefthook install`, each commit runs checks scoped to the files it touches
 | **Rust Nightly** | `cargo fmt --check`, `cargo clippy --all-targets --all-features -D warnings`, `cargo test` (all against `benchmark/Cargo.toml`) |
 | **Web (Data, Lint, Typecheck, Build)** | `bun install --frozen-lockfile`, install DuckDB, `duckdb -bail < data/build.sql`, `biome check src`, `bun run typecheck`, `bun run build` |
 
-CI runs on Linux, so the macOS-only `mps` kernel is compiled and tested only locally. Run `just check` and `just test` before pushing to catch what CI will.
+CI runs on Linux, so the macOS-only Metal kernels (`mps`, `metal-naive`, `metal-tiled`) are compiled and tested only locally. Run `just check` and `just test` before pushing to catch what CI will.

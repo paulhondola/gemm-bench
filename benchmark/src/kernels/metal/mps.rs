@@ -70,6 +70,9 @@ impl<T: Element> GpuDispatch<T> for MpsGemm<T> {
     ) -> Result<(), String> {
         let n = operands.n;
         // All three operands are n×n and row-major, so one descriptor fits them all.
+        // SAFETY: `n`, `n` and `n * size_of::<T>()` describe an n×n row-major
+        // buffer of element type `T` (`self.data_type` matches `T`, see
+        // `mps_data_type`), which is what every operand buffer is.
         let descriptor = unsafe {
             MPSMatrixDescriptor::matrixDescriptorWithRows_columns_rowBytes_dataType(
                 n,
@@ -78,6 +81,9 @@ impl<T: Element> GpuDispatch<T> for MpsGemm<T> {
                 self.data_type,
             )
         };
+        // SAFETY: `descriptor` matches the layout `buffer` was allocated with
+        // (see above), and `buffer` outlives this call: it comes from
+        // `operands`, which `GpuOperands` keeps alive for the duration of `encode`.
         let matrix = |buffer: &ProtocolObject<dyn MTLBuffer>| unsafe {
             MPSMatrix::initWithBuffer_descriptor(MPSMatrix::alloc(), buffer, &descriptor)
         };
@@ -86,6 +92,8 @@ impl<T: Element> GpuDispatch<T> for MpsGemm<T> {
             matrix(&operands.rhs),
             matrix(&operands.output),
         );
+        // SAFETY: `resultRows`, `resultColumns` and `interiorColumns` are all
+        // `n`, matching the n×n operands the descriptor above describes.
         let multiply = unsafe {
             MPSMatrixMultiplication::initWithDevice_transposeLeft_transposeRight_resultRows_resultColumns_interiorColumns_alpha_beta(
                 MPSMatrixMultiplication::alloc(),
@@ -99,6 +107,11 @@ impl<T: Element> GpuDispatch<T> for MpsGemm<T> {
                 0.0,
             )
         };
+        // SAFETY: `lhs`, `rhs` and `output` are the matrices `multiply` was
+        // configured for above. `multiply`, `lhs`, `rhs` and `output` all
+        // drop at the end of this function, before `cmd_buf` is committed,
+        // but that's sound: `cmd_buf` retains the resources and kernels it
+        // encodes, so the buffers they wrap stay alive through execution.
         unsafe {
             multiply.encodeToCommandBuffer_leftMatrix_rightMatrix_resultMatrix(
                 cmd_buf, &lhs, &rhs, &output,

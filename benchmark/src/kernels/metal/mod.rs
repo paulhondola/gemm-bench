@@ -122,7 +122,9 @@ pub(crate) trait GpuDispatch<T: Element> {
     ///   itself — that would break the gpu/e2e timing split, and
     ///   `time_dispatch` commits `cmd_buf` right after this returns, so a
     ///   second commit here aborts the process too.
-    /// - Dispatches must stay within `operands.n` × `operands.n`.
+    /// - Memory accesses must stay within the `operands.n` × `operands.n`
+    ///   operands; a padded dispatch grid is fine as long as out-of-range
+    ///   threads don't read or write past them.
     fn encode(
         &self,
         cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
