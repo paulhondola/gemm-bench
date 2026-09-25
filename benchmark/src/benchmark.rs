@@ -4,7 +4,9 @@ use std::{
 };
 
 #[cfg(target_os = "macos")]
-use gemm_bench::kernels::{AccelerateBlasGemm, AccelerateBnnsGemm, MpsGemm, metal::GpuSamples};
+use gemm_bench::kernels::{
+    AccelerateBlasGemm, AccelerateBnnsGemm, MpsGemm, Shader, ShaderGemm, metal::GpuSamples,
+};
 use gemm_bench::{
     Element, GemmKernel, Matrix,
     kernels::{
@@ -222,6 +224,16 @@ fn measure<T: Element>(
         #[cfg(target_os = "macos")]
         KernelChoice::Mps => MpsGemm::<T>::new()
             .expect("MPS needs a Metal device and f16 or f32")
+            .benchmark(lhs, rhs, io.2, repetitions)?
+            .into(),
+        #[cfg(target_os = "macos")]
+        KernelChoice::MetalNaive => ShaderGemm::<T>::new(Shader::Naive)?
+            .expect("metal-naive needs a Metal device and f16, f32, i32 or i64")
+            .benchmark(lhs, rhs, io.2, repetitions)?
+            .into(),
+        #[cfg(target_os = "macos")]
+        KernelChoice::MetalTiled => ShaderGemm::<T>::new(Shader::Tiled)?
+            .expect("metal-tiled needs a Metal device and f16, f32, i32 or i64")
             .benchmark(lhs, rhs, io.2, repetitions)?
             .into(),
     })

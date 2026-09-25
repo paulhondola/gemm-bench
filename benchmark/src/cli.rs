@@ -513,7 +513,9 @@ mod tests {
             plan.skipped,
             [
                 "skipping accelerate-bnns at f64 (unsupported precision)",
-                "skipping mps at f64 (unsupported precision)"
+                "skipping mps at f64 (unsupported precision)",
+                "skipping metal-naive at f64 (unsupported precision)",
+                "skipping metal-tiled at f64 (unsupported precision)"
             ]
         );
     }
@@ -633,10 +635,37 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn metal_shader_kernels_run_every_gpu_precision_on_the_gpu() {
+        let plan = plan_for(
+            "metal-shaders",
+            &["--kernel", "metal-naive,metal-tiled", "--sizes", "64"],
+        )
+        .expect("metal shader plan should be valid");
+
+        assert_eq!(
+            plan.kernels,
+            [KernelChoice::MetalNaive, KernelChoice::MetalTiled]
+        );
+        assert_ne!(
+            plan.devices.metal, "unknown",
+            "a Mac with Metal must name its GPU"
+        );
+        assert_eq!(
+            plan.devices.of(KernelChoice::MetalTiled),
+            plan.devices.metal
+        );
+        // 1 size * 2 kernels * (f16, f32, i32, i64); f64 is skipped.
+        assert_eq!(plan.total_configurations(), 8);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn a_named_kernel_at_a_precision_it_lacks_is_rejected_before_running() {
         for (kernel, precision) in [
             ("mps", "f64"),
             ("mps", "i32"),
+            ("metal-naive", "f64"),
+            ("metal-tiled", "f64"),
             ("accelerate-blas", "f16"),
             ("accelerate-bnns", "f64"),
         ] {

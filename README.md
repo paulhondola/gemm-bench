@@ -27,7 +27,7 @@ High-performance, safe Rust benchmarks for dense, row-major square matrix multip
 | [DuckDB CLI](https://duckdb.org) | `just data`, the data pre-commit hook | `brew install duckdb` |
 | [lefthook](https://github.com/evilmartians/lefthook) | Optional pre-commit hooks | `brew install lefthook`, then `lefthook install` |
 
-The `mps` GPU kernel and the `accelerate-blas` and `accelerate-bnns` AMX kernels require macOS on Apple Silicon; `accelerate-bnns` also needs macOS 26 at run time, and building it on macOS compiles a small Swift package (`benchmark/swift/BnnsGraph`) with the Xcode command-line tools. Everything else runs on any platform supported by Rust nightly. On AArch64 CPUs with FP16 support (such as the Apple M series), `f16` arithmetic compiles to native half-precision instructions.
+The `mps`, `metal-naive` and `metal-tiled` GPU kernels and the `accelerate-blas` and `accelerate-bnns` AMX kernels require macOS on Apple Silicon; `accelerate-bnns` also needs macOS 26 at run time, and building it on macOS compiles a small Swift package (`benchmark/swift/BnnsGraph`) with the Xcode command-line tools. Everything else runs on any platform supported by Rust nightly. On AArch64 CPUs with FP16 support (such as the Apple M series), `f16` arithmetic compiles to native half-precision instructions.
 
 ---
 
@@ -80,7 +80,9 @@ Run `just` with no arguments to list every recipe.
 
 | Kernel | Backend | Key Characteristics |
 | :--- | :--- | :--- |
-| `mps` | `MPSMatrixMultiplication` (Metal Performance Shaders) | Runs on the GPU through unified-memory (`StorageModeShared`) buffers. Supports `f16` and `f32`; Apple GPUs have no `f64`. The timed region is GPU execution only (`commit` → `waitUntilCompleted`); buffer copies and command encoding are excluded. MPS does **not** use the AMX matrix coprocessor, which is only reachable from the CPU through Accelerate (BLAS or BNNS). |
+| `mps` | `MPSMatrixMultiplication` (Metal Performance Shaders) | Runs on the GPU through unified-memory (`StorageModeShared`) buffers. Supports `f16` and `f32`; Apple GPUs have no `f64`. The timed region is GPU execution only (`commit` → `waitUntilCompleted`); an `mps-e2e` record from the same runs adds the buffer copies and command encoding (see Methodology). MPS does **not** use the AMX matrix coprocessor, which is only reachable from the CPU through Accelerate (BLAS or BNNS). |
+| `metal-naive` | Hand-written Metal compute shader (`benchmark/src/kernels/metal/gemm.metal`), compiled from source at runtime | One GPU thread per output element, reading A and B straight from device memory. Supports `f16`, `f32`, `i32` and `i64` (MSL `half`, `float`, `int`, `long`; Apple GPUs have no `double`). Accumulates in the element type, like the CPU kernels; `i64` multiplies are emulated in software on Apple GPUs. Timed like `mps`, with a `metal-naive-e2e` record. |
+| `metal-tiled` | Same shader source | Each 16×16 threadgroup stages one tile of A and one of B in threadgroup memory per step, so each device-memory element is read once per threadgroup instead of once per thread. The tile is fixed; `--block-size` does not apply. Same precisions, accumulation and timing as `metal-naive`, with a `metal-tiled-e2e` record. |
 
 ---
 
@@ -143,12 +145,12 @@ just bench \
   --precision f16,f32,f64,i32,i64
 ```
 
-#### Apple Silicon GPU (MPS)
+#### Apple Silicon GPU
 
 ```sh
 just bench \
   --sizes 256,512,1024,2048 \
-  --kernel mps \
+  --kernel mps,metal-naive,metal-tiled \
   --precision f16,f32
 ```
 
@@ -180,9 +182,9 @@ just bench \
 ### Methodology & Output Schema
 
 1. **Warmup Run**: Every configuration executes one untimed warmup pass before measurement, isolating thread pool initialization, cold caches, and dynamic loader overhead from the recorded metrics.
-2. **Timing Statistics**: Each configuration runs `--repetitions` timed passes. Records carry the median, minimum, and sample standard deviation; `gops` is derived from the median, which is robust to one-sided scheduler and thermal noise.
+2. **Timing Statistics**: Each configuration runs `--repetitions` timed passes. Records carry the median, minimum, and sample standard deviation; `gops` is derived from the median, which is robust to one-sided scheduler and thermal noise. Metal kernels produce two records per configuration from the same repetitions: the plain label times GPU execution only (`commit` → `waitUntilCompleted`), and `<label>-e2e` also includes copying the inputs into the shared buffers, encoding the command buffer, and copying the result back. Both carry the same accuracy.
 3. **Output Verification**: For each size and precision, serial `ikj` computes an untimed reference. After timing, every kernel's output is compared against it, and the run aborts (leaving the existing output file untouched) if the largest element-wise relative error exceeds $4\sqrt{N}\,\varepsilon$, where $\varepsilon$ is the precision's machine epsilon. CPU kernels that sum in the same order as `ikj` match bit-for-bit; the slack covers kernels such as MPS that sum in a different order. Note that `f16` has $\varepsilon = 2^{-10}$, so its check (25% at $N = 4096$) catches broken kernels, not subtle rounding differences. Integers have $\varepsilon = 0$, so `i32`/`i64` outputs must match `ikj` exactly; integer inputs are the small integer numerators ($0$–$28$) rather than fractions, which keeps outputs far from overflow.
-4. **Up-Front Validation**: Invalid plans fail before any work runs or any file is created. `--output` must be a `.csv` file path, not a directory. A (kernel, precision) or (static kernel, thread count) combination that can't run — `accelerate-blas` outside `f32`/`f64`, `accelerate-bnns` or `mps` outside `f16`/`f32`, or a static kernel with more threads than matrix rows — is skipped with a stderr notice rather than rejected; a plan is only rejected when a kernel named explicitly (by `--kernel` or a config's `kernel` key) has nothing runnable at all.
+4. **Up-Front Validation**: Invalid plans fail before any work runs or any file is created. `--output` must be a `.csv` file path, not a directory. A (kernel, precision) or (static kernel, thread count) combination that can't run — `accelerate-blas` outside `f32`/`f64`, `accelerate-bnns` or `mps` outside `f16`/`f32`, `metal-naive`/`metal-tiled` at `f64`, or a static kernel with more threads than matrix rows — is skipped with a stderr notice rather than rejected; a plan is only rejected when a kernel named explicitly (by `--kernel` or a config's `kernel` key) has nothing runnable at all.
 5. **Structured Export**: The output file is opened before the sweep but truncated only when results are written, so a failed run leaves earlier results intact.
    - Columns: `kernel, backend, device, precision, n, threads, gops, mean_rel_error_f64, median_ms, min_ms, stddev_ms, block_size, repetitions, host, commit, timestamp`. `block_size` is empty for kernels that don't tile.
    - `backend` is `cpu`, `amx` (the `accelerate-blas` and `accelerate-bnns` kernels), or `metal`. `device` is the CPU model (`sysctl` on macOS, `/proc/cpuinfo` on Linux) or the Metal GPU name.
