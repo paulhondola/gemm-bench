@@ -155,10 +155,13 @@ test("a kernel outside the palette still gets a visible, defined fill when it wi
 			gops: 10,
 			backend: "cpu",
 		})),
+		// mps moved to the GPU group, freeing one host slot; this filler sorts
+		// before packed-simd and claims it, so packed-simd still has none.
+		row({ kernel: "aaa-filler", n: 64, gops: 1 }),
 		row({ kernel: "packed-simd", n: 64, gops: 999 }),
 	];
 	const ctx = makeCtx(elevenKernels);
-	// 9 slots + the baseline ink; an 11th kernel has no entry.
+	// Every host slot is taken, so a further host kernel has no entry.
 	expect(ctx.palette.has("packed-simd")).toBe(false);
 
 	const spec = fastestPerSize(elevenKernels, f, ctx);

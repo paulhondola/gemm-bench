@@ -1,7 +1,7 @@
 import * as Plot from "@observablehq/plot";
 import type { Row } from "../db";
 import { bestPerKernel } from "../derive";
-import { REFERENCE_INK } from "../palette";
+import { FAMILY_INK, FAMILY_ORDER, REFERENCE_INK } from "../palette";
 import { BASE, breakGaps, type ChartSpec, type Ctx, log2Ticks } from "./types";
 
 export function hasGpu(rows: Row[]): boolean {
@@ -25,13 +25,6 @@ function byFamily(rows: Row[], ctx: Ctx): FamilyPoint[] {
 	return [...out.values()];
 }
 
-const FAMILY_INK = {
-	gpu: "#e66767",
-	amx: "#3987e5",
-	parallel: "#c98500",
-	serial: "#199e70",
-} as const;
-
 export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 	if (!hasGpu(rows)) return null;
 	const points = byFamily(rows, ctx);
@@ -54,7 +47,7 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 	const otherLine = lineData.filter((p) => p.family !== "gpu");
 	const gpuLine = lineData.filter((p) => p.family === "gpu");
 	// Runs without an Accelerate kernel have no amx rows; keep it out of their legend.
-	const inked = Object.entries(FAMILY_INK).filter(([family]) =>
+	const inked = FAMILY_ORDER.filter((family) =>
 		points.some((p) => p.family === family),
 	);
 
@@ -65,8 +58,8 @@ export const gpuVsCpu: ChartSpec = (rows, _f, ctx) => {
 		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
 		y: { type: "log", label: "GOP/s", labelAnchor: "top" },
 		color: {
-			domain: inked.map(([family]) => family),
-			range: inked.map(([, ink]) => ink),
+			domain: inked,
+			range: inked.map((family) => FAMILY_INK[family]),
 			legend: true,
 		},
 		marks: [

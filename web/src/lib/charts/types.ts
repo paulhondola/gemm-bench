@@ -34,9 +34,10 @@ export interface Ctx {
 
 /** Built once from the whole dataset so colour never depends on the filter. */
 export function makeCtx(allRows: Row[]): Ctx {
+	const family = families(allRows);
 	return {
-		palette: paletteFor(kernels(allRows)),
-		family: families(allRows),
+		palette: paletteFor(kernels(allRows), family),
+		family,
 		singleBlockSize: singleBlockSizeKernels(allRows),
 	};
 }
