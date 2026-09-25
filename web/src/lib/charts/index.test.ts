@@ -50,14 +50,20 @@ const cpuOnly: Row[] = [
 ];
 
 test("every tab declares its own controls", () => {
-	const overview = TABS.find((t) => t.id === "overview");
-	expect(overview?.controls).toEqual(["precision", "blockSize"]);
-	const precision = TABS.find((t) => t.id === "precision");
-	expect(precision?.inertPrecision).toBe(true);
-	const gpu = TABS.find((t) => t.id === "gpu");
-	expect(gpu?.inertBlockSize).toBeUndefined();
-	const blocksize = TABS.find((t) => t.id === "blocksize");
-	expect(blocksize?.inertBlockSize).toBe(true);
+	const tab = (id: string) => TABS.find((t) => t.id === id);
+	expect(TABS.map((t) => t.id)).toEqual([
+		"overview",
+		"cpu",
+		"threads",
+		"precision",
+		"gpu",
+		"blocksize",
+	]);
+	expect(tab("overview")?.controls).toEqual(["precision"]);
+	expect(tab("overview")?.inertBlockSize).toBe(true);
+	expect(tab("cpu")?.controls).toEqual(["precision", "blockSize"]);
+	expect(tab("precision")?.inertPrecision).toBe(true);
+	expect(tab("blocksize")?.inertBlockSize).toBe(true);
 });
 
 test("the GPU tab is absent without metal rows", () => {
@@ -146,11 +152,11 @@ test("a non-selected block size does not leak into a pinned chart", () => {
 			block_size: 64,
 		}),
 	];
-	const overview = TABS.find((t) => t.id === "overview");
-	expect(overview).toBeDefined();
-	if (!overview) return;
+	const cpu = TABS.find((t) => t.id === "cpu");
+	expect(cpu).toBeDefined();
+	if (!cpu) return;
 	const scoped = rowsForTab(
-		overview,
+		cpu,
 		twoBlockSizes,
 		"f32",
 		32,
@@ -370,9 +376,27 @@ test("a row without a block size survives any block-size selection", () => {
 			block_size: 32,
 		}),
 	];
-	const overview = TABS.find((t) => t.id === "overview");
-	expect(overview).toBeDefined();
-	if (!overview) return;
-	const scoped = rowsForTab(overview, mixed, "f32", 32, makeCtx(mixed));
+	const cpu = TABS.find((t) => t.id === "cpu");
+	expect(cpu).toBeDefined();
+	if (!cpu) return;
+	const scoped = rowsForTab(cpu, mixed, "f32", 32, makeCtx(mixed));
 	expect(scoped.map((r) => r.gops)).toEqual([10, 11, 12]);
+});
+
+test("the Overview is a family view: it keeps every block size", () => {
+	const twoBlockSizes: Row[] = [
+		row({ kernel: "tiled", n: 256, gops: 10, block_size: 32 }),
+		row({ kernel: "tiled", n: 512, gops: 11, block_size: 32 }),
+		row({ kernel: "tiled", n: 256, gops: 20, block_size: 64 }),
+	];
+	const overview = TABS.find((t) => t.id === "overview");
+	if (!overview) throw new Error("no overview tab");
+	const scoped = rowsForTab(
+		overview,
+		twoBlockSizes,
+		"f32",
+		32,
+		makeCtx(twoBlockSizes),
+	);
+	expect(scoped).toHaveLength(3);
 });

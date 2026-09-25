@@ -3,6 +3,7 @@ import type { Row } from "./db";
 import {
 	allSizes,
 	BASELINE_KERNEL,
+	bestPerFamily,
 	bestPerKernel,
 	blockSizes,
 	blockSizesFor,
@@ -11,6 +12,7 @@ import {
 	defaultPrecision,
 	defaultSize,
 	families,
+	familyOf,
 	hasKernel,
 	hasSingleThreadBaseline,
 	isPlottable,
@@ -281,4 +283,32 @@ test("rows from different runs never pair", () => {
 test("CPU rows pass through with gpu_ms null", () => {
 	const cpu = row({ kernel: "ikj", n: 64, gops: 10 });
 	expect(withEndToEnd([cpu])).toEqual([{ ...cpu, gpu_ms: null }]);
+});
+
+test("bestPerFamily keeps each family's winning row per precision and size", () => {
+	const rows: Row[] = [
+		row({ kernel: "rayon-ikj", n: 512, threads: 8, gops: 174 }),
+		row({ kernel: "rayon-tiled", n: 512, threads: 8, gops: 161 }),
+		row({
+			kernel: "rayon-tiled",
+			precision: "i32",
+			n: 512,
+			threads: 8,
+			gops: 167,
+		}),
+		row({ kernel: "mps", n: 512, gops: 699, backend: "metal" }),
+		row({ kernel: "metal-tiled", n: 512, gops: 268, backend: "metal" }),
+	];
+	const best = bestPerFamily(rows, families(rows));
+	expect(best.map((r) => `${r.kernel}@${r.precision}`).sort()).toEqual([
+		"mps@f32",
+		"rayon-ikj@f32",
+		"rayon-tiled@i32",
+	]);
+});
+
+test("familyOf counts a kernel the family map never saw as serial", () => {
+	expect(familyOf(row({ kernel: "mystery", n: 64, gops: 1 }), new Map())).toBe(
+		"serial",
+	);
 });

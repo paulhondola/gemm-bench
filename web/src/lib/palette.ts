@@ -33,14 +33,6 @@ export const MAX_SERIES = SLOTS.length;
 export const REFERENCE_INK = "#5b636b";
 
 /**
- * Fill for a winner that has no palette slot — a 9th+ kernel can still win a
- * size on fastestPerSize (computed over every kernel, not the 8-slot
- * legend), and must render visibly rather than as `fill: undefined`. The
- * theme's muted-text token; #0e1012 cell text stays legible on it.
- */
-export const UNPALETTED_FILL = "#9aa1a8";
-
-/**
  * Neutral ink for naive-ijk, the reference every "× vs naive-ijk" view divides
  * by. Lighter than every slot on purpose: mid grays collide with the aqua,
  * magenta and red slots under CVD. Validated pairwise against all eight: CVD

@@ -1,7 +1,13 @@
 import * as Plot from "@observablehq/plot";
 import type { Row } from "../db";
-import { BASELINE_KERNEL, bestPerKernel, hasKernel } from "../derive";
-import { UNPALETTED_FILL } from "../palette";
+import {
+	BASELINE_KERNEL,
+	bestPerFamily,
+	bestPerKernel,
+	familyOf,
+	hasKernel,
+} from "../derive";
+import { FAMILY_INK, FAMILY_ORDER } from "../palette";
 import {
 	BASE,
 	breakGaps,
@@ -95,13 +101,6 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 		(p) => p.kernel,
 		(kernel, n) => ({ n, kernel, threads: null, lo: null, hi: null, y: null }),
 	);
-	// Plot.line draws one <path> per series (grouped by z, which defaults to
-	// stroke), so a per-datum strokeDasharray channel cannot vary along that
-	// one path — it silently does nothing. Split into two marks instead: mps
-	// dashed at a constant dasharray, everything else solid.
-	const otherLine = lineData.filter((p) => p.kernel !== "mps");
-	const mpsLine = lineData.filter((p) => p.kernel === "mps");
-
 	return {
 		...BASE,
 		...(showLabels ? { marginRight: 100 } : {}),
@@ -128,18 +127,11 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 							fillOpacity: 0.15,
 						}),
 					]),
-			Plot.line(otherLine, {
+			Plot.line(lineData, {
 				x: "n",
 				y: "y",
 				stroke: "kernel",
 				strokeWidth: 2,
-			}),
-			Plot.line(mpsLine, {
-				x: "n",
-				y: "y",
-				stroke: "kernel",
-				strokeWidth: 2,
-				strokeDasharray: "5 4",
 			}),
 			Plot.dot(points, { x: "n", y: "y", fill: "kernel", r: 4 }),
 			...(showLabels
@@ -171,8 +163,15 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 	};
 }
 
-export const throughputVsSize: ChartSpec = (rows, f, ctx) =>
-	sizeSeries(rows, ctx, f.relative && canShowSpeedup(rows));
+/**
+ * Per-kernel view of the host group only. GPU kernels are compared on the
+ * GPU tab and folded into the Overview's family lines: a chart never draws
+ * kernels from both colour groups.
+ */
+export const throughputVsSize: ChartSpec = (rows, f, ctx) => {
+	const host = rows.filter((r) => familyOf(r, ctx.family) !== "gpu");
+	return sizeSeries(host, ctx, f.relative && canShowSpeedup(host));
+};
 
 export const serialOnly: ChartSpec = (rows, _f, ctx) =>
 	sizeSeries(
@@ -182,8 +181,10 @@ export const serialOnly: ChartSpec = (rows, _f, ctx) =>
 	);
 
 /**
- * Computed over every kernel, independent of the headline chart's legend —
- * it summarises the data, not the current view.
+ * Computed over every kernel, independent of any legend: it summarises the
+ * data, not the current view. Filled by the winner's family, not its kernel
+ * slot: the winner can come from either colour group, and family ink is the
+ * set validated on all pairs, since any two families can end up side by side.
  */
 export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 	const winners = new Map<number, Row>();
@@ -197,14 +198,12 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 	const cells = [...winners.entries()].map(([n, r]) => ({
 		n,
 		kernel: String(r.kernel),
+		family: familyOf(r, ctx.family),
 		gops: Number(r.gops),
 	}));
-
-	// Scoped to the kernels actually plotted here, not the whole palette: a
-	// 9th+ kernel can win a size (this is computed over every kernel, not the
-	// 8-slot legend) and has no palette entry, so it needs an explicit
-	// fallback fill rather than falling out of the domain to `undefined`.
-	const present = [...new Set(cells.map((c) => c.kernel))];
+	const present = FAMILY_ORDER.filter((family) =>
+		cells.some((c) => c.family === family),
+	);
 
 	return {
 		...BASE,
@@ -213,10 +212,11 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 		y: { axis: null },
 		color: {
 			domain: present,
-			range: present.map((k) => ctx.palette.get(k) ?? UNPALETTED_FILL),
+			range: present.map((family) => FAMILY_INK[family]),
+			legend: true,
 		},
 		marks: [
-			Plot.cell(cells, { x: "n", fill: "kernel" }),
+			Plot.cell(cells, { x: "n", fill: "family" }),
 			Plot.text(cells, {
 				x: "n",
 				text: (d: { kernel: string; gops: number }) =>
@@ -224,6 +224,96 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 				fill: "#0e1012",
 				fontSize: 11,
 			}),
+		],
+	};
+};
+
+type FamilyPoint = {
+	n: number;
+	family: string;
+	kernel: string;
+	threads: number;
+	gops: number;
+};
+type FamilyGapPoint = {
+	n: number;
+	family: string;
+	kernel: null;
+	threads: null;
+	gops: null;
+};
+
+/**
+ * One line per family: each family's best kernel, thread count and block size
+ * at every size. Metal rows are end-to-end here (see withEndToEnd), the same
+ * host-to-host scope as the CPU rows they are drawn against, so every line is
+ * solid.
+ */
+export const throughputByFamily: ChartSpec = (rows, _f, ctx) => {
+	const points: FamilyPoint[] = bestPerFamily(rows, ctx.family).map((r) => ({
+		n: Number(r.n),
+		family: familyOf(r, ctx.family),
+		kernel: String(r.kernel),
+		threads: Number(r.threads),
+		gops: Number(r.gops),
+	}));
+	const sizes = log2Ticks(points.map((p) => p.n));
+	if (sizes.length < 2) return null;
+
+	// Plot draws a line straight through a size a family has no row for;
+	// break it instead of implying a measurement nobody took.
+	const lineData = breakGaps<FamilyPoint | FamilyGapPoint>(
+		points,
+		sizes,
+		(p) => p.n,
+		(p) => p.family,
+		(family, n) => ({ n, family, kernel: null, threads: null, gops: null }),
+	);
+	const present = FAMILY_ORDER.filter((family) =>
+		points.some((p) => p.family === family),
+	);
+
+	return {
+		...BASE,
+		// Direct labels below need room for the longest family name.
+		marginRight: 100,
+		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
+		y: { type: "log", label: "GOP/s", labelAnchor: "top" },
+		color: {
+			domain: present,
+			range: present.map((family) => FAMILY_INK[family]),
+			legend: true,
+		},
+		marks: [
+			Plot.line(lineData, {
+				x: "n",
+				y: "gops",
+				stroke: "family",
+				strokeWidth: 2,
+			}),
+			Plot.dot(points, { x: "n", y: "gops", fill: "family", r: 4 }),
+			// At most four series, so direct labels as well as the legend.
+			Plot.text(
+				points.filter((p) => p.n === sizes[sizes.length - 1]),
+				{
+					x: "n",
+					y: "gops",
+					text: "family",
+					dx: 6,
+					textAnchor: "start",
+					fill: "#9aa1a8",
+					fontSize: 11,
+				},
+			),
+			Plot.tip(
+				points,
+				Plot.pointer({
+					x: "n",
+					y: "gops",
+					title: (d: FamilyPoint) =>
+						`${d.family} · ${d.kernel} · ${d.threads}T\n${d.gops.toFixed(1)} GOP/s`,
+				}),
+			),
 		],
 	};
 };

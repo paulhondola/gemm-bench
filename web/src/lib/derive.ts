@@ -183,6 +183,28 @@ export function bestPerKernel(rows: Row[]): Row[] {
 	return [...best.values()];
 }
 
+/** A row's family; a kernel families() never saw counts as serial. */
+export function familyOf(row: Row, family: Map<string, Family>): Family {
+	return family.get(String(row.kernel)) ?? "serial";
+}
+
+/**
+ * One row per (family, precision, n): the family's best row, whatever kernel,
+ * thread count or block size produced it. The whole winning row is kept so a
+ * family chart can name the kernel behind each point. Precision is part of
+ * the key because the Precision tab passes every precision at once. A strict
+ * `>` keeps the first row on a tie, so the result is stable.
+ */
+export function bestPerFamily(rows: Row[], family: Map<string, Family>): Row[] {
+	const best = new Map<string, Row>();
+	for (const r of rows) {
+		const key = `${familyOf(r, family)}\u0000${r.precision}\u0000${r.n}`;
+		const current = best.get(key);
+		if (!current || Number(r.gops) > Number(current.gops)) best.set(key, r);
+	}
+	return [...best.values()];
+}
+
 export function hasKernel(rows: Row[], kernel: string): boolean {
 	return rows.some((r) => r.kernel === kernel);
 }
