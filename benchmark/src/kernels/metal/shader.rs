@@ -21,17 +21,24 @@ use crate::{Element, Matrix};
 /// library per process if setup time ever matters.
 const SOURCE: &str = include_str!("gemm.metal");
 
+/// Side of `gemm_tiled`'s square tile and threadgroup; must equal `TS` in
+/// `gemm.metal`. 16×16 = 256 threads, inside every Apple GPU's 1024 limit.
+const TILE: usize = 16;
+
 /// Which `gemm.metal` kernel to run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Shader {
     /// One thread per output element, reading straight from device memory.
     Naive,
+    /// Threadgroup-memory tiling with a fixed `TILE`×`TILE` tile.
+    Tiled,
 }
 
 impl Shader {
     fn name(self) -> &'static str {
         match self {
             Self::Naive => "naive",
+            Self::Tiled => "tiled",
         }
     }
 }
@@ -149,6 +156,12 @@ impl<T: Element> GpuDispatch<T> for ShaderGemm<T> {
                     },
                 );
             }
+            // Whole threadgroups: edge threads load zeros instead of returning,
+            // so every thread reaches the kernel's barriers.
+            Shader::Tiled => encoder.dispatchThreadgroups_threadsPerThreadgroup(
+                square(operands.n.div_ceil(TILE)),
+                square(TILE),
+            ),
         }
         encoder.endEncoding();
         Ok(())

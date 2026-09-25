@@ -242,6 +242,16 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn metal_tiled_matches_naive_at_every_gpu_precision() {
+        use super::Shader::Tiled;
+        shader_matches_naive::<f16>(Tiled);
+        shader_matches_naive::<f32>(Tiled);
+        shader_matches_naive::<i32>(Tiled);
+        shader_matches_naive::<i64>(Tiled);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn metal_shaders_have_no_kernel_for_f64() {
         let kernel = super::ShaderGemm::<f64>::new(super::Shader::Naive)
             .expect("an unsupported precision is not a compile error");
