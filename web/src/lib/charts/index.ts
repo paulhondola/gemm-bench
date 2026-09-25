@@ -95,12 +95,13 @@ export const TABS: Tab[] = [
 	{
 		id: "precision",
 		label: "Precision",
-		controls: ["n", "blockSize"],
+		controls: ["n"],
 		inertPrecision: true,
+		inertBlockSize: true,
 		panels: [
 			{
 				title: "Throughput by precision",
-				note: "Each kernel's best thread count, at the selected size and block size",
+				note: "Each family's best kernel, thread count and block size at the selected size · GPU timings are end-to-end",
 				spec: throughputByPrecision,
 			},
 		],

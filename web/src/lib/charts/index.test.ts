@@ -371,3 +371,9 @@ test("the Overview is a family view: it keeps every block size", () => {
 	);
 	expect(scoped).toHaveLength(3);
 });
+
+test("the Precision tab is a family view pinned only by size", () => {
+	const precision = TABS.find((t) => t.id === "precision");
+	expect(precision?.controls).toEqual(["n"]);
+	expect(precision?.inertBlockSize).toBe(true);
+});
