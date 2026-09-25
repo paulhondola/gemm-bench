@@ -1,6 +1,6 @@
 import type { Row } from "../db";
 import { blockSizeSweep } from "./blocksize";
-import { gpuRatio, gpuVsCpu } from "./gpu";
+import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
 import {
 	fastestPerSize,
 	serialOnly,
@@ -109,16 +109,22 @@ export const TABS: Tab[] = [
 		id: "gpu",
 		label: "GPU",
 		controls: ["precision"],
+		inertBlockSize: true,
 		panels: [
 			{
-				title: "GPU vs CPU",
-				note: "Metal-backed kernels are dashed: their timed region is GPU execution only, excluding buffer copies and command encoding",
-				spec: gpuVsCpu,
+				title: "GPU kernels vs CPU",
+				note: "GPU timings are end-to-end (host copies and command encoding included), like the CPU timings · references are each family's best kernel, thread count and block size",
+				spec: gpuKernels,
 			},
 			{
-				title: "GPU ÷ best parallel CPU",
-				note: "Crosses 1.0 where the GPU overtakes the hand-written parallel kernels; AMX is compared in the chart above",
-				spec: gpuRatio,
+				title: "GPU ÷ CPU at equal effort",
+				note: "Hand-written shaders against the best hand-written parallel CPU kernel, MPS against the best AMX (Accelerate) kernel · above 1.0 the GPU wins",
+				spec: gpuEqualEffort,
+			},
+			{
+				title: "Copy overhead",
+				note: "Share of end-to-end time spent copying inputs in, encoding, and copying the result out · copies grow as N², arithmetic as N³",
+				spec: gpuCopyOverhead,
 			},
 		],
 	},
