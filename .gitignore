@@ -1,4 +1,5 @@
 /target
+*.duckdb
 
 # MacOS
 .DS_Store
