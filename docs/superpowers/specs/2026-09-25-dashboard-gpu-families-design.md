@@ -56,7 +56,7 @@ A chart draws either **families** (family ink) or **kernels of one colour group*
 | GPU (`gpu`) | precision · `inertBlockSize` | **GPU kernels vs CPU**; **GPU ÷ CPU at equal effort**; **Copy overhead** | kernel (GPU) + family references |
 | Block size (`blocksize`) | unchanged | unchanged | kernel (host) |
 
-Family charts show each family's best configuration, so their tabs set `inertBlockSize` (no pills, no block-size scoping in `rowsForTab`). The flag's doc comment widens from "block size is this tab's x-axis" to "block size is not a dimension of this tab". This also fixes a latent bug: the GPU tab shows no block-size pills, but `rowsForTab` still scopes its CPU reference rows to the block size selected on another tab.
+Family charts show each family's best configuration, so their tabs set `inertBlockSize` (no pills, no block-size scoping in `rowsForTab`). The flag's doc comment widens from "block size is this tab's x-axis" to "block size is not a dimension of this tab". This deliberately reverses cc5b136, which scoped the GPU tab's CPU references to the selected block size (with no pills shown) to avoid max-of-repeats bias. A family view shows each family's best configuration, the same way `bestPerKernel` already takes the best thread count; current data records `block_size` only for the three tiled kernels (every other kernel is null), so the max runs over a swept parameter, not over repeat runs. The test pinning the old behaviour is replaced (decided in plan review, 2026-09-25).
 
 A shared `bestPerFamily(rows, ctx)` in `derive.ts` (today's `byFamily` in `gpu.ts`, extended to keep the winning row) backs every family chart, so each tooltip can name the winning kernel and thread count.
 
@@ -131,7 +131,7 @@ Every chart keeps the existing convention: it returns `null` when it cannot be b
 
 - Contributor rows are untrusted: `isPlottable` still runs before `withEndToEnd`, so an unplottable plain row leaves its `-e2e` partner with `gpu_ms: null` (dropped from the overhead panel only).
 - Ratios and percentages filter non-finite results, as `gpuRatio` does today; a missing denominator is a gap, never a `NaN` point.
-- Negative overhead cannot come from the harness (each repetition's e2e interval contains its GPU interval, and medians preserve that order), so the y domain is Plot's default rather than clamped at 0: a negative value in contributed data stays visible.
+- Negative overhead cannot come from the harness (each repetition's e2e interval contains its GPU interval, and medians preserve that order), so the y scale includes 0 (`zero: true`) but is never clamped there: a negative value in contributed data stays visible.
 
 ## Testing
 
