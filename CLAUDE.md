@@ -13,7 +13,7 @@ Everything goes through `just` (run from the repo root):
 ## Gotchas
 
 - Rust is **nightly** (`#![feature(f16)]`), pinned by `rust-toolchain.toml`.
-- `mps` is macOS/Apple Silicon only, `f16`/`f32` only, and is compiled only locally (CI is Linux). Gate new macOS code with `#[cfg(target_os = "macos")]` and check `cargo clippy` still passes for the non-macOS shape.
+- Metal kernels (`mps`, `metal-naive`, `metal-tiled`, all under `kernels/metal/`) are macOS/Apple Silicon only and compiled only locally (CI is Linux). `mps` runs `f16`/`f32`; the shaders also run `i32`/`i64`. `gemm.metal` is compiled from source at runtime, so shader errors show up in `cargo test`, not `cargo build`. Gate new macOS code with `#[cfg(target_os = "macos")]` and check `cargo clippy` still passes for the non-macOS shape.
 - `data/runs/<host>/<timestamp>.csv` files are committed data. `just bench` writes there by default, so pass `--output /tmp/x.csv` for throwaway runs. Never hand-edit a run file.
 - `serial::IkjGemm` is the correctness reference for every kernel. Treat changes to it as changes to all of them.
 - `web/` has `bun test` suites (`web/src/**/*.test.ts`); `just test` runs them via `test-web`.

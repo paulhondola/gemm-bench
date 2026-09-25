@@ -18,6 +18,10 @@ pub(crate) enum KernelChoice {
     AccelerateBnns,
     #[cfg(target_os = "macos")]
     Mps,
+    #[cfg(target_os = "macos")]
+    MetalNaive,
+    #[cfg(target_os = "macos")]
+    MetalTiled,
 }
 
 /// Everything the harness needs to know about a kernel, in one row.
@@ -54,7 +58,7 @@ impl KernelInfo {
 impl KernelChoice {
     fn info(self) -> KernelInfo {
         #[cfg(target_os = "macos")]
-        use Precision::{F16, F32, F64};
+        use Precision::{F16, F32, F64, I32, I64};
         let serial = KernelInfo::serial;
         match self {
             Self::Naive => serial("naive-ijk"),
@@ -102,6 +106,19 @@ impl KernelChoice {
                 backend: "metal",
                 precisions: &[F16, F32],
                 ..serial("mps")
+            },
+            // Hand-written shaders: MSL has half, float, int and long, but no double.
+            #[cfg(target_os = "macos")]
+            Self::MetalNaive => KernelInfo {
+                backend: "metal",
+                precisions: &[F16, F32, I32, I64],
+                ..serial("metal-naive")
+            },
+            #[cfg(target_os = "macos")]
+            Self::MetalTiled => KernelInfo {
+                backend: "metal",
+                precisions: &[F16, F32, I32, I64],
+                ..serial("metal-tiled")
             },
         }
     }
@@ -166,7 +183,10 @@ mod tests {
     fn every_kernel_names_its_backend() {
         for &kernel in KernelChoice::value_variants() {
             #[cfg(target_os = "macos")]
-            if kernel == KernelChoice::Mps {
+            if matches!(
+                kernel,
+                KernelChoice::Mps | KernelChoice::MetalNaive | KernelChoice::MetalTiled
+            ) {
                 assert_eq!(kernel.backend(), "metal");
                 continue;
             }

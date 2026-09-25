@@ -4,7 +4,9 @@ use std::{
 };
 
 #[cfg(target_os = "macos")]
-use gemm_bench::kernels::{AccelerateBlasGemm, AccelerateBnnsGemm, MpsGemm};
+use gemm_bench::kernels::{
+    AccelerateBlasGemm, AccelerateBnnsGemm, MpsGemm, Shader, ShaderGemm, metal::GpuSamples,
+};
 use gemm_bench::{
     Element, GemmKernel, Matrix,
     kernels::{
@@ -122,26 +124,33 @@ fn run_precision<T: Element>(
                     .into());
                 }
 
-                let stats = summarize(&samples);
-                let gops = 2.0 * (n as f64).powi(3) / (stats.median_ms / 1_000.0) / 1e9;
-                records.push(BenchmarkRecord {
-                    kernel: kernel.label().to_owned(),
-                    backend: kernel.backend(),
-                    device: plan.devices.of(kernel).to_owned(),
-                    precision: precision.label(),
-                    n,
-                    threads: thread_count,
-                    gops,
-                    mean_rel_error_f64: mean_relative_error(&output, &truth),
-                    median_ms: stats.median_ms,
-                    min_ms: stats.min_ms,
-                    stddev_ms: stats.stddev_ms,
-                    block_size,
-                    repetitions: plan.repetitions,
-                    host: plan.context.host.clone(),
-                    commit: plan.context.commit.clone(),
-                    timestamp: plan.context.timestamp.clone(),
-                });
+                // Both records come from the same runs, so they share one accuracy.
+                let mean_rel_error_f64 = mean_relative_error(&output, &truth);
+                let e2e_label = format!("{}-e2e", kernel.label());
+                let runs = std::iter::once((kernel.label(), &samples.timed))
+                    .chain(samples.e2e.as_ref().map(|e2e| (e2e_label.as_str(), e2e)));
+                for (label, timed) in runs {
+                    let stats = summarize(timed);
+                    let gops = 2.0 * (n as f64).powi(3) / (stats.median_ms / 1_000.0) / 1e9;
+                    records.push(BenchmarkRecord {
+                        kernel: label.to_owned(),
+                        backend: kernel.backend(),
+                        device: plan.devices.of(kernel).to_owned(),
+                        precision: precision.label(),
+                        n,
+                        threads: thread_count,
+                        gops,
+                        mean_rel_error_f64,
+                        median_ms: stats.median_ms,
+                        min_ms: stats.min_ms,
+                        stddev_ms: stats.stddev_ms,
+                        block_size,
+                        repetitions: plan.repetitions,
+                        host: plan.context.host.clone(),
+                        commit: plan.context.commit.clone(),
+                        timestamp: plan.context.timestamp.clone(),
+                    });
+                }
             }
         }
     }
@@ -159,6 +168,23 @@ fn benchmark_inputs<T: Element>(n: usize) -> (Matrix<T>, Matrix<T>) {
     (lhs, rhs)
 }
 
+/// One configuration's timed runs. Metal kernels also time the round trip
+/// (upload, encode, dispatch, download), reported as a second `-e2e` record.
+struct Samples {
+    timed: Vec<Duration>,
+    e2e: Option<Vec<Duration>>,
+}
+
+#[cfg(target_os = "macos")]
+impl From<GpuSamples> for Samples {
+    fn from(samples: GpuSamples) -> Self {
+        Self {
+            timed: samples.gpu,
+            e2e: Some(samples.e2e),
+        }
+    }
+}
+
 /// Returns the durations of `repetitions` timed runs.
 ///
 /// Kernel setup (a pool, a compiled graph, a Metal queue) happens here,
@@ -172,7 +198,7 @@ fn measure<T: Element>(
     lhs: &Matrix<T>,
     rhs: &Matrix<T>,
     output: &mut Matrix<T>,
-) -> Result<Vec<Duration>, rayon::ThreadPoolBuildError> {
+) -> Result<Samples, Box<dyn std::error::Error>> {
     // `BenchmarkPlan::cells` gives every tiled kernel a block size.
     let block = || block_size.expect("tiled kernels always get a block size");
     let io = (lhs, rhs, output, repetitions);
@@ -194,11 +220,22 @@ fn measure<T: Element>(
                 .expect("accelerate-bnns needs macOS 26 (the BNNSGraph builder)"),
             io,
         ),
-        // MPS times only the GPU dispatch, so it runs its own loop.
+        // Metal kernels time the GPU dispatch and the round trip in their own loop.
         #[cfg(target_os = "macos")]
         KernelChoice::Mps => MpsGemm::<T>::new()
             .expect("MPS needs a Metal device and f16 or f32")
-            .benchmark(lhs, rhs, io.2, repetitions),
+            .benchmark(lhs, rhs, io.2, repetitions)?
+            .into(),
+        #[cfg(target_os = "macos")]
+        KernelChoice::MetalNaive => ShaderGemm::<T>::new(Shader::Naive)?
+            .expect("metal-naive needs a Metal device and f16, f32, i32 or i64")
+            .benchmark(lhs, rhs, io.2, repetitions)?
+            .into(),
+        #[cfg(target_os = "macos")]
+        KernelChoice::MetalTiled => ShaderGemm::<T>::new(Shader::Tiled)?
+            .expect("metal-tiled needs a Metal device and f16, f32, i32 or i64")
+            .benchmark(lhs, rhs, io.2, repetitions)?
+            .into(),
     })
 }
 
@@ -206,11 +243,14 @@ fn measure<T: Element>(
 fn sample<T: Element>(
     kernel: &impl GemmKernel<T>,
     (lhs, rhs, output, repetitions): (&Matrix<T>, &Matrix<T>, &mut Matrix<T>, usize),
-) -> Vec<Duration> {
+) -> Samples {
     kernel.compute(lhs, rhs, output);
-    (0..repetitions)
-        .map(|_| time_kernel(kernel, lhs, rhs, output))
-        .collect()
+    Samples {
+        timed: (0..repetitions)
+            .map(|_| time_kernel(kernel, lhs, rhs, output))
+            .collect(),
+        e2e: None,
+    }
 }
 
 /// Runs a Rayon kernel on its own pool of `threads` workers. `install` is
@@ -351,9 +391,10 @@ mod tests {
     use gemm_bench::{GemmKernel, kernels::IkjGemm};
 
     use super::{
-        benchmark_inputs, f64_reference, max_relative_error, mean_relative_error, summarize,
-        tolerance,
+        benchmark_inputs, f64_reference, max_relative_error, mean_relative_error, measure,
+        summarize, tolerance,
     };
+    use crate::kernel::KernelChoice;
 
     fn ms(values: &[u64]) -> Vec<Duration> {
         values.iter().map(|&v| Duration::from_millis(v)).collect()
@@ -461,5 +502,28 @@ mod tests {
         let (lhs, rhs) = benchmark_inputs::<i32>(8);
         assert!(lhs.as_slice().iter().any(|&value| value != 0));
         assert!(rhs.as_slice().iter().any(|&value| value != 0));
+    }
+
+    #[test]
+    fn cpu_kernels_have_no_end_to_end_samples() {
+        let (lhs, rhs) = benchmark_inputs::<f32>(8);
+        let mut output = Matrix::zeros(8, 8);
+        let samples = measure(KernelChoice::Ikj, 1, None, 2, &lhs, &rhs, &mut output)
+            .expect("ikj should run");
+        assert_eq!(samples.timed.len(), 2);
+        assert!(samples.e2e.is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn metal_kernels_time_the_gpu_and_the_round_trip() {
+        let (lhs, rhs) = benchmark_inputs::<f32>(8);
+        let mut output = Matrix::zeros(8, 8);
+        let samples = measure(KernelChoice::Mps, 1, None, 2, &lhs, &rhs, &mut output)
+            .expect("mps should run");
+        let e2e = samples
+            .e2e
+            .expect("a Metal kernel records end-to-end samples");
+        assert_eq!((samples.timed.len(), e2e.len()), (2, 2));
     }
 }

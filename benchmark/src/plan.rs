@@ -84,8 +84,9 @@ impl Devices {
             cpu: context::cpu_name(),
             #[cfg(target_os = "macos")]
             metal: kernels
-                .contains(&KernelChoice::Mps)
-                .then(gemm_bench::kernels::mps::default_device_name)
+                .iter()
+                .any(|kernel| kernel.backend() == "metal")
+                .then(gemm_bench::kernels::metal::default_device_name)
                 .flatten()
                 .unwrap_or_else(|| context::UNKNOWN.to_owned()),
         }
@@ -96,7 +97,7 @@ impl Devices {
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     pub(crate) fn of(&self, kernel: KernelChoice) -> &str {
         #[cfg(target_os = "macos")]
-        if kernel == KernelChoice::Mps {
+        if kernel.backend() == "metal" {
             return &self.metal;
         }
         &self.cpu
@@ -118,5 +119,7 @@ mod tests {
         assert_eq!(devices.of(KernelChoice::RayonTiled), "Test CPU");
         #[cfg(target_os = "macos")]
         assert_eq!(devices.of(KernelChoice::Mps), "Test GPU");
+        #[cfg(target_os = "macos")]
+        assert_eq!(devices.of(KernelChoice::MetalNaive), "Test GPU");
     }
 }

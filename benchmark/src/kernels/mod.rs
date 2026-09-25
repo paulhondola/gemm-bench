@@ -4,7 +4,7 @@
 pub mod accelerate;
 pub(crate) mod common;
 #[cfg(target_os = "macos")]
-pub mod mps;
+pub mod metal;
 pub mod rayon;
 pub mod serial;
 pub mod static_threads;
@@ -15,7 +15,7 @@ pub use accelerate::AccelerateBlasGemm;
 pub use accelerate::AccelerateBnnsGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
-pub use mps::MpsGemm;
+pub use metal::{MpsGemm, Shader, ShaderGemm};
 pub use rayon::{RayonIkjGemm, RayonTiledGemm};
 pub use serial::{IkjGemm, NaiveGemm, TiledGemm};
 pub use static_threads::{StaticIkjGemm, StaticTiledGemm};
@@ -190,5 +190,71 @@ mod tests {
             mps.compute(&lhs, &rhs, &mut actual);
             assert_close(&actual, &expected);
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mps_benchmark_times_every_repetition_both_ways() {
+        let n = 16;
+        let (lhs, rhs) = inputs::<f32>(n);
+        let mut output = Matrix::zeros(n, n);
+        let mps = super::MpsGemm::<f32>::new().expect("MPS should initialize");
+        let samples = mps
+            .benchmark(&lhs, &rhs, &mut output, 3)
+            .expect("the dispatch should succeed");
+        assert_eq!((samples.gpu.len(), samples.e2e.len()), (3, 3));
+        // End-to-end wraps the GPU-only window, so it can never be shorter.
+        assert!(
+            samples
+                .gpu
+                .iter()
+                .zip(&samples.e2e)
+                .all(|(gpu, e2e)| gpu <= e2e)
+        );
+    }
+
+    /// Checks a shader against `NaiveGemm` at n = 7 and at n = 37, which is
+    /// not a multiple of `metal-tiled`'s 16-wide tile, so edge tiles are partial.
+    #[cfg(target_os = "macos")]
+    fn shader_matches_naive<T: Element>(shader: super::Shader) {
+        for n in [7, 37] {
+            let (lhs, rhs) = inputs::<T>(n);
+            let mut expected = Matrix::zeros(n, n);
+            NaiveGemm.compute(&lhs, &rhs, &mut expected);
+            let kernel = super::ShaderGemm::<T>::new(shader)
+                .expect("gemm.metal should compile")
+                .expect("a Metal device and a precision MSL supports");
+            let mut actual = Matrix::zeros(n, n);
+            kernel.compute(&lhs, &rhs, &mut actual);
+            assert_close(&actual, &expected);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn metal_naive_matches_naive_at_every_gpu_precision() {
+        use super::Shader::Naive;
+        shader_matches_naive::<f16>(Naive);
+        shader_matches_naive::<f32>(Naive);
+        shader_matches_naive::<i32>(Naive);
+        shader_matches_naive::<i64>(Naive);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn metal_tiled_matches_naive_at_every_gpu_precision() {
+        use super::Shader::Tiled;
+        shader_matches_naive::<f16>(Tiled);
+        shader_matches_naive::<f32>(Tiled);
+        shader_matches_naive::<i32>(Tiled);
+        shader_matches_naive::<i64>(Tiled);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn metal_shaders_have_no_kernel_for_f64() {
+        let kernel = super::ShaderGemm::<f64>::new(super::Shader::Naive)
+            .expect("an unsupported precision is not a compile error");
+        assert!(kernel.is_none());
     }
 }
