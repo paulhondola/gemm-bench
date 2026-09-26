@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { row } from "../fixtures";
+import { pointsOf, row } from "../fixtures";
 import { gpuKernels } from "./gpu";
 import { rowsForTab, TABS, visibleTabs } from "./index";
 import { type Filters, makeCtx } from "./types";
@@ -307,12 +307,7 @@ test("the GPU tab's CPU reference is the family's best block size", () => {
 	const ctx = makeCtx(rows);
 	const scoped = rowsForTab(gpu, rows, "f32", 32, ctx);
 	const spec = gpuKernels(scoped, { ...f, blockSize: 32 }, ctx);
-	const line = spec?.marks?.[0] as
-		| { data: { series: string; n: number; gops: number | null }[] }
-		| undefined;
-	expect(
-		line?.data.find((d) => d.series === "parallel CPU" && d.n === 256)?.gops,
-	).toBe(60);
+	expect(pointsOf(spec, "parallel CPU").find((p) => p.x === 256)?.y).toBe(60);
 });
 
 test("a row without a block size survives any block-size selection", () => {
@@ -376,4 +371,12 @@ test("the Precision tab is a family view pinned only by size", () => {
 	const precision = TABS.find((t) => t.id === "precision");
 	expect(precision?.controls).toEqual(["n"]);
 	expect(precision?.inertBlockSize).toBe(true);
+});
+
+test("panel titles are unique across all tabs", () => {
+	// App.svelte keys the panel loop by title and Chart.svelte uses it as
+	// legend.uirevision, so two panels sharing a title would cross-pollinate
+	// each other's Svelte keying and Plotly zoom/legend state.
+	const titles = TABS.flatMap((t) => t.panels.map((p) => p.title));
+	expect(new Set(titles).size).toBe(titles.length);
 });

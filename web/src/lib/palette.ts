@@ -139,3 +139,37 @@ export function paletteFor(
 	}
 	return out;
 }
+
+/**
+ * ColorBrewer YlGnBu, d3.schemeYlGnBu[9]. The efficiency chart colours matrix
+ * sizes along it: N is ordinal, not a kernel identity, so a sequential ramp
+ * and not the categorical slots.
+ */
+const YLGNBU = [
+	"#ffffd9",
+	"#edf8b1",
+	"#c7e9b4",
+	"#7fcdbb",
+	"#41b6c4",
+	"#1d91c0",
+	"#225ea8",
+	"#253494",
+	"#081d58",
+] as const;
+
+/**
+ * The legible part of YlGnBu on the dark surface (#15181b): the two darkest
+ * stops, #253494 and #081d58, all but vanish against it.
+ */
+const RAMP = YLGNBU.slice(0, 7);
+
+/** n colours spread evenly along RAMP, light (smallest N) to dark. */
+export function sequentialRamp(n: number): string[] {
+	if (n <= 1) return [RAMP[3]];
+	// ponytail: past seven sizes neighbours repeat a stop; interpolate in OKLab
+	// if the sweep ever grows that far.
+	return Array.from(
+		{ length: n },
+		(_, i) => RAMP[Math.round((i * (RAMP.length - 1)) / (n - 1))],
+	);
+}

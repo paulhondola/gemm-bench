@@ -163,7 +163,9 @@ function selectTab(id: string) {
 		</div>
 
 		<div class="panels">
-			{#each tab.panels as panel}
+			<!-- Keyed: one Chart per panel, so a panel never inherits another
+			     tab's chart state. -->
+			{#each tab.panels as panel (panel.title)}
 				<Chart
 					title={panel.title}
 					note={panel.note}

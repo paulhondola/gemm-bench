@@ -1,38 +1,27 @@
-import * as Plot from "@observablehq/plot";
+import type { ScatterData } from "plotly.js-dist-min";
 import type { Row } from "../db";
 import {
 	BASELINE_KERNEL,
 	bestPerFamily,
 	bestPerKernel,
+	type Family,
 	familyOf,
 	hasKernel,
 } from "../derive";
 import { FAMILY_INK, FAMILY_ORDER } from "../palette";
 import {
-	BASE,
-	breakGaps,
+	AXIS,
+	BASE_LAYOUT,
 	type ChartSpec,
 	type Ctx,
+	type Figure,
+	LABELLED_MARGIN,
+	lineTraces,
+	log2Axis,
 	log2Ticks,
-	type PlotSpec,
+	type SeriesPoint,
+	uidOf,
 } from "./types";
-
-type SizePoint = {
-	n: number;
-	kernel: string;
-	threads: number;
-	lo: number;
-	hi: number;
-	y: number;
-};
-type SizeGapPoint = {
-	n: number;
-	kernel: string;
-	threads: null;
-	lo: null;
-	hi: null;
-	y: null;
-};
 
 /** Without a naive-ijk row there is no denominator, so the toggle is hidden. */
 export function canShowSpeedup(rows: Row[]): boolean {
@@ -47,7 +36,58 @@ function baselineAt(rows: Row[]): Map<number, number> {
 	return out;
 }
 
-function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
+type SizePoint = SeriesPoint & { lo: number; hi: number };
+
+/**
+ * One kernel's ±1 stddev band. fill "toself" closes each null-separated run
+ * of consecutive sizes on its own, so the band breaks at a missing size
+ * exactly where the line does. It shares the line's legend group, so hiding
+ * the kernel hides both.
+ */
+function band(
+	kernel: string,
+	color: string,
+	sizes: number[],
+	points: SizePoint[],
+): Partial<ScatterData> {
+	const at = new Map(
+		points.filter((p) => p.series === kernel).map((p) => [p.x, p]),
+	);
+	const x: (number | null)[] = [];
+	const y: (number | null)[] = [];
+	let run: SizePoint[] = [];
+	const close = () => {
+		if (run.length) {
+			const back = [...run].reverse();
+			x.push(...run.map((p) => p.x), ...back.map((p) => p.x), null);
+			y.push(...run.map((p) => p.hi), ...back.map((p) => p.lo), null);
+		}
+		run = [];
+	};
+	for (const n of sizes) {
+		const p = at.get(n);
+		if (p) run.push(p);
+		else close();
+	}
+	close();
+	return {
+		type: "scatter",
+		mode: "none",
+		// "_" (odd count) can never collide with uidOf's own encoding, which
+		// always emits an even count of "_" per escaped character.
+		uid: `band_${uidOf(kernel)}`,
+		legendgroup: kernel,
+		showlegend: false,
+		hoverinfo: "skip",
+		x,
+		y,
+		fill: "toself",
+		// 26 hex is 15% alpha, the old band's fillOpacity.
+		fillcolor: `${color}26`,
+	};
+}
+
+function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): Figure | null {
 	const best = bestPerKernel(rows).filter((r) =>
 		ctx.palette.has(String(r.kernel)),
 	);
@@ -55,11 +95,11 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 	if (sizes.length < 2) return null;
 
 	const base = baselineAt(best);
-	const points = best
+	const points: SizePoint[] = best
 		.map((r) => ({
-			n: Number(r.n),
-			kernel: String(r.kernel),
-			threads: Number(r.threads),
+			series: String(r.kernel),
+			x: Number(r.n),
+			custom: [Number(r.threads)],
 			// gops is 2N^3/median_ms, so the band is that value at median±stddev.
 			lo:
 				Number(r.gops) *
@@ -87,79 +127,39 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 	// legend never lists a kernel this chart doesn't draw. ctx.palette is still
 	// the hue lookup, so a kernel keeps its colour regardless of who else is
 	// present.
-	const present = [...new Set(points.map((p) => p.kernel))];
+	const present = [...new Set(points.map((p) => p.series))];
+	const color = (kernel: string) => ctx.palette.get(kernel) as string;
 	// Direct labels in addition to the legend, but only when there are few
 	// enough series to read them — the headline chart can carry up to 8.
 	const showLabels = present.length <= 4;
+	const unit = relative ? "×" : " GOP/s";
 
-	// Plot draws a line/band straight through a size a kernel has no row for;
-	// break both instead of implying a measurement nobody took.
-	const lineData = breakGaps<SizePoint | SizeGapPoint>(
-		points,
-		sizes,
-		(p) => p.n,
-		(p) => p.kernel,
-		(kernel, n) => ({ n, kernel, threads: null, lo: null, hi: null, y: null }),
-	);
+	const lines = lineTraces(points, {
+		order: present,
+		color,
+		xs: sizes,
+		labels: showLabels,
+		hovertemplate: `<b>%{y:.1f}${unit}</b>  %{fullData.name} · %{customdata[0]}T<extra></extra>`,
+	});
 	return {
-		...BASE,
-		...(showLabels ? { marginRight: 100 } : {}),
-		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		y: {
-			type: "log",
-			label: relative ? "× vs naive-ijk" : "GOP/s",
-			labelAnchor: "top",
+		// Bands first, so every line draws over every band.
+		data: relative
+			? lines
+			: [...present.map((k) => band(k, color(k), sizes, points)), ...lines],
+		layout: {
+			...BASE_LAYOUT,
+			// A band trace carries its own explicit showlegend:false, which Plotly
+			// still counts toward its "two or more traces" default, so a single
+			// kernel plus its band would otherwise draw a one-entry legend.
+			showlegend: present.length > 1,
+			...(showLabels ? { margin: LABELLED_MARGIN } : {}),
+			xaxis: log2Axis(sizes, "N"),
+			yaxis: {
+				...AXIS,
+				type: "log",
+				title: { text: relative ? "× vs naive-ijk" : "GOP/s" },
+			},
 		},
-		color: {
-			domain: present,
-			range: present.map((k) => ctx.palette.get(k) as string),
-			legend: true,
-		},
-		marks: [
-			...(relative
-				? []
-				: [
-						Plot.areaY(lineData, {
-							x: "n",
-							y1: "lo",
-							y2: "hi",
-							fill: "kernel",
-							fillOpacity: 0.15,
-						}),
-					]),
-			Plot.line(lineData, {
-				x: "n",
-				y: "y",
-				stroke: "kernel",
-				strokeWidth: 2,
-			}),
-			Plot.dot(points, { x: "n", y: "y", fill: "kernel", r: 4 }),
-			...(showLabels
-				? [
-						Plot.text(
-							points.filter((p) => p.n === sizes[sizes.length - 1]),
-							{
-								x: "n",
-								y: "y",
-								text: "kernel",
-								dx: 6,
-								textAnchor: "start",
-								fill: "#9aa1a8",
-								fontSize: 11,
-							},
-						),
-					]
-				: []),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "n",
-					y: "y",
-					title: (d: { kernel: string; threads: number; y: number }) =>
-						`${d.kernel} · ${d.threads}T\n${d.y.toFixed(1)}`,
-				}),
-			),
-		],
 	};
 }
 
@@ -185,6 +185,8 @@ export const serialOnly: ChartSpec = (rows, _f, ctx) =>
  * data, not the current view. Filled by the winner's family, not its kernel
  * slot: the winner can come from either colour group, and family ink is the
  * set validated on all pairs, since any two families can end up side by side.
+ * One bar trace per family, stacked, so each size is a single full-width
+ * cell that the legend can still name and hide by family.
  */
 export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 	const winners = new Map<number, Row>();
@@ -206,41 +208,48 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 	);
 
 	return {
-		...BASE,
-		height: 120,
-		x: { type: "band", label: "N" },
-		y: { axis: null },
-		color: {
-			domain: present,
-			range: present.map((family) => FAMILY_INK[family]),
-			legend: true,
+		data: present.map((family) => {
+			const mine = cells.filter((c) => c.family === family);
+			return {
+				type: "bar",
+				name: family,
+				uid: family,
+				x: mine.map((c) => String(c.n)),
+				y: mine.map(() => 1),
+				customdata: mine.map((c) => [c.kernel, c.gops]),
+				texttemplate: "%{customdata[0]}<br>%{customdata[1]:.0f}",
+				textposition: "inside",
+				insidetextanchor: "middle",
+				textfont: { color: "#0e1012", size: 11 },
+				marker: { color: FAMILY_INK[family] },
+				hovertemplate:
+					"<b>%{customdata[1]:.0f} GOP/s</b>  %{customdata[0]} · %{fullData.name}<extra></extra>",
+			};
+		}),
+		layout: {
+			...BASE_LAYOUT,
+			height: 160,
+			// Each cell is its own hit target; a crosshair readout is for lines.
+			hovermode: "closest",
+			barmode: "stack",
+			bargap: 0.02,
+			// Plotly reverses a stacked chart's legend by default; keep the
+			// validated family order.
+			legend: { ...BASE_LAYOUT.legend, traceorder: "normal" },
+			xaxis: {
+				...AXIS,
+				// Sizes are strings here: without "category" Plotly reads "64" as a
+				// number and draws a linear axis.
+				type: "category",
+				categoryorder: "array",
+				categoryarray: [...winners.keys()].sort((a, b) => a - b).map(String),
+				showgrid: false,
+				fixedrange: true,
+				title: { text: "N" },
+			},
+			yaxis: { ...AXIS, visible: false, range: [0, 1], fixedrange: true },
 		},
-		marks: [
-			Plot.cell(cells, { x: "n", fill: "family" }),
-			Plot.text(cells, {
-				x: "n",
-				text: (d: { kernel: string; gops: number }) =>
-					`${d.kernel}\n${d.gops.toFixed(0)}`,
-				fill: "#0e1012",
-				fontSize: 11,
-			}),
-		],
 	};
-};
-
-type FamilyPoint = {
-	n: number;
-	family: string;
-	kernel: string;
-	threads: number;
-	gops: number;
-};
-type FamilyGapPoint = {
-	n: number;
-	family: string;
-	kernel: null;
-	threads: null;
-	gops: null;
 };
 
 /**
@@ -250,70 +259,34 @@ type FamilyGapPoint = {
  * solid.
  */
 export const throughputByFamily: ChartSpec = (rows, _f, ctx) => {
-	const points: FamilyPoint[] = bestPerFamily(rows, ctx.family).map((r) => ({
-		n: Number(r.n),
-		family: familyOf(r, ctx.family),
-		kernel: String(r.kernel),
-		threads: Number(r.threads),
-		gops: Number(r.gops),
+	const points: SeriesPoint[] = bestPerFamily(rows, ctx.family).map((r) => ({
+		series: familyOf(r, ctx.family),
+		x: Number(r.n),
+		y: Number(r.gops),
+		custom: [String(r.kernel), Number(r.threads)],
 	}));
-	const sizes = log2Ticks(points.map((p) => p.n));
+	const sizes = log2Ticks(points.map((p) => p.x));
 	if (sizes.length < 2) return null;
 
-	// Plot draws a line straight through a size a family has no row for;
-	// break it instead of implying a measurement nobody took.
-	const lineData = breakGaps<FamilyPoint | FamilyGapPoint>(
-		points,
-		sizes,
-		(p) => p.n,
-		(p) => p.family,
-		(family, n) => ({ n, family, kernel: null, threads: null, gops: null }),
-	);
 	const present = FAMILY_ORDER.filter((family) =>
-		points.some((p) => p.family === family),
+		points.some((p) => p.series === family),
 	);
 
 	return {
-		...BASE,
-		// Direct labels below need room for the longest family name.
-		marginRight: 100,
-		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		y: { type: "log", label: "GOP/s", labelAnchor: "top" },
-		color: {
-			domain: present,
-			range: present.map((family) => FAMILY_INK[family]),
-			legend: true,
-		},
-		marks: [
-			Plot.line(lineData, {
-				x: "n",
-				y: "gops",
-				stroke: "family",
-				strokeWidth: 2,
-			}),
-			Plot.dot(points, { x: "n", y: "gops", fill: "family", r: 4 }),
+		data: lineTraces(points, {
+			order: present,
+			color: (family) => FAMILY_INK[family as Family],
+			xs: sizes,
 			// At most four series, so direct labels as well as the legend.
-			Plot.text(
-				points.filter((p) => p.n === sizes[sizes.length - 1]),
-				{
-					x: "n",
-					y: "gops",
-					text: "family",
-					dx: 6,
-					textAnchor: "start",
-					fill: "#9aa1a8",
-					fontSize: 11,
-				},
-			),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "n",
-					y: "gops",
-					title: (d: FamilyPoint) =>
-						`${d.family} · ${d.kernel} · ${d.threads}T\n${d.gops.toFixed(1)} GOP/s`,
-				}),
-			),
-		],
+			labels: true,
+			hovertemplate:
+				"<b>%{y:.1f} GOP/s</b>  %{fullData.name} · %{customdata[0]} · %{customdata[1]}T<extra></extra>",
+		}),
+		layout: {
+			...BASE_LAYOUT,
+			margin: LABELLED_MARGIN,
+			xaxis: log2Axis(sizes, "N"),
+			yaxis: { ...AXIS, type: "log", title: { text: "GOP/s" } },
+		},
 	};
 };

@@ -21,7 +21,7 @@ pre-commit:
       stage_fixed: true
     frontend-typecheck:
       root: "web/"
-      glob: "*.{ts,tsx}"
+      glob: "*.{ts,tsx,svelte}"
       run: bun run typecheck
     data-build:
       glob: "data/runs/**/*.csv"

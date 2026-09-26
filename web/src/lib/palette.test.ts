@@ -6,6 +6,7 @@ import {
 	FAMILY_ORDER,
 	MAX_SERIES,
 	paletteFor,
+	sequentialRamp,
 } from "./palette";
 
 const all = [
@@ -95,4 +96,18 @@ test("family ink is the all-pairs-validated set, in legend order", () => {
 		"#3987e5",
 		"#e66767",
 	]);
+});
+
+test("the size ramp runs light to dark along YlGnBu, one colour per size", () => {
+	expect(sequentialRamp(7)).toEqual([
+		"#ffffd9",
+		"#edf8b1",
+		"#c7e9b4",
+		"#7fcdbb",
+		"#41b6c4",
+		"#1d91c0",
+		"#225ea8",
+	]);
+	expect(sequentialRamp(2)).toEqual(["#ffffd9", "#225ea8"]);
+	expect(sequentialRamp(1)).toEqual(["#7fcdbb"]);
 });

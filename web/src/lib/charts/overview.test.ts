@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { row } from "../fixtures";
+import { legendOf, plotted, pointsOf, row } from "../fixtures";
 import {
 	canShowSpeedup,
 	fastestPerSize,
@@ -66,21 +66,14 @@ test("the legend lists only the kernels plotted, not the whole palette", () => {
 	// serialOnly is fed only naive-ijk rows here, so rayon-ikj (present
 	// elsewhere in the palette) must not appear in the legend domain.
 	const spec = serialOnly(rows, f, makeCtx(rows));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	expect(spec.color?.domain).toEqual(["naive-ijk"]);
+	expect(legendOf(spec).names).toEqual(["naive-ijk"]);
 });
 
 test("serialOnly drops the parallel kernels", () => {
 	const spec = serialOnly(rows, f, makeCtx(rows));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	// Assert on the plotted points, not on the whole spec: color.domain always
-	// lists every kernel in the dataset so that filtering cannot repaint.
-	const plotted = new Set(
-		(spec.marks[0] as { data: { kernel: string }[] }).data.map((d) => d.kernel),
+	expect(new Set(plotted(spec).map((p) => p.series))).toEqual(
+		new Set(["naive-ijk"]),
 	);
-	expect(plotted).toEqual(new Set(["naive-ijk"]));
 });
 
 test("a kernel missing a row at one size gets an explicit gap, not a line straight through it", () => {
@@ -106,17 +99,18 @@ test("a kernel missing a row at one size gets an explicit gap, not a line straig
 	];
 	const spec = throughputVsSize(ragged, f, makeCtx(ragged));
 	expect(spec).not.toBeNull();
-	if (!spec) return;
-	// marks[0] is Plot.areaY(lineData, ...) and marks[1] is Plot.line(lineData,
-	// ...) — confirmed by introspecting spec.marks[i].data for this exact
-	// fixture: both index 0 and 1 carried the gap-filled data (a
-	// threads/lo/hi/y: null entry for ikj at n=128); index 2 (dot) and index 3
-	// (tip) carried only the real points.
-	const line = spec.marks[1] as {
-		data: { kernel: string; n: number; y: number | null }[];
-	};
-	const gap = line.data.find((d) => d.kernel === "ikj" && d.n === 128);
+	const gap = pointsOf(spec, "ikj").find((p) => p.x === 128);
 	expect(gap?.y).toBeNull();
+	// The band breaks there too: one closed shape per run of sizes, each run
+	// followed by the null that separates it from the next.
+	const band = spec?.data.find((t) => t.uid === "band_ikj");
+	expect(band?.x).toEqual([64, 64, null, 256, 256, null]);
+});
+
+test("the relative projection draws no stddev band", () => {
+	const spec = throughputVsSize(rows, { ...f, relative: true }, makeCtx(rows));
+	expect(spec?.data.some((t) => t.uid?.startsWith("band_"))).toBe(false);
+	expect(pointsOf(spec, "rayon-ikj").map((p) => p.y)).toEqual([15, 30]);
 });
 
 test("the stddev band stays finite when stddev exceeds the median", () => {
@@ -125,12 +119,14 @@ test("the stddev band stays finite when stddev exceeds the median", () => {
 		row({ kernel: "ikj", n: 128, gops: 25, median_ms: 1, stddev_ms: 0.01 }),
 	];
 	const spec = throughputVsSize(noisy, f, makeCtx(noisy));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const band = (spec.marks[0] as { data: { hi: number }[] }).data;
-	for (const point of band) {
-		expect(Number.isFinite(point.hi)).toBe(true);
-		expect(point.hi).toBeLessThan(100);
+	const band = spec?.data.find((t) => t.uid === "band_ikj");
+	const edges = ((band?.y ?? []) as (number | null)[]).filter(
+		(y) => y !== null,
+	);
+	expect(edges).toHaveLength(4);
+	for (const y of edges) {
+		expect(Number.isFinite(y)).toBe(true);
+		expect(y).toBeLessThan(100);
 	}
 });
 
@@ -148,22 +144,16 @@ const acrossFamilies: Row[] = [
 
 test("the family chart draws one line per family, in legend order and family ink", () => {
 	const spec = throughputByFamily(acrossFamilies, f, makeCtx(acrossFamilies));
-	expect(spec?.color?.domain).toEqual(["serial", "parallel", "amx", "gpu"]);
-	expect(spec?.color?.range).toEqual([
-		"#844da2",
-		"#008300",
-		"#3987e5",
-		"#e66767",
-	]);
+	expect(legendOf(spec)).toEqual({
+		names: ["serial", "parallel", "amx", "gpu"],
+		colors: ["#844da2", "#008300", "#3987e5", "#e66767"],
+	});
 });
 
 test("each family point names the kernel that won it", () => {
 	const spec = throughputByFamily(acrossFamilies, f, makeCtx(acrossFamilies));
-	const dots = spec?.marks?.[1] as
-		| { data: { family: string; n: number; kernel: string }[] }
-		| undefined;
 	const gpuAt = (n: number) =>
-		dots?.data.find((d) => d.family === "gpu" && d.n === n)?.kernel;
+		pointsOf(spec, "gpu").find((p) => p.x === n)?.custom[0];
 	expect(gpuAt(256)).toBe("metal-tiled");
 	expect(gpuAt(512)).toBe("mps");
 });
@@ -174,17 +164,46 @@ test("fastest-per-size cells are filled by family, so every winner has a colour"
 		row({ kernel: "packed-simd", n: 256, gops: 5000 }),
 	];
 	const spec = fastestPerSize(withUnknown, f, makeCtx(withUnknown));
-	const color = spec?.color as { domain: string[]; range: string[] };
 	// packed-simd (serial) wins 256, accelerate-blas (amx) wins 512.
-	expect(color.domain).toEqual(["serial", "amx"]);
-	expect(color.range).toEqual(["#844da2", "#3987e5"]);
+	expect(legendOf(spec)).toEqual({
+		names: ["serial", "amx"],
+		colors: ["#844da2", "#3987e5"],
+	});
+	expect(pointsOf(spec, "serial")).toEqual([
+		{ x: "256", y: 1, custom: ["packed-simd", 5000] },
+	]);
+	// Categorical, in size order: Plotly would read "256" as a number.
+	expect(spec?.layout.xaxis?.type).toBe("category");
+	expect(spec?.layout.xaxis?.categoryarray).toEqual(["256", "512"]);
+	// Stacked bars would otherwise list the legend in reverse.
+	expect(spec?.layout.legend?.traceorder).toBe("normal");
 });
 
 test("the CPU & AMX size chart never draws a GPU kernel", () => {
 	const spec = throughputVsSize(acrossFamilies, f, makeCtx(acrossFamilies));
-	expect(spec?.color?.domain).toEqual(
+	const { names } = legendOf(spec);
+	expect(names).toEqual(
 		expect.arrayContaining(["ikj", "rayon-ikj", "accelerate-blas"]),
 	);
-	expect(spec?.color?.domain).not.toContain("mps");
-	expect(spec?.color?.domain).not.toContain("metal-tiled");
+	expect(names).not.toContain("mps");
+	expect(names).not.toContain("metal-tiled");
+});
+
+test("a single kernel plus its band hides the one-entry legend", () => {
+	// serialOnly here draws only naive-ijk: one line plus its band, both real
+	// traces, but nothing worth a legend for.
+	const spec = serialOnly(rows, f, makeCtx(rows));
+	expect(spec?.layout.showlegend).toBe(false);
+});
+
+test("a kernel named band-<kernel> can't collide with that kernel's band uid", () => {
+	const collision: Row[] = [
+		row({ kernel: "ikj", n: 64, gops: 20, median_ms: 1, stddev_ms: 0.1 }),
+		row({ kernel: "ikj", n: 128, gops: 22, median_ms: 1, stddev_ms: 0.1 }),
+		row({ kernel: "band-ikj", n: 64, gops: 10, median_ms: 1, stddev_ms: 0.1 }),
+		row({ kernel: "band-ikj", n: 128, gops: 11, median_ms: 1, stddev_ms: 0.1 }),
+	];
+	const spec = throughputVsSize(collision, f, makeCtx(collision));
+	const uids = spec?.data.map((t) => t.uid) ?? [];
+	expect(new Set(uids).size).toBe(uids.length);
 });
