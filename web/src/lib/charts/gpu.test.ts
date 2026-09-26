@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
 import { row } from "../fixtures";
-import { gpuCopyOverhead, gpuEqualEffort, gpuKernels, hasGpu } from "./gpu";
+import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
 import { type Filters, makeCtx } from "./types";
 
 const f: Filters = {
@@ -43,14 +43,10 @@ type Dot = {
 	gops: number | null;
 	ratio: number;
 	pct: number;
+	text: string;
 };
 const marksData = (spec: ReturnType<typeof gpuKernels>, i: number) =>
 	(spec?.marks?.[i] as { data: Dot[] } | undefined)?.data ?? [];
-
-test("the GPU tab is present only with metal rows", () => {
-	expect(hasGpu(f32)).toBe(true);
-	expect(hasGpu(f32.filter((r) => r.backend !== "metal"))).toBe(false);
-});
 
 test("no GPU chart builds without metal rows", () => {
 	const cpu = f32.filter((r) => r.backend !== "metal");
@@ -122,6 +118,26 @@ test("a size the counterpart never ran contributes no point, never NaN", () => {
 	const dots = marksData(gpuEqualEffort(noAmxAt512, f, makeCtx(noAmxAt512)), 2);
 	expect(dots.some((d) => d.kernel === "mps" && d.n === 512)).toBe(false);
 	expect(dots.every((d) => Number.isFinite(d.ratio))).toBe(true);
+});
+
+test("end labels that would overlap on the log axis share one line of text", () => {
+	// f32 at N=4096: metal-naive 1.68× and mps 1.60× land a few pixels apart.
+	const converging: Row[] = [
+		...f32,
+		gpu("metal-naive", 4096, 261, 1, 0.99),
+		gpu("metal-tiled", 4096, 541, 1, 0.96),
+		gpu("mps", 4096, 3558, 1, 0.88),
+		row({ kernel: "rayon-ikj", n: 4096, threads: 8, gops: 155 }),
+		row({ kernel: "accelerate-blas", n: 4096, gops: 2224, backend: "amx" }),
+	];
+	const labels = marksData(
+		gpuEqualEffort(converging, f, makeCtx(converging)),
+		3,
+	);
+	expect(labels.map((d) => d.text)).toEqual([
+		"mps · metal-naive",
+		"metal-tiled",
+	]);
 });
 
 test("copy overhead is the share of end-to-end time outside the GPU dispatch", () => {

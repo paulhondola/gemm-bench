@@ -4,10 +4,6 @@ import { bestPerFamily, bestPerKernel, type Family, familyOf } from "../derive";
 import { FAMILY_INK, REFERENCE_INK } from "../palette";
 import { BASE, breakGaps, type ChartSpec, type Ctx, log2Ticks } from "./types";
 
-export function hasGpu(rows: Row[]): boolean {
-	return rows.some((r) => r.backend === "metal");
-}
-
 /**
  * The CPU family each GPU kernel is measured against at equal engineering
  * effort: vendor library against vendor library (mps against Accelerate on
@@ -199,6 +195,26 @@ export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
 
 	const present = [...new Set(points.map((p) => p.kernel))].sort();
 	const showLabels = present.length <= 4;
+
+	// Ratios of different kernels converge (f32 N=4096: metal-naive 1.68×,
+	// mps 1.60×), so end labels closer than LABEL_GAP× share one line of text
+	// instead of printing over each other.
+	// ponytail: a fixed gap assumes the axis spans ~2–3 decades, as it does on
+	// this data; derive it from the scale if labels collide again.
+	const LABEL_GAP = 1.25;
+	const labels: { n: number; ratio: number; text: string }[] = [];
+	const ends = points
+		.filter((p) => p.n === sizes[sizes.length - 1])
+		.sort((a, b) => a.ratio - b.ratio);
+	for (const p of ends) {
+		const below = labels.at(-1);
+		if (below && p.ratio / below.ratio < LABEL_GAP) {
+			below.text += ` · ${p.kernel}`;
+		} else {
+			labels.push({ n: p.n, ratio: p.ratio, text: p.kernel });
+		}
+	}
+
 	const lineData = breakGaps<RatioPoint | RatioGapPoint>(
 		points,
 		sizes,
@@ -217,7 +233,13 @@ export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
 		...BASE,
 		...(showLabels ? { marginRight: 100 } : {}),
 		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		y: { type: "log", label: "× vs CPU at equal effort", labelAnchor: "top" },
+		y: {
+			type: "log",
+			// Plain numbers: Plot's default SI format prints 0.4 as "400m".
+			tickFormat: "~g",
+			label: "× vs CPU at equal effort",
+			labelAnchor: "top",
+		},
 		color: {
 			domain: present,
 			range: present.map((k) => ctx.palette.get(k) as string),
@@ -234,18 +256,15 @@ export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
 			Plot.dot(points, { x: "n", y: "ratio", fill: "kernel", r: 4 }),
 			...(showLabels
 				? [
-						Plot.text(
-							points.filter((p) => p.n === sizes[sizes.length - 1]),
-							{
-								x: "n",
-								y: "ratio",
-								text: "kernel",
-								dx: 6,
-								textAnchor: "start",
-								fill: "#9aa1a8",
-								fontSize: 11,
-							},
-						),
+						Plot.text(labels, {
+							x: "n",
+							y: "ratio",
+							text: "text",
+							dx: 6,
+							textAnchor: "start",
+							fill: "#9aa1a8",
+							fontSize: 11,
+						}),
 					]
 				: []),
 			Plot.tip(
