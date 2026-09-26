@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { row } from "../fixtures";
+import { legendOf, plotted, pointsOf, row } from "../fixtures";
 import { blockSizeSweep } from "./blocksize";
 import { type Filters, makeCtx } from "./types";
 
@@ -41,12 +41,9 @@ test("pins n: a row at a different size does not leak into the sweep", () => {
 	];
 	const spec = blockSizeSweep(otherSize, f, makeCtx(otherSize));
 	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const line = spec.marks[0] as {
-		data: { block_size: number; kernel: string; gops: number | null }[];
-	};
 	// block_size=128 exists only at n=1024, which f.n=512 must exclude.
-	expect(line.data.some((d) => d.block_size === 128)).toBe(false);
+	expect(spec?.layout.xaxis?.tickvals).toEqual([32, 64]);
+	expect(pointsOf(spec, "tiled").some((p) => p.x === 128)).toBe(false);
 });
 
 test("takes the best result per (kernel, block_size), not an arbitrary thread row", () => {
@@ -56,13 +53,10 @@ test("takes the best result per (kernel, block_size), not an arbitrary thread ro
 		row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 95, block_size: 64 }),
 	];
 	const spec = blockSizeSweep(withThreads, f, makeCtx(withThreads));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const dot = spec.marks[1] as { data: { block_size: number; gops: number }[] };
-	const at32 = dot.data.find((d) => d.block_size === 32);
+	const at32 = pointsOf(spec, "rayon-ikj").find((p) => p.x === 32);
 	// 90 is the best of the two threads=1/threads=4 rows at block_size=32;
 	// a bug that pinned threads instead of taking the max would report 10.
-	expect(at32?.gops).toBe(90);
+	expect(at32?.y).toBe(90);
 });
 
 test("a kernel missing a block size gets an explicit gap, not a line straight through it", () => {
@@ -78,12 +72,8 @@ test("a kernel missing a block size gets an explicit gap, not a line straight th
 	];
 	const spec = blockSizeSweep(ragged, f, makeCtx(ragged));
 	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const line = spec.marks[0] as {
-		data: { kernel: string; block_size: number; gops: number | null }[];
-	};
-	const gap = line.data.find((d) => d.kernel === "ikj" && d.block_size === 64);
-	expect(gap?.gops).toBeNull();
+	const gap = pointsOf(spec, "ikj").find((p) => p.x === 64);
+	expect(gap?.y).toBeNull();
 });
 
 test("a kernel with only one block size is excluded, even at a dominant gops", () => {
@@ -96,14 +86,11 @@ test("a kernel with only one block size is excluded, even at a dominant gops", (
 	];
 	const spec = blockSizeSweep(withDominant, f, makeCtx(withDominant));
 	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const dot = spec.marks[1] as { data: { kernel: string; gops: number }[] };
-	expect(dot.data.some((d) => d.kernel === "mps")).toBe(false);
-	const maxPlotted = Math.max(...dot.data.map((d) => d.gops));
+	const maxPlotted = Math.max(...plotted(spec).map((p) => Number(p.y)));
 	// 660 (mps) must not leak into the plotted range; the swept kernels top
 	// out at tiled's 50.
 	expect(maxPlotted).toBe(50);
-	expect(spec.color?.domain).not.toContain("mps");
+	expect(legendOf(spec).names).not.toContain("mps");
 });
 
 test("the legend lists only the kernels actually plotted", () => {
@@ -125,10 +112,9 @@ test("the legend lists only the kernels actually plotted", () => {
 		f,
 		makeCtx(withUnplottedKernel),
 	);
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	expect(spec.color?.domain).toEqual(expect.arrayContaining(["tiled", "ikj"]));
-	expect(spec.color?.domain).toHaveLength(2);
+	const { names } = legendOf(spec);
+	expect(names).toEqual(expect.arrayContaining(["tiled", "ikj"]));
+	expect(names).toHaveLength(2);
 });
 
 test("a row without a block size is never plotted", () => {
@@ -140,9 +126,7 @@ test("a row without a block size is never plotted", () => {
 	];
 	const spec = blockSizeSweep(withNull, f, makeCtx(withNull));
 	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const dot = spec.marks[1] as { data: { block_size: number }[] };
-	expect(dot.data.every((d) => d.block_size > 0)).toBe(true);
+	expect(plotted(spec).every((p) => Number(p.x) > 0)).toBe(true);
 });
 
 test("a kernel with old @64 and new null rows is still excluded as single-block-size", () => {
@@ -166,7 +150,5 @@ test("a kernel with old @64 and new null rows is still excluded as single-block-
 	];
 	const spec = blockSizeSweep(mixedOldAndNew, f, makeCtx(mixedOldAndNew));
 	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const dot = spec.marks[1] as { data: { kernel: string }[] };
-	expect(dot.data.some((d) => d.kernel === "mps")).toBe(false);
+	expect(legendOf(spec).names).not.toContain("mps");
 });

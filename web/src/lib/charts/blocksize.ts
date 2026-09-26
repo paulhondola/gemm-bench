@@ -1,8 +1,14 @@
-import * as Plot from "@observablehq/plot";
-import { BASE, breakGaps, log2Ticks, type PlotChartSpec } from "./types";
+import {
+	AXIS,
+	BASE_LAYOUT,
+	type ChartSpec,
+	LABELLED_MARGIN,
+	lineTraces,
+	log2Axis,
+	log2Ticks,
+} from "./types";
 
 type BlockPoint = { block_size: number; kernel: string; gops: number };
-type BlockGapPoint = { block_size: number; kernel: string; gops: null };
 
 /**
  * One line per kernel: x is block size, so the best (kernel, block_size)
@@ -10,7 +16,7 @@ type BlockGapPoint = { block_size: number; kernel: string; gops: null };
  * takes each kernel's best across threads, only here threads AND n are both
  * pinned by the caller's row scoping / f.n filter.
  */
-export const blockSizeSweep: PlotChartSpec = (rows, f, ctx) => {
+export const blockSizeSweep: ChartSpec = (rows, f, ctx) => {
 	// ctx.singleBlockSize is the same predicate rowsForTab uses to *keep* a
 	// one-block-size kernel (e.g. mps) visible on pinned tabs — there it's a
 	// valid measurement to show. Here it's the opposite: a kernel with nothing
@@ -46,65 +52,27 @@ export const blockSizeSweep: PlotChartSpec = (rows, f, ctx) => {
 	const present = [...new Set(points.map((p) => p.kernel))];
 	const showLabels = present.length <= 4;
 
-	// Plot draws a line straight through a block size a kernel has no row for;
-	// break it instead of implying a measurement nobody took.
-	const lineData = breakGaps<BlockPoint | BlockGapPoint>(
-		points,
-		sizes,
-		(p) => p.block_size,
-		(p) => p.kernel,
-		(kernel, block_size) => ({ block_size, kernel, gops: null }),
-	);
-
 	return {
-		...BASE,
-		...(showLabels ? { marginRight: 100 } : {}),
-		x: {
-			type: "log",
-			base: 2,
-			ticks: sizes,
-			tickFormat: String,
-			label: "Block size",
+		data: lineTraces(
+			points.map((p) => ({
+				series: p.kernel,
+				x: p.block_size,
+				y: p.gops,
+				custom: [],
+			})),
+			{
+				order: present,
+				color: (k) => ctx.palette.get(k) as string,
+				xs: sizes,
+				labels: showLabels,
+				hovertemplate: "<b>%{y:.1f} GOP/s</b>  %{fullData.name}<extra></extra>",
+			},
+		),
+		layout: {
+			...BASE_LAYOUT,
+			...(showLabels ? { margin: LABELLED_MARGIN } : {}),
+			xaxis: log2Axis(sizes, "Block size"),
+			yaxis: { ...AXIS, type: "linear", title: { text: "GOP/s" } },
 		},
-		y: { type: "linear", label: "GOP/s", labelAnchor: "top" },
-		color: {
-			domain: present,
-			range: present.map((k) => ctx.palette.get(k) as string),
-			legend: true,
-		},
-		marks: [
-			Plot.line(lineData, {
-				x: "block_size",
-				y: "gops",
-				stroke: "kernel",
-				strokeWidth: 2,
-			}),
-			Plot.dot(points, { x: "block_size", y: "gops", fill: "kernel", r: 4 }),
-			...(showLabels
-				? [
-						Plot.text(
-							points.filter((p) => p.block_size === sizes[sizes.length - 1]),
-							{
-								x: "block_size",
-								y: "gops",
-								text: "kernel",
-								dx: 6,
-								textAnchor: "start",
-								fill: "#9aa1a8",
-								fontSize: 11,
-							},
-						),
-					]
-				: []),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "block_size",
-					y: "gops",
-					title: (d: { kernel: string; gops: number }) =>
-						`${d.kernel}\n${d.gops.toFixed(1)} GOP/s`,
-				}),
-			),
-		],
 	};
 };
