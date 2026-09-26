@@ -1,13 +1,17 @@
-import * as Plot from "@observablehq/plot";
 import type { Row } from "../db";
 import { bestPerFamily, bestPerKernel, type Family, familyOf } from "../derive";
 import { FAMILY_INK, REFERENCE_INK } from "../palette";
 import {
-	BASE,
-	breakGaps,
+	AXIS,
+	BASE_LAYOUT,
+	type ChartSpec,
 	type Ctx,
+	LABEL_INK,
+	LABELLED_MARGIN,
+	lineTraces,
+	log2Axis,
 	log2Ticks,
-	type PlotChartSpec,
+	type SeriesPoint,
 } from "./types";
 
 /**
@@ -35,13 +39,6 @@ type Point = {
 	kernel: string;
 	threads: number;
 	gops: number;
-};
-type GapPoint = {
-	n: number;
-	series: string;
-	kernel: null;
-	threads: null;
-	gops: null;
 };
 
 const toPoint = (series: string, r: Row): Point => ({
@@ -76,7 +73,7 @@ function familyBest(rows: Row[], ctx: Ctx, family: Family): Map<number, Row> {
  * GPU rows carry end-to-end timings, the same host-to-host scope as the CPU
  * rows, so every line is solid.
  */
-export const gpuKernels: PlotChartSpec = (rows, _f, ctx) => {
+export const gpuKernels: ChartSpec = (rows, _f, ctx) => {
 	const kernelPoints = gpuPoints(rows, ctx);
 	if (!kernelPoints.length) return null;
 	const referencePoints = REFERENCES.flatMap(({ family, label }) =>
@@ -92,65 +89,38 @@ export const gpuKernels: PlotChartSpec = (rows, _f, ctx) => {
 	const references = REFERENCES.filter(({ label }) =>
 		referencePoints.some((p) => p.series === label),
 	);
-	const present = [...kernels, ...references.map((r) => r.label)];
-	const range = [
-		...kernels.map((k) => ctx.palette.get(k) as string),
-		...references.map((r) => FAMILY_INK[r.family]),
-	];
-	const showLabels = present.length <= 4;
-
-	// Plot draws a line straight through a size a series has no row for;
-	// break it instead of implying a measurement nobody took.
-	const lineData = breakGaps<Point | GapPoint>(
-		points,
-		sizes,
-		(p) => p.n,
-		(p) => p.series,
-		(series, n) => ({ n, series, kernel: null, threads: null, gops: null }),
-	);
+	const ink = new Map([
+		...kernels.map((k) => [k, ctx.palette.get(k) as string] as const),
+		...references.map((r) => [r.label, FAMILY_INK[r.family]] as const),
+	]);
+	const order = [...ink.keys()];
+	const showLabels = order.length <= 4;
 
 	return {
-		...BASE,
-		...(showLabels ? { marginRight: 100 } : {}),
-		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		y: { type: "log", label: "GOP/s", labelAnchor: "top" },
-		color: { domain: present, range, legend: true },
-		marks: [
-			Plot.line(lineData, {
-				x: "n",
-				y: "gops",
-				stroke: "series",
-				strokeWidth: 2,
-			}),
-			Plot.dot(points, { x: "n", y: "gops", fill: "series", r: 4 }),
-			...(showLabels
-				? [
-						Plot.text(
-							points.filter((p) => p.n === sizes[sizes.length - 1]),
-							{
-								x: "n",
-								y: "gops",
-								text: "series",
-								dx: 6,
-								textAnchor: "start",
-								fill: "#9aa1a8",
-								fontSize: 11,
-							},
-						),
-					]
-				: []),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "n",
-					y: "gops",
-					title: (d: Point) =>
-						d.series === d.kernel
-							? `${d.kernel}\n${d.gops.toFixed(1)} GOP/s`
-							: `${d.series}: ${d.kernel} · ${d.threads}T\n${d.gops.toFixed(1)} GOP/s`,
-				}),
-			),
-		],
+		data: lineTraces(
+			points.map((p) => ({
+				series: p.series,
+				x: p.n,
+				y: p.gops,
+				// A reference line names the kernel and thread count behind each
+				// point; a GPU kernel's own line already is that kernel.
+				custom: [p.series === p.kernel ? "" : ` · ${p.kernel} · ${p.threads}T`],
+			})),
+			{
+				order,
+				color: (s) => ink.get(s) as string,
+				xs: sizes,
+				labels: showLabels,
+				hovertemplate:
+					"<b>%{y:.1f} GOP/s</b>  %{fullData.name}%{customdata[0]}<extra></extra>",
+			},
+		),
+		layout: {
+			...BASE_LAYOUT,
+			...(showLabels ? { margin: LABELLED_MARGIN } : {}),
+			xaxis: log2Axis(sizes, "N"),
+			yaxis: { ...AXIS, type: "log", title: { text: "GOP/s" } },
+		},
 	};
 };
 
@@ -161,19 +131,12 @@ type RatioPoint = {
 	threads: number;
 	ratio: number;
 };
-type RatioGapPoint = {
-	n: number;
-	kernel: string;
-	counterpart: null;
-	threads: null;
-	ratio: null;
-};
 
 /**
  * Each GPU kernel divided by the best row of its COUNTERPART family at the
  * same size: where the GPU wins for the same engineering effort.
  */
-export const gpuEqualEffort: PlotChartSpec = (rows, _f, ctx) => {
+export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
 	const kernelPoints = gpuPoints(rows, ctx);
 	const best = new Map(
 		[...new Set(kernelPoints.map((p) => counterpartOf(p.kernel)))].map(
@@ -221,83 +184,84 @@ export const gpuEqualEffort: PlotChartSpec = (rows, _f, ctx) => {
 		}
 	}
 
-	const lineData = breakGaps<RatioPoint | RatioGapPoint>(
-		points,
-		sizes,
-		(p) => p.n,
-		(p) => p.kernel,
-		(kernel, n) => ({
-			n,
-			kernel,
-			counterpart: null,
-			threads: null,
-			ratio: null,
-		}),
+	const lines = lineTraces(
+		points.map(
+			(p): SeriesPoint => ({
+				series: p.kernel,
+				x: p.n,
+				y: p.ratio,
+				custom: [p.counterpart, p.threads],
+			}),
+		),
+		{
+			order: present,
+			color: (k) => ctx.palette.get(k) as string,
+			xs: sizes,
+			hovertemplate:
+				"<b>%{y:.2f}×</b>  %{fullData.name} ÷ %{customdata[0]} · %{customdata[1]}T<extra></extra>",
+		},
 	);
 
 	return {
-		...BASE,
-		...(showLabels ? { marginRight: 100 } : {}),
-		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		y: {
-			type: "log",
-			// Plain numbers: Plot's default SI format prints 0.4 as "400m".
-			tickFormat: "~g",
-			label: "× vs CPU at equal effort",
-			labelAnchor: "top",
-		},
-		color: {
-			domain: present,
-			range: present.map((k) => ctx.palette.get(k) as string),
-			legend: true,
-		},
-		marks: [
-			Plot.ruleY([1], { stroke: REFERENCE_INK, strokeDasharray: "5 5" }),
-			Plot.line(lineData, {
-				x: "n",
-				y: "ratio",
-				stroke: "kernel",
-				strokeWidth: 2,
-			}),
-			Plot.dot(points, { x: "n", y: "ratio", fill: "kernel", r: 4 }),
+		data: [
+			...lines,
+			// The end labels ride in their own text-only trace: a merged label
+			// names two kernels, so it cannot belong to either one's line.
 			...(showLabels
 				? [
-						Plot.text(labels, {
-							x: "n",
-							y: "ratio",
-							text: "text",
-							dx: 6,
-							textAnchor: "start",
-							fill: "#9aa1a8",
-							fontSize: 11,
-						}),
+						{
+							type: "scatter" as const,
+							mode: "text",
+							uid: "labels",
+							showlegend: false,
+							hoverinfo: "skip" as const,
+							cliponaxis: false,
+							x: labels.map((l) => l.n),
+							y: labels.map((l) => l.ratio),
+							text: labels.map((l) => l.text),
+							textposition: "middle right" as const,
+							textfont: { color: LABEL_INK, size: 11 },
+						},
 					]
 				: []),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "n",
-					y: "ratio",
-					title: (d: RatioPoint) =>
-						`${d.kernel} ÷ ${d.counterpart} · ${d.threads}T\n${d.ratio.toFixed(2)}×`,
-				}),
-			),
 		],
+		layout: {
+			...BASE_LAYOUT,
+			...(showLabels ? { margin: LABELLED_MARGIN } : {}),
+			xaxis: log2Axis(sizes, "N"),
+			yaxis: {
+				...AXIS,
+				type: "log",
+				// Plain numbers: 0.4, never 400m.
+				tickformat: "~g",
+				title: { text: "× vs CPU at equal effort" },
+			},
+			// Ratio 1.0, where the GPU starts to win: a shape, so no legend entry
+			// or hover. Shape y is in data units even on a log axis.
+			shapes: [
+				{
+					type: "line",
+					xref: "paper",
+					x0: 0,
+					x1: 1,
+					y0: 1,
+					y1: 1,
+					line: { color: REFERENCE_INK, dash: "dash", width: 1.5 },
+				},
+			],
+		},
 	};
 };
-
-type OverheadPoint = { n: number; kernel: string; pct: number };
-type OverheadGapPoint = { n: number; kernel: string; pct: null };
 
 /**
  * The share of end-to-end time spent outside the GPU dispatch: copying the
  * inputs in, encoding, and copying the result out. Copies grow as N² and
  * arithmetic as N³, so the share falls at large sizes.
  */
-export const gpuCopyOverhead: PlotChartSpec = (rows, _f, ctx) => {
+export const gpuCopyOverhead: ChartSpec = (rows, _f, ctx) => {
 	// The same best-per-(kernel, n) rows the kernel chart plots. A row with no
 	// GPU-only twin (gpu_ms null) has nothing to subtract, so it is skipped.
-	const points: OverheadPoint[] = bestPerKernel(rows)
+	const points: SeriesPoint[] = bestPerKernel(rows)
 		.filter(
 			(r) =>
 				familyOf(r, ctx.family) === "gpu" &&
@@ -305,75 +269,39 @@ export const gpuCopyOverhead: PlotChartSpec = (rows, _f, ctx) => {
 				ctx.palette.has(String(r.kernel)),
 		)
 		.map((r) => ({
-			n: Number(r.n),
-			kernel: String(r.kernel),
-			pct:
-				((Number(r.median_ms) - Number(r.gpu_ms)) / Number(r.median_ms)) * 100,
+			series: String(r.kernel),
+			x: Number(r.n),
+			y: ((Number(r.median_ms) - Number(r.gpu_ms)) / Number(r.median_ms)) * 100,
+			custom: [],
 		}))
-		.filter((p) => Number.isFinite(p.pct));
-	const sizes = log2Ticks(points.map((p) => p.n));
+		.filter((p) => Number.isFinite(p.y));
+	const sizes = log2Ticks(points.map((p) => p.x));
 	if (sizes.length < 2) return null;
 
-	const present = [...new Set(points.map((p) => p.kernel))].sort();
+	const present = [...new Set(points.map((p) => p.series))].sort();
 	const showLabels = present.length <= 4;
-	const lineData = breakGaps<OverheadPoint | OverheadGapPoint>(
-		points,
-		sizes,
-		(p) => p.n,
-		(p) => p.kernel,
-		(kernel, n) => ({ n, kernel, pct: null }),
-	);
 
 	return {
-		...BASE,
-		...(showLabels ? { marginRight: 100 } : {}),
-		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		// Includes 0 so the share reads against a true baseline, but is never
-		// clamped there: a negative share in contributed data stays visible.
-		y: {
-			type: "linear",
-			zero: true,
-			label: "% of end-to-end time",
-			labelAnchor: "top",
+		data: lineTraces(points, {
+			order: present,
+			color: (k) => ctx.palette.get(k) as string,
+			xs: sizes,
+			labels: showLabels,
+			hovertemplate:
+				"<b>%{y:.1f}%</b> copies + encoding  %{fullData.name}<extra></extra>",
+		}),
+		layout: {
+			...BASE_LAYOUT,
+			...(showLabels ? { margin: LABELLED_MARGIN } : {}),
+			xaxis: log2Axis(sizes, "N"),
+			// Includes 0 so the share reads against a true baseline, but is never
+			// clamped there: a negative share in contributed data stays visible.
+			yaxis: {
+				...AXIS,
+				type: "linear",
+				rangemode: "tozero",
+				title: { text: "% of end-to-end time" },
+			},
 		},
-		color: {
-			domain: present,
-			range: present.map((k) => ctx.palette.get(k) as string),
-			legend: true,
-		},
-		marks: [
-			Plot.line(lineData, {
-				x: "n",
-				y: "pct",
-				stroke: "kernel",
-				strokeWidth: 2,
-			}),
-			Plot.dot(points, { x: "n", y: "pct", fill: "kernel", r: 4 }),
-			...(showLabels
-				? [
-						Plot.text(
-							points.filter((p) => p.n === sizes[sizes.length - 1]),
-							{
-								x: "n",
-								y: "pct",
-								text: "kernel",
-								dx: 6,
-								textAnchor: "start",
-								fill: "#9aa1a8",
-								fontSize: 11,
-							},
-						),
-					]
-				: []),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "n",
-					y: "pct",
-					title: (d: OverheadPoint) =>
-						`${d.kernel}\n${d.pct.toFixed(1)}% copies + encoding`,
-				}),
-			),
-		],
 	};
 };
