@@ -1,4 +1,4 @@
-import * as Plot from "@observablehq/plot";
+import type { ScatterData } from "plotly.js-dist-min";
 import type { Row } from "../db";
 import {
 	BASELINE_KERNEL,
@@ -11,36 +11,17 @@ import {
 import { FAMILY_INK, FAMILY_ORDER } from "../palette";
 import {
 	AXIS,
-	BASE,
 	BASE_LAYOUT,
-	breakGaps,
 	type ChartSpec,
 	type Ctx,
+	type Figure,
 	LABELLED_MARGIN,
 	lineTraces,
 	log2Axis,
 	log2Ticks,
-	type PlotChartSpec,
-	type PlotSpec,
 	type SeriesPoint,
+	uidOf,
 } from "./types";
-
-type SizePoint = {
-	n: number;
-	kernel: string;
-	threads: number;
-	lo: number;
-	hi: number;
-	y: number;
-};
-type SizeGapPoint = {
-	n: number;
-	kernel: string;
-	threads: null;
-	lo: null;
-	hi: null;
-	y: null;
-};
 
 /** Without a naive-ijk row there is no denominator, so the toggle is hidden. */
 export function canShowSpeedup(rows: Row[]): boolean {
@@ -55,7 +36,56 @@ function baselineAt(rows: Row[]): Map<number, number> {
 	return out;
 }
 
-function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
+type SizePoint = SeriesPoint & { lo: number; hi: number };
+
+/**
+ * One kernel's ±1 stddev band. fill "toself" closes each null-separated run
+ * of consecutive sizes on its own, so the band breaks at a missing size
+ * exactly where the line does. It shares the line's legend group, so hiding
+ * the kernel hides both.
+ */
+function band(
+	kernel: string,
+	color: string,
+	sizes: number[],
+	points: SizePoint[],
+): Partial<ScatterData> {
+	const at = new Map(
+		points.filter((p) => p.series === kernel).map((p) => [p.x, p]),
+	);
+	const x: (number | null)[] = [];
+	const y: (number | null)[] = [];
+	let run: SizePoint[] = [];
+	const close = () => {
+		if (run.length) {
+			const back = [...run].reverse();
+			x.push(...run.map((p) => p.x), ...back.map((p) => p.x), null);
+			y.push(...run.map((p) => p.hi), ...back.map((p) => p.lo), null);
+		}
+		run = [];
+	};
+	for (const n of sizes) {
+		const p = at.get(n);
+		if (p) run.push(p);
+		else close();
+	}
+	close();
+	return {
+		type: "scatter",
+		mode: "none",
+		uid: `band-${uidOf(kernel)}`,
+		legendgroup: kernel,
+		showlegend: false,
+		hoverinfo: "skip",
+		x,
+		y,
+		fill: "toself",
+		// 26 hex is 15% alpha, the old band's fillOpacity.
+		fillcolor: `${color}26`,
+	};
+}
+
+function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): Figure | null {
 	const best = bestPerKernel(rows).filter((r) =>
 		ctx.palette.has(String(r.kernel)),
 	);
@@ -63,11 +93,11 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 	if (sizes.length < 2) return null;
 
 	const base = baselineAt(best);
-	const points = best
+	const points: SizePoint[] = best
 		.map((r) => ({
-			n: Number(r.n),
-			kernel: String(r.kernel),
-			threads: Number(r.threads),
+			series: String(r.kernel),
+			x: Number(r.n),
+			custom: [Number(r.threads)],
 			// gops is 2N^3/median_ms, so the band is that value at median±stddev.
 			lo:
 				Number(r.gops) *
@@ -95,79 +125,35 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
 	// legend never lists a kernel this chart doesn't draw. ctx.palette is still
 	// the hue lookup, so a kernel keeps its colour regardless of who else is
 	// present.
-	const present = [...new Set(points.map((p) => p.kernel))];
+	const present = [...new Set(points.map((p) => p.series))];
+	const color = (kernel: string) => ctx.palette.get(kernel) as string;
 	// Direct labels in addition to the legend, but only when there are few
 	// enough series to read them — the headline chart can carry up to 8.
 	const showLabels = present.length <= 4;
+	const unit = relative ? "×" : " GOP/s";
 
-	// Plot draws a line/band straight through a size a kernel has no row for;
-	// break both instead of implying a measurement nobody took.
-	const lineData = breakGaps<SizePoint | SizeGapPoint>(
-		points,
-		sizes,
-		(p) => p.n,
-		(p) => p.kernel,
-		(kernel, n) => ({ n, kernel, threads: null, lo: null, hi: null, y: null }),
-	);
+	const lines = lineTraces(points, {
+		order: present,
+		color,
+		xs: sizes,
+		labels: showLabels,
+		hovertemplate: `<b>%{y:.1f}${unit}</b>  %{fullData.name} · %{customdata[0]}T<extra></extra>`,
+	});
 	return {
-		...BASE,
-		...(showLabels ? { marginRight: 100 } : {}),
-		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		y: {
-			type: "log",
-			label: relative ? "× vs naive-ijk" : "GOP/s",
-			labelAnchor: "top",
+		// Bands first, so every line draws over every band.
+		data: relative
+			? lines
+			: [...present.map((k) => band(k, color(k), sizes, points)), ...lines],
+		layout: {
+			...BASE_LAYOUT,
+			...(showLabels ? { margin: LABELLED_MARGIN } : {}),
+			xaxis: log2Axis(sizes, "N"),
+			yaxis: {
+				...AXIS,
+				type: "log",
+				title: { text: relative ? "× vs naive-ijk" : "GOP/s" },
+			},
 		},
-		color: {
-			domain: present,
-			range: present.map((k) => ctx.palette.get(k) as string),
-			legend: true,
-		},
-		marks: [
-			...(relative
-				? []
-				: [
-						Plot.areaY(lineData, {
-							x: "n",
-							y1: "lo",
-							y2: "hi",
-							fill: "kernel",
-							fillOpacity: 0.15,
-						}),
-					]),
-			Plot.line(lineData, {
-				x: "n",
-				y: "y",
-				stroke: "kernel",
-				strokeWidth: 2,
-			}),
-			Plot.dot(points, { x: "n", y: "y", fill: "kernel", r: 4 }),
-			...(showLabels
-				? [
-						Plot.text(
-							points.filter((p) => p.n === sizes[sizes.length - 1]),
-							{
-								x: "n",
-								y: "y",
-								text: "kernel",
-								dx: 6,
-								textAnchor: "start",
-								fill: "#9aa1a8",
-								fontSize: 11,
-							},
-						),
-					]
-				: []),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "n",
-					y: "y",
-					title: (d: { kernel: string; threads: number; y: number }) =>
-						`${d.kernel} · ${d.threads}T\n${d.y.toFixed(1)}`,
-				}),
-			),
-		],
 	};
 }
 
@@ -176,12 +162,12 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
  * GPU tab and folded into the Overview's family lines: a chart never draws
  * kernels from both colour groups.
  */
-export const throughputVsSize: PlotChartSpec = (rows, f, ctx) => {
+export const throughputVsSize: ChartSpec = (rows, f, ctx) => {
 	const host = rows.filter((r) => familyOf(r, ctx.family) !== "gpu");
 	return sizeSeries(host, ctx, f.relative && canShowSpeedup(host));
 };
 
-export const serialOnly: PlotChartSpec = (rows, _f, ctx) =>
+export const serialOnly: ChartSpec = (rows, _f, ctx) =>
 	sizeSeries(
 		rows.filter((r) => ctx.family.get(String(r.kernel)) === "serial"),
 		ctx,

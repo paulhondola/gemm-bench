@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { legendOf, pointsOf, row } from "../fixtures";
+import { legendOf, plotted, pointsOf, row } from "../fixtures";
 import {
 	canShowSpeedup,
 	fastestPerSize,
@@ -66,21 +66,14 @@ test("the legend lists only the kernels plotted, not the whole palette", () => {
 	// serialOnly is fed only naive-ijk rows here, so rayon-ikj (present
 	// elsewhere in the palette) must not appear in the legend domain.
 	const spec = serialOnly(rows, f, makeCtx(rows));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	expect(spec.color?.domain).toEqual(["naive-ijk"]);
+	expect(legendOf(spec).names).toEqual(["naive-ijk"]);
 });
 
 test("serialOnly drops the parallel kernels", () => {
 	const spec = serialOnly(rows, f, makeCtx(rows));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	// Assert on the plotted points, not on the whole spec: color.domain always
-	// lists every kernel in the dataset so that filtering cannot repaint.
-	const plotted = new Set(
-		(spec.marks[0] as { data: { kernel: string }[] }).data.map((d) => d.kernel),
+	expect(new Set(plotted(spec).map((p) => p.series))).toEqual(
+		new Set(["naive-ijk"]),
 	);
-	expect(plotted).toEqual(new Set(["naive-ijk"]));
 });
 
 test("a kernel missing a row at one size gets an explicit gap, not a line straight through it", () => {
@@ -106,17 +99,18 @@ test("a kernel missing a row at one size gets an explicit gap, not a line straig
 	];
 	const spec = throughputVsSize(ragged, f, makeCtx(ragged));
 	expect(spec).not.toBeNull();
-	if (!spec) return;
-	// marks[0] is Plot.areaY(lineData, ...) and marks[1] is Plot.line(lineData,
-	// ...) — confirmed by introspecting spec.marks[i].data for this exact
-	// fixture: both index 0 and 1 carried the gap-filled data (a
-	// threads/lo/hi/y: null entry for ikj at n=128); index 2 (dot) and index 3
-	// (tip) carried only the real points.
-	const line = spec.marks[1] as {
-		data: { kernel: string; n: number; y: number | null }[];
-	};
-	const gap = line.data.find((d) => d.kernel === "ikj" && d.n === 128);
+	const gap = pointsOf(spec, "ikj").find((p) => p.x === 128);
 	expect(gap?.y).toBeNull();
+	// The band breaks there too: one closed shape per run of sizes, each run
+	// followed by the null that separates it from the next.
+	const band = spec?.data.find((t) => t.uid === "band-ikj");
+	expect(band?.x).toEqual([64, 64, null, 256, 256, null]);
+});
+
+test("the relative projection draws no stddev band", () => {
+	const spec = throughputVsSize(rows, { ...f, relative: true }, makeCtx(rows));
+	expect(spec?.data.some((t) => t.uid?.startsWith("band-"))).toBe(false);
+	expect(pointsOf(spec, "rayon-ikj").map((p) => p.y)).toEqual([15, 30]);
 });
 
 test("the stddev band stays finite when stddev exceeds the median", () => {
@@ -125,12 +119,14 @@ test("the stddev band stays finite when stddev exceeds the median", () => {
 		row({ kernel: "ikj", n: 128, gops: 25, median_ms: 1, stddev_ms: 0.01 }),
 	];
 	const spec = throughputVsSize(noisy, f, makeCtx(noisy));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const band = (spec.marks[0] as { data: { hi: number }[] }).data;
-	for (const point of band) {
-		expect(Number.isFinite(point.hi)).toBe(true);
-		expect(point.hi).toBeLessThan(100);
+	const band = spec?.data.find((t) => t.uid === "band-ikj");
+	const edges = ((band?.y ?? []) as (number | null)[]).filter(
+		(y) => y !== null,
+	);
+	expect(edges).toHaveLength(4);
+	for (const y of edges) {
+		expect(Number.isFinite(y)).toBe(true);
+		expect(y).toBeLessThan(100);
 	}
 });
 
@@ -185,9 +181,10 @@ test("fastest-per-size cells are filled by family, so every winner has a colour"
 
 test("the CPU & AMX size chart never draws a GPU kernel", () => {
 	const spec = throughputVsSize(acrossFamilies, f, makeCtx(acrossFamilies));
-	expect(spec?.color?.domain).toEqual(
+	const { names } = legendOf(spec);
+	expect(names).toEqual(
 		expect.arrayContaining(["ikj", "rayon-ikj", "accelerate-blas"]),
 	);
-	expect(spec?.color?.domain).not.toContain("mps");
-	expect(spec?.color?.domain).not.toContain("metal-tiled");
+	expect(names).not.toContain("mps");
+	expect(names).not.toContain("metal-tiled");
 });
