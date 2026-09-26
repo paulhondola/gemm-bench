@@ -27,3 +27,8 @@ WHERE kernel IS NULL OR backend IS NULL OR device IS NULL OR precision IS NULL
    OR median_ms IS NULL OR min_ms IS NULL OR stddev_ms IS NULL OR repetitions IS NULL
    OR host IS NULL OR commit IS NULL OR "timestamp" IS NULL
 HAVING count(*) > 0;
+
+COPY (
+  SELECT * EXCLUDE (filename) FROM runs
+  ORDER BY host, "timestamp", precision, kernel, n, threads, block_size, repetitions
+) TO 'web/public/results.parquet' (FORMAT parquet, COMPRESSION zstd);
