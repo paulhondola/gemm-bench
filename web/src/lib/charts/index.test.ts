@@ -372,3 +372,11 @@ test("the Precision tab is a family view pinned only by size", () => {
 	expect(precision?.controls).toEqual(["n"]);
 	expect(precision?.inertBlockSize).toBe(true);
 });
+
+test("panel titles are unique across all tabs", () => {
+	// App.svelte keys the panel loop by title and Chart.svelte uses it as
+	// legend.uirevision, so two panels sharing a title would cross-pollinate
+	// each other's Svelte keying and Plotly zoom/legend state.
+	const titles = TABS.flatMap((t) => t.panels.map((p) => p.title));
+	expect(new Set(titles).size).toBe(titles.length);
+});

@@ -55,8 +55,8 @@ $effect(() => {
 	if (!el) return;
 	// Follows the panel, not only the window (which is all Plotly's
 	// `responsive` watches): the page scrollbar that appears once the charts
-	// load narrows every panel without a window resize. Plots.resize rejects
-	// on a div Plotly has not drawn into yet.
+	// load narrows every panel without a window resize. The guard skips a div
+	// Plotly hasn't drawn into yet, where a resize would do nothing.
 	const resize = new ResizeObserver(() => {
 		if (el.classList.contains("js-plotly-plot")) Plotly.Plots.resize(el);
 	});

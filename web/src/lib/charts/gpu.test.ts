@@ -124,7 +124,7 @@ test("end labels that would overlap on the log axis share one line of text", () 
 		row({ kernel: "accelerate-blas", n: 4096, gops: 2224, backend: "amx" }),
 	];
 	const spec = gpuEqualEffort(converging, f, makeCtx(converging));
-	const labels = spec?.data.find((t) => t.uid === "labels");
+	const labels = spec?.data.find((t) => t.uid === "labels_");
 	expect(labels?.text).toEqual(["mps · metal-naive", "metal-tiled"]);
 	expect(labels?.showlegend).toBe(false);
 });
@@ -143,4 +143,15 @@ test("a GPU row without a GPU-only twin is left out of the overhead chart", () =
 	const { names } = legendOf(gpuCopyOverhead(noTwin, f, makeCtx(noTwin)));
 	expect(names).not.toContain("mps");
 	expect(names).toContain("metal-tiled");
+});
+
+test("a single kernel plus its end labels hides the one-entry legend", () => {
+	// Only mps and its AMX counterpart survive, so the ratio chart draws one
+	// line plus the text-only labels trace — both real, but no legend worth
+	// showing for a single kernel.
+	const single = f32.filter(
+		(r) => r.kernel === "mps" || r.kernel === "accelerate-blas",
+	);
+	const spec = gpuEqualEffort(single, f, makeCtx(single));
+	expect(spec?.layout.showlegend).toBe(false);
 });

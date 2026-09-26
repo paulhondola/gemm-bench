@@ -212,7 +212,9 @@ export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
 						{
 							type: "scatter" as const,
 							mode: "text",
-							uid: "labels",
+							// "_" (odd count) can never collide with uidOf's own encoding,
+							// which always emits an even count of "_" per escaped character.
+							uid: "labels_",
 							showlegend: false,
 							hoverinfo: "skip" as const,
 							cliponaxis: false,
@@ -227,6 +229,10 @@ export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
 		],
 		layout: {
 			...BASE_LAYOUT,
+			// A single kernel's line plus the text-only labels trace (its own
+			// showlegend:false) still counts as two traces to Plotly's default, so
+			// it would otherwise draw a one-entry legend.
+			showlegend: present.length > 1,
 			...(showLabels ? { margin: LABELLED_MARGIN } : {}),
 			xaxis: log2Axis(sizes, "N"),
 			yaxis: {

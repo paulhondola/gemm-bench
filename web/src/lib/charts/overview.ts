@@ -73,7 +73,9 @@ function band(
 	return {
 		type: "scatter",
 		mode: "none",
-		uid: `band-${uidOf(kernel)}`,
+		// "_" (odd count) can never collide with uidOf's own encoding, which
+		// always emits an even count of "_" per escaped character.
+		uid: `band_${uidOf(kernel)}`,
 		legendgroup: kernel,
 		showlegend: false,
 		hoverinfo: "skip",
@@ -146,6 +148,10 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): Figure | null {
 			: [...present.map((k) => band(k, color(k), sizes, points)), ...lines],
 		layout: {
 			...BASE_LAYOUT,
+			// A band trace carries its own explicit showlegend:false, which Plotly
+			// still counts toward its "two or more traces" default, so a single
+			// kernel plus its band would otherwise draw a one-entry legend.
+			showlegend: present.length > 1,
 			...(showLabels ? { margin: LABELLED_MARGIN } : {}),
 			xaxis: log2Axis(sizes, "N"),
 			yaxis: {

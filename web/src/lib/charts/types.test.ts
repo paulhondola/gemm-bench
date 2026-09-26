@@ -89,6 +89,17 @@ test("direct labels name a series only at the last x, and only where it has a po
 	expect(b.text).toEqual(["", ""]);
 });
 
+test("without shared xs, direct labels sit at each series' own last x", () => {
+	const [a, b] = lineTraces(
+		[p("a", 1, 1), p("a", 3, 2), p("b", 1, 5), p("b", 2, 6)],
+		{ order: ["a", "b"], color: ink, labels: true, hovertemplate: "" },
+	);
+	expect(a.x).toEqual([1, 3]);
+	expect(a.text).toEqual(["", "a"]);
+	expect(b.x).toEqual([1, 2]);
+	expect(b.text).toEqual(["", "b"]);
+});
+
 test("the log2 axis ticks exactly the measured sizes, as plain integers", () => {
 	const axis = log2Axis([64, 128, 4096], "N");
 	expect(axis.type).toBe("log");

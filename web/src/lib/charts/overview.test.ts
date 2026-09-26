@@ -103,13 +103,13 @@ test("a kernel missing a row at one size gets an explicit gap, not a line straig
 	expect(gap?.y).toBeNull();
 	// The band breaks there too: one closed shape per run of sizes, each run
 	// followed by the null that separates it from the next.
-	const band = spec?.data.find((t) => t.uid === "band-ikj");
+	const band = spec?.data.find((t) => t.uid === "band_ikj");
 	expect(band?.x).toEqual([64, 64, null, 256, 256, null]);
 });
 
 test("the relative projection draws no stddev band", () => {
 	const spec = throughputVsSize(rows, { ...f, relative: true }, makeCtx(rows));
-	expect(spec?.data.some((t) => t.uid?.startsWith("band-"))).toBe(false);
+	expect(spec?.data.some((t) => t.uid?.startsWith("band_"))).toBe(false);
 	expect(pointsOf(spec, "rayon-ikj").map((p) => p.y)).toEqual([15, 30]);
 });
 
@@ -119,7 +119,7 @@ test("the stddev band stays finite when stddev exceeds the median", () => {
 		row({ kernel: "ikj", n: 128, gops: 25, median_ms: 1, stddev_ms: 0.01 }),
 	];
 	const spec = throughputVsSize(noisy, f, makeCtx(noisy));
-	const band = spec?.data.find((t) => t.uid === "band-ikj");
+	const band = spec?.data.find((t) => t.uid === "band_ikj");
 	const edges = ((band?.y ?? []) as (number | null)[]).filter(
 		(y) => y !== null,
 	);
@@ -187,4 +187,23 @@ test("the CPU & AMX size chart never draws a GPU kernel", () => {
 	);
 	expect(names).not.toContain("mps");
 	expect(names).not.toContain("metal-tiled");
+});
+
+test("a single kernel plus its band hides the one-entry legend", () => {
+	// serialOnly here draws only naive-ijk: one line plus its band, both real
+	// traces, but nothing worth a legend for.
+	const spec = serialOnly(rows, f, makeCtx(rows));
+	expect(spec?.layout.showlegend).toBe(false);
+});
+
+test("a kernel named band-<kernel> can't collide with that kernel's band uid", () => {
+	const collision: Row[] = [
+		row({ kernel: "ikj", n: 64, gops: 20, median_ms: 1, stddev_ms: 0.1 }),
+		row({ kernel: "ikj", n: 128, gops: 22, median_ms: 1, stddev_ms: 0.1 }),
+		row({ kernel: "band-ikj", n: 64, gops: 10, median_ms: 1, stddev_ms: 0.1 }),
+		row({ kernel: "band-ikj", n: 128, gops: 11, median_ms: 1, stddev_ms: 0.1 }),
+	];
+	const spec = throughputVsSize(collision, f, makeCtx(collision));
+	const uids = spec?.data.map((t) => t.uid) ?? [];
+	expect(new Set(uids).size).toBe(uids.length);
 });
