@@ -4,17 +4,25 @@ import {
 	BASELINE_KERNEL,
 	bestPerFamily,
 	bestPerKernel,
+	type Family,
 	familyOf,
 	hasKernel,
 } from "../derive";
 import { FAMILY_INK, FAMILY_ORDER } from "../palette";
 import {
+	AXIS,
 	BASE,
+	BASE_LAYOUT,
 	breakGaps,
 	type ChartSpec,
 	type Ctx,
+	LABELLED_MARGIN,
+	lineTraces,
+	log2Axis,
 	log2Ticks,
+	type PlotChartSpec,
 	type PlotSpec,
+	type SeriesPoint,
 } from "./types";
 
 type SizePoint = {
@@ -168,12 +176,12 @@ function sizeSeries(rows: Row[], ctx: Ctx, relative: boolean): PlotSpec | null {
  * GPU tab and folded into the Overview's family lines: a chart never draws
  * kernels from both colour groups.
  */
-export const throughputVsSize: ChartSpec = (rows, f, ctx) => {
+export const throughputVsSize: PlotChartSpec = (rows, f, ctx) => {
 	const host = rows.filter((r) => familyOf(r, ctx.family) !== "gpu");
 	return sizeSeries(host, ctx, f.relative && canShowSpeedup(host));
 };
 
-export const serialOnly: ChartSpec = (rows, _f, ctx) =>
+export const serialOnly: PlotChartSpec = (rows, _f, ctx) =>
 	sizeSeries(
 		rows.filter((r) => ctx.family.get(String(r.kernel)) === "serial"),
 		ctx,
@@ -185,6 +193,8 @@ export const serialOnly: ChartSpec = (rows, _f, ctx) =>
  * data, not the current view. Filled by the winner's family, not its kernel
  * slot: the winner can come from either colour group, and family ink is the
  * set validated on all pairs, since any two families can end up side by side.
+ * One bar trace per family, stacked, so each size is a single full-width
+ * cell that the legend can still name and hide by family.
  */
 export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 	const winners = new Map<number, Row>();
@@ -206,41 +216,48 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 	);
 
 	return {
-		...BASE,
-		height: 120,
-		x: { type: "band", label: "N" },
-		y: { axis: null },
-		color: {
-			domain: present,
-			range: present.map((family) => FAMILY_INK[family]),
-			legend: true,
+		data: present.map((family) => {
+			const mine = cells.filter((c) => c.family === family);
+			return {
+				type: "bar",
+				name: family,
+				uid: family,
+				x: mine.map((c) => String(c.n)),
+				y: mine.map(() => 1),
+				customdata: mine.map((c) => [c.kernel, c.gops]),
+				texttemplate: "%{customdata[0]}<br>%{customdata[1]:.0f}",
+				textposition: "inside",
+				insidetextanchor: "middle",
+				textfont: { color: "#0e1012", size: 11 },
+				marker: { color: FAMILY_INK[family] },
+				hovertemplate:
+					"<b>%{customdata[1]:.0f} GOP/s</b>  %{customdata[0]} · %{fullData.name}<extra></extra>",
+			};
+		}),
+		layout: {
+			...BASE_LAYOUT,
+			height: 160,
+			// Each cell is its own hit target; a crosshair readout is for lines.
+			hovermode: "closest",
+			barmode: "stack",
+			bargap: 0.02,
+			// Plotly reverses a stacked chart's legend by default; keep the
+			// validated family order.
+			legend: { ...BASE_LAYOUT.legend, traceorder: "normal" },
+			xaxis: {
+				...AXIS,
+				// Sizes are strings here: without "category" Plotly reads "64" as a
+				// number and draws a linear axis.
+				type: "category",
+				categoryorder: "array",
+				categoryarray: [...winners.keys()].sort((a, b) => a - b).map(String),
+				showgrid: false,
+				fixedrange: true,
+				title: { text: "N" },
+			},
+			yaxis: { ...AXIS, visible: false, range: [0, 1], fixedrange: true },
 		},
-		marks: [
-			Plot.cell(cells, { x: "n", fill: "family" }),
-			Plot.text(cells, {
-				x: "n",
-				text: (d: { kernel: string; gops: number }) =>
-					`${d.kernel}\n${d.gops.toFixed(0)}`,
-				fill: "#0e1012",
-				fontSize: 11,
-			}),
-		],
 	};
-};
-
-type FamilyPoint = {
-	n: number;
-	family: string;
-	kernel: string;
-	threads: number;
-	gops: number;
-};
-type FamilyGapPoint = {
-	n: number;
-	family: string;
-	kernel: null;
-	threads: null;
-	gops: null;
 };
 
 /**
@@ -250,70 +267,34 @@ type FamilyGapPoint = {
  * solid.
  */
 export const throughputByFamily: ChartSpec = (rows, _f, ctx) => {
-	const points: FamilyPoint[] = bestPerFamily(rows, ctx.family).map((r) => ({
-		n: Number(r.n),
-		family: familyOf(r, ctx.family),
-		kernel: String(r.kernel),
-		threads: Number(r.threads),
-		gops: Number(r.gops),
+	const points: SeriesPoint[] = bestPerFamily(rows, ctx.family).map((r) => ({
+		series: familyOf(r, ctx.family),
+		x: Number(r.n),
+		y: Number(r.gops),
+		custom: [String(r.kernel), Number(r.threads)],
 	}));
-	const sizes = log2Ticks(points.map((p) => p.n));
+	const sizes = log2Ticks(points.map((p) => p.x));
 	if (sizes.length < 2) return null;
 
-	// Plot draws a line straight through a size a family has no row for;
-	// break it instead of implying a measurement nobody took.
-	const lineData = breakGaps<FamilyPoint | FamilyGapPoint>(
-		points,
-		sizes,
-		(p) => p.n,
-		(p) => p.family,
-		(family, n) => ({ n, family, kernel: null, threads: null, gops: null }),
-	);
 	const present = FAMILY_ORDER.filter((family) =>
-		points.some((p) => p.family === family),
+		points.some((p) => p.series === family),
 	);
 
 	return {
-		...BASE,
-		// Direct labels below need room for the longest family name.
-		marginRight: 100,
-		x: { type: "log", base: 2, ticks: sizes, tickFormat: String, label: "N" },
-		y: { type: "log", label: "GOP/s", labelAnchor: "top" },
-		color: {
-			domain: present,
-			range: present.map((family) => FAMILY_INK[family]),
-			legend: true,
-		},
-		marks: [
-			Plot.line(lineData, {
-				x: "n",
-				y: "gops",
-				stroke: "family",
-				strokeWidth: 2,
-			}),
-			Plot.dot(points, { x: "n", y: "gops", fill: "family", r: 4 }),
+		data: lineTraces(points, {
+			order: present,
+			color: (family) => FAMILY_INK[family as Family],
+			xs: sizes,
 			// At most four series, so direct labels as well as the legend.
-			Plot.text(
-				points.filter((p) => p.n === sizes[sizes.length - 1]),
-				{
-					x: "n",
-					y: "gops",
-					text: "family",
-					dx: 6,
-					textAnchor: "start",
-					fill: "#9aa1a8",
-					fontSize: 11,
-				},
-			),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "n",
-					y: "gops",
-					title: (d: FamilyPoint) =>
-						`${d.family} · ${d.kernel} · ${d.threads}T\n${d.gops.toFixed(1)} GOP/s`,
-				}),
-			),
-		],
+			labels: true,
+			hovertemplate:
+				"<b>%{y:.1f} GOP/s</b>  %{fullData.name} · %{customdata[0]} · %{customdata[1]}T<extra></extra>",
+		}),
+		layout: {
+			...BASE_LAYOUT,
+			margin: LABELLED_MARGIN,
+			xaxis: log2Axis(sizes, "N"),
+			yaxis: { ...AXIS, type: "log", title: { text: "GOP/s" } },
+		},
 	};
 };

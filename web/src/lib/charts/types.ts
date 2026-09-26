@@ -64,7 +64,14 @@ export function makeCtx(allRows: Row[]): Ctx {
  * A chart that cannot be built from these rows returns null. That single
  * convention hides a panel, a projection toggle, and a whole tab.
  */
-export type ChartSpec = (rows: Row[], f: Filters, ctx: Ctx) => PlotSpec | null;
+export type ChartSpec = (rows: Row[], f: Filters, ctx: Ctx) => Figure | null;
+
+/** A chart not yet ported to Plotly. Deleted once every chart is. */
+export type PlotChartSpec = (
+	rows: Row[],
+	f: Filters,
+	ctx: Ctx,
+) => PlotSpec | null;
 
 /** Ticks at the sizes actually measured, not at Plot's chosen log decades. */
 export function log2Ticks(values: number[]): number[] {

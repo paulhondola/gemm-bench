@@ -1,5 +1,5 @@
 import * as Plot from "@observablehq/plot";
-import { BASE, breakGaps, type ChartSpec, log2Ticks } from "./types";
+import { BASE, breakGaps, log2Ticks, type PlotChartSpec } from "./types";
 
 type BlockPoint = { block_size: number; kernel: string; gops: number };
 type BlockGapPoint = { block_size: number; kernel: string; gops: null };
@@ -10,7 +10,7 @@ type BlockGapPoint = { block_size: number; kernel: string; gops: null };
  * takes each kernel's best across threads, only here threads AND n are both
  * pinned by the caller's row scoping / f.n filter.
  */
-export const blockSizeSweep: ChartSpec = (rows, f, ctx) => {
+export const blockSizeSweep: PlotChartSpec = (rows, f, ctx) => {
 	// ctx.singleBlockSize is the same predicate rowsForTab uses to *keep* a
 	// one-block-size kernel (e.g. mps) visible on pinned tabs — there it's a
 	// valid measurement to show. Here it's the opposite: a kernel with nothing

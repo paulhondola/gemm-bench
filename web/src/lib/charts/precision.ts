@@ -1,7 +1,7 @@
 import * as Plot from "@observablehq/plot";
 import { bestPerFamily, familyOf } from "../derive";
 import { FAMILY_INK, FAMILY_ORDER } from "../palette";
-import { BASE, type ChartSpec } from "./types";
+import { BASE, type PlotChartSpec } from "./types";
 
 type Bar = { precision: string; family: string; kernel: string; gops: number };
 
@@ -12,7 +12,7 @@ type Bar = { precision: string; family: string; kernel: string; gops: number };
  * on this tab: precision is the x-axis here, so filtering by it would leave
  * one group. `f.n` still pins the size.
  */
-export const throughputByPrecision: ChartSpec = (rows, f, ctx) => {
+export const throughputByPrecision: PlotChartSpec = (rows, f, ctx) => {
 	const bars: Bar[] = bestPerFamily(
 		rows.filter((r) => Number(r.n) === f.n),
 		ctx.family,

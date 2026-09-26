@@ -1,6 +1,8 @@
 <script lang="ts">
 import * as Plot from "@observablehq/plot";
-import type { PlotSpec } from "./charts/types";
+import type { Config } from "plotly.js-dist-min";
+import Plotly from "plotly.js-dist-min";
+import { escapeLabels, type Figure, type PlotSpec } from "./charts/types";
 
 let {
 	spec,
@@ -8,7 +10,7 @@ let {
 	note = "",
 	empty = "No data for this selection.",
 }: {
-	spec: PlotSpec | null;
+	spec: Figure | PlotSpec | null;
 	title: string;
 	note?: string;
 	empty?: string;
@@ -16,10 +18,64 @@ let {
 
 let host = $state<HTMLDivElement | null>(null);
 
+/**
+ * Plotly's built-ins are why the dashboard uses it: box zoom and pan,
+ * double-click to reset, legend click to hide and double-click to isolate,
+ * and an SVG download. The selection tools have nothing to act on, and the
+ * cloud-upload button, on by default since Plotly 4, would post the chart's
+ * data to cloud.plotly.com.
+ */
+const CONFIG: Partial<Config> = {
+	displaylogo: false,
+	showSendToCloud: false,
+	modeBarButtonsToRemove: ["select2d", "lasso2d"],
+};
+
+// ponytail: two renderers while the tabs move to Plotly one at a time; the
+// last task of the port deletes the Plot branch. Panels are keyed by title in
+// App.svelte, so one div never switches between them.
+const isFigure = (s: Figure | PlotSpec): s is Figure =>
+	"data" in s && "layout" in s;
+
 $effect(() => {
-	if (!host) return;
-	host.replaceChildren();
-	if (spec) host.append(Plot.plot(spec));
+	if (!host || !spec) return;
+	if (!isFigure(spec)) {
+		host.replaceChildren(Plot.plot(spec));
+		return;
+	}
+	// A copy: Plotly writes zoom state back into the layout it is handed, and
+	// charts share BASE_LAYOUT's nested objects.
+	const { data, layout } = escapeLabels(structuredClone(spec));
+	Plotly.react(
+		host,
+		data,
+		{
+			...layout,
+			// A hidden series stays hidden across filter changes (traces are
+			// matched by uid); zoom resets, since the axes may hold new data.
+			legend: { ...layout.legend, uirevision: title },
+		},
+		{ ...CONFIG, toImageButtonOptions: { format: "svg", filename: title } },
+	);
+});
+
+// Its own effect: a cleanup in the draw effect would run before every redraw
+// and throw away the zoom and legend state react preserves.
+$effect(() => {
+	const el = host;
+	if (!el) return;
+	// Follows the panel, not only the window (which is all Plotly's
+	// `responsive` watches): the page scrollbar that appears once the charts
+	// load narrows every panel without a window resize. Plots.resize rejects
+	// on a div Plotly has not drawn into yet.
+	const resize = new ResizeObserver(() => {
+		if (el.classList.contains("js-plotly-plot")) Plotly.Plots.resize(el);
+	});
+	resize.observe(el);
+	return () => {
+		resize.disconnect();
+		Plotly.purge(el);
+	};
 });
 </script>
 

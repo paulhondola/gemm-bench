@@ -2,7 +2,13 @@ import * as Plot from "@observablehq/plot";
 import type { Row } from "../db";
 import { bestPerFamily, bestPerKernel, type Family, familyOf } from "../derive";
 import { FAMILY_INK, REFERENCE_INK } from "../palette";
-import { BASE, breakGaps, type ChartSpec, type Ctx, log2Ticks } from "./types";
+import {
+	BASE,
+	breakGaps,
+	type Ctx,
+	log2Ticks,
+	type PlotChartSpec,
+} from "./types";
 
 /**
  * The CPU family each GPU kernel is measured against at equal engineering
@@ -70,7 +76,7 @@ function familyBest(rows: Row[], ctx: Ctx, family: Family): Map<number, Row> {
  * GPU rows carry end-to-end timings, the same host-to-host scope as the CPU
  * rows, so every line is solid.
  */
-export const gpuKernels: ChartSpec = (rows, _f, ctx) => {
+export const gpuKernels: PlotChartSpec = (rows, _f, ctx) => {
 	const kernelPoints = gpuPoints(rows, ctx);
 	if (!kernelPoints.length) return null;
 	const referencePoints = REFERENCES.flatMap(({ family, label }) =>
@@ -167,7 +173,7 @@ type RatioGapPoint = {
  * Each GPU kernel divided by the best row of its COUNTERPART family at the
  * same size: where the GPU wins for the same engineering effort.
  */
-export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
+export const gpuEqualEffort: PlotChartSpec = (rows, _f, ctx) => {
 	const kernelPoints = gpuPoints(rows, ctx);
 	const best = new Map(
 		[...new Set(kernelPoints.map((p) => counterpartOf(p.kernel)))].map(
@@ -288,7 +294,7 @@ type OverheadGapPoint = { n: number; kernel: string; pct: null };
  * inputs in, encoding, and copying the result out. Copies grow as N² and
  * arithmetic as N³, so the share falls at large sizes.
  */
-export const gpuCopyOverhead: ChartSpec = (rows, _f, ctx) => {
+export const gpuCopyOverhead: PlotChartSpec = (rows, _f, ctx) => {
 	// The same best-per-(kernel, n) rows the kernel chart plots. A row with no
 	// GPU-only twin (gpu_ms null) has nothing to subtract, so it is skipped.
 	const points: OverheadPoint[] = bestPerKernel(rows)

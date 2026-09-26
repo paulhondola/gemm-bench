@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { row } from "../fixtures";
+import { legendOf, pointsOf, row } from "../fixtures";
 import {
 	canShowSpeedup,
 	fastestPerSize,
@@ -148,22 +148,16 @@ const acrossFamilies: Row[] = [
 
 test("the family chart draws one line per family, in legend order and family ink", () => {
 	const spec = throughputByFamily(acrossFamilies, f, makeCtx(acrossFamilies));
-	expect(spec?.color?.domain).toEqual(["serial", "parallel", "amx", "gpu"]);
-	expect(spec?.color?.range).toEqual([
-		"#844da2",
-		"#008300",
-		"#3987e5",
-		"#e66767",
-	]);
+	expect(legendOf(spec)).toEqual({
+		names: ["serial", "parallel", "amx", "gpu"],
+		colors: ["#844da2", "#008300", "#3987e5", "#e66767"],
+	});
 });
 
 test("each family point names the kernel that won it", () => {
 	const spec = throughputByFamily(acrossFamilies, f, makeCtx(acrossFamilies));
-	const dots = spec?.marks?.[1] as
-		| { data: { family: string; n: number; kernel: string }[] }
-		| undefined;
 	const gpuAt = (n: number) =>
-		dots?.data.find((d) => d.family === "gpu" && d.n === n)?.kernel;
+		pointsOf(spec, "gpu").find((p) => p.x === n)?.custom[0];
 	expect(gpuAt(256)).toBe("metal-tiled");
 	expect(gpuAt(512)).toBe("mps");
 });
@@ -174,10 +168,19 @@ test("fastest-per-size cells are filled by family, so every winner has a colour"
 		row({ kernel: "packed-simd", n: 256, gops: 5000 }),
 	];
 	const spec = fastestPerSize(withUnknown, f, makeCtx(withUnknown));
-	const color = spec?.color as { domain: string[]; range: string[] };
 	// packed-simd (serial) wins 256, accelerate-blas (amx) wins 512.
-	expect(color.domain).toEqual(["serial", "amx"]);
-	expect(color.range).toEqual(["#844da2", "#3987e5"]);
+	expect(legendOf(spec)).toEqual({
+		names: ["serial", "amx"],
+		colors: ["#844da2", "#3987e5"],
+	});
+	expect(pointsOf(spec, "serial")).toEqual([
+		{ x: "256", y: 1, custom: ["packed-simd", 5000] },
+	]);
+	// Categorical, in size order: Plotly would read "256" as a number.
+	expect(spec?.layout.xaxis?.type).toBe("category");
+	expect(spec?.layout.xaxis?.categoryarray).toEqual(["256", "512"]);
+	// Stacked bars would otherwise list the legend in reverse.
+	expect(spec?.layout.legend?.traceorder).toBe("normal");
 });
 
 test("the CPU & AMX size chart never draws a GPU kernel", () => {

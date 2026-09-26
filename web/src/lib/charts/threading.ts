@@ -2,7 +2,7 @@ import * as Plot from "@observablehq/plot";
 import type { Row } from "../db";
 import { hasSingleThreadBaseline } from "../derive";
 import { REFERENCE_INK } from "../palette";
-import { BASE, type ChartSpec, type Ctx } from "./types";
+import { BASE, type Ctx, type PlotChartSpec } from "./types";
 
 /** Speedup is relative to one thread, so a 1-thread row must exist. */
 export function canShowScaling(rows: Row[]): boolean {
@@ -25,7 +25,7 @@ function singleThread(rows: Row[]): Map<string, number> {
 	return out;
 }
 
-export const throughputVsThreads: ChartSpec = (rows, f, ctx) => {
+export const throughputVsThreads: PlotChartSpec = (rows, f, ctx) => {
 	// The threading tab pins a size: without this, several sizes' rows land on
 	// the same x position and the 1-thread baseline below picks an arbitrary one.
 	const mine = parallelRows(rows, ctx).filter((r) => Number(r.n) === f.n);
@@ -114,7 +114,7 @@ export const throughputVsThreads: ChartSpec = (rows, f, ctx) => {
 	};
 };
 
-export const parallelEfficiency: ChartSpec = (rows, f, ctx) => {
+export const parallelEfficiency: PlotChartSpec = (rows, f, ctx) => {
 	// Scoped to the pinned kernel: without this, one line per size interleaves
 	// every parallel kernel's points (Plot's z defaults to stroke, so a line
 	// groups by n alone), and the line jumps thread counts across kernels
