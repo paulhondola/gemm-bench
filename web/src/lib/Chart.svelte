@@ -1,8 +1,7 @@
 <script lang="ts">
-import * as Plot from "@observablehq/plot";
 import type { Config } from "plotly.js-dist-min";
 import Plotly from "plotly.js-dist-min";
-import { escapeLabels, type Figure, type PlotSpec } from "./charts/types";
+import { escapeLabels, type Figure } from "./charts/types";
 
 let {
 	spec,
@@ -10,7 +9,7 @@ let {
 	note = "",
 	empty = "No data for this selection.",
 }: {
-	spec: Figure | PlotSpec | null;
+	spec: Figure | null;
 	title: string;
 	note?: string;
 	empty?: string;
@@ -31,18 +30,8 @@ const CONFIG: Partial<Config> = {
 	modeBarButtonsToRemove: ["select2d", "lasso2d"],
 };
 
-// ponytail: two renderers while the tabs move to Plotly one at a time; the
-// last task of the port deletes the Plot branch. Panels are keyed by title in
-// App.svelte, so one div never switches between them.
-const isFigure = (s: Figure | PlotSpec): s is Figure =>
-	"data" in s && "layout" in s;
-
 $effect(() => {
 	if (!host || !spec) return;
-	if (!isFigure(spec)) {
-		host.replaceChildren(Plot.plot(spec));
-		return;
-	}
 	// A copy: Plotly writes zoom state back into the layout it is handed, and
 	// charts share BASE_LAYOUT's nested objects.
 	const { data, layout } = escapeLabels(structuredClone(spec));

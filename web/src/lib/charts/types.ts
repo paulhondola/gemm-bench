@@ -13,14 +13,6 @@ import {
 } from "../derive";
 import { paletteFor } from "../palette";
 
-/**
- * Derived from Plot.plot's own signature rather than an exported type name,
- * so it stays correct across Plot versions.
- */
-export type PlotSpec = NonNullable<
-	Parameters<typeof import("@observablehq/plot").plot>[0]
->;
-
 /** Every chart draws scatter lines or bars. */
 export type Trace = Partial<ScatterData> | Partial<BarData>;
 
@@ -66,46 +58,10 @@ export function makeCtx(allRows: Row[]): Ctx {
  */
 export type ChartSpec = (rows: Row[], f: Filters, ctx: Ctx) => Figure | null;
 
-/** A chart not yet ported to Plotly. Deleted once every chart is. */
-export type PlotChartSpec = (
-	rows: Row[],
-	f: Filters,
-	ctx: Ctx,
-) => PlotSpec | null;
-
-/** Ticks at the sizes actually measured, not at Plot's chosen log decades. */
+/** Ticks at the sizes actually measured, not at Plotly's chosen log decades. */
 export function log2Ticks(values: number[]): number[] {
 	return [...new Set(values)].sort((a, b) => a - b);
 }
-
-/**
- * Plot's line mark draws straight through a missing point, which would assert a
- * measurement nobody took. The dashboard is built for ragged data — contributed
- * runs are expected to be partial — so give every series an explicit null-y
- * point at each x it lacks, and Plot breaks the line there instead.
- */
-export function breakGaps<T>(
-	points: T[],
-	xs: number[],
-	xOf: (p: T) => number,
-	seriesOf: (p: T) => string,
-	gap: (series: string, x: number) => T,
-): T[] {
-	const series = [...new Set(points.map(seriesOf))];
-	return series.flatMap((s) =>
-		xs.map(
-			(x) => points.find((p) => seriesOf(p) === s && xOf(p) === x) ?? gap(s, x),
-		),
-	);
-}
-
-/** Shared axis/mark defaults: recessive grid, 2px lines, generous margins. */
-export const BASE: Partial<PlotSpec> = {
-	style: { background: "transparent", color: "#9aa1a8", fontSize: "12px" },
-	marginLeft: 64,
-	marginBottom: 44,
-	grid: true,
-};
 
 /** Axis text and direct labels: text ink, never a series colour. */
 export const LABEL_INK = "#9aa1a8";

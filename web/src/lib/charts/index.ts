@@ -9,14 +9,14 @@ import {
 } from "./overview";
 import { throughputByPrecision } from "./precision";
 import { parallelEfficiency, throughputVsThreads } from "./threading";
-import type { ChartSpec, Ctx, Filters, PlotChartSpec } from "./types";
+import type { ChartSpec, Ctx, Filters } from "./types";
 
 export type Control = "precision" | "n" | "kernel" | "blockSize";
 
 export interface Panel {
 	title: string;
 	note: string;
-	spec: ChartSpec | PlotChartSpec;
+	spec: ChartSpec;
 }
 
 export interface Tab {
