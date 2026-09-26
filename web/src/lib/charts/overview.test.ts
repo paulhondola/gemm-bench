@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
 import { row } from "../fixtures";
-import { UNPALETTED_FILL } from "../palette";
 import {
 	canShowSpeedup,
 	fastestPerSize,
 	serialOnly,
+	throughputByFamily,
 	throughputVsSize,
 } from "./overview";
 import { type Filters, makeCtx } from "./types";
@@ -52,6 +52,7 @@ test("no rows, no chart", () => {
 	expect(throughputVsSize([], f, makeCtx([]))).toBeNull();
 	expect(fastestPerSize([], f, makeCtx([]))).toBeNull();
 	expect(serialOnly([], f, makeCtx([]))).toBeNull();
+	expect(throughputByFamily([], f, makeCtx([]))).toBeNull();
 });
 
 test("the speedup projection needs a naive-ijk baseline", () => {
@@ -133,39 +134,57 @@ test("the stddev band stays finite when stddev exceeds the median", () => {
 	}
 });
 
-test("a kernel outside the palette still gets a visible, defined fill when it wins a size", () => {
-	const tenKnown = [
-		"accelerate-blas",
-		"accelerate-bnns",
-		"naive-ijk",
-		"ikj",
-		"tiled",
-		"rayon-ikj",
-		"static-ikj",
-		"rayon-tiled",
-		"static-tiled",
-		"mps",
-	];
-	const elevenKernels: Row[] = [
-		...tenKnown.map((kernel) => ({
-			kernel,
-			precision: "f32",
-			n: 64,
-			threads: 1,
-			gops: 10,
-			backend: "cpu",
-		})),
-		row({ kernel: "packed-simd", n: 64, gops: 999 }),
-	];
-	const ctx = makeCtx(elevenKernels);
-	// 9 slots + the baseline ink; an 11th kernel has no entry.
-	expect(ctx.palette.has("packed-simd")).toBe(false);
+const acrossFamilies: Row[] = [
+	row({ kernel: "ikj", n: 256, gops: 26 }),
+	row({ kernel: "ikj", n: 512, gops: 27 }),
+	row({ kernel: "rayon-ikj", n: 256, threads: 4, gops: 151 }),
+	row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 174 }),
+	row({ kernel: "accelerate-blas", n: 256, gops: 906, backend: "amx" }),
+	row({ kernel: "accelerate-blas", n: 512, gops: 1968, backend: "amx" }),
+	row({ kernel: "metal-tiled", n: 256, gops: 97, backend: "metal" }),
+	row({ kernel: "metal-tiled", n: 512, gops: 268, backend: "metal" }),
+	row({ kernel: "mps", n: 512, gops: 699, backend: "metal" }),
+];
 
-	const spec = fastestPerSize(elevenKernels, f, ctx);
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const color = spec.color as { domain: string[]; range: string[] };
-	const idx = color.domain.indexOf("packed-simd");
-	expect(idx).not.toBe(-1);
-	expect(color.range[idx]).toBe(UNPALETTED_FILL);
+test("the family chart draws one line per family, in legend order and family ink", () => {
+	const spec = throughputByFamily(acrossFamilies, f, makeCtx(acrossFamilies));
+	expect(spec?.color?.domain).toEqual(["serial", "parallel", "amx", "gpu"]);
+	expect(spec?.color?.range).toEqual([
+		"#844da2",
+		"#008300",
+		"#3987e5",
+		"#e66767",
+	]);
+});
+
+test("each family point names the kernel that won it", () => {
+	const spec = throughputByFamily(acrossFamilies, f, makeCtx(acrossFamilies));
+	const dots = spec?.marks?.[1] as
+		| { data: { family: string; n: number; kernel: string }[] }
+		| undefined;
+	const gpuAt = (n: number) =>
+		dots?.data.find((d) => d.family === "gpu" && d.n === n)?.kernel;
+	expect(gpuAt(256)).toBe("metal-tiled");
+	expect(gpuAt(512)).toBe("mps");
+});
+
+test("fastest-per-size cells are filled by family, so every winner has a colour", () => {
+	const withUnknown: Row[] = [
+		...acrossFamilies,
+		row({ kernel: "packed-simd", n: 256, gops: 5000 }),
+	];
+	const spec = fastestPerSize(withUnknown, f, makeCtx(withUnknown));
+	const color = spec?.color as { domain: string[]; range: string[] };
+	// packed-simd (serial) wins 256, accelerate-blas (amx) wins 512.
+	expect(color.domain).toEqual(["serial", "amx"]);
+	expect(color.range).toEqual(["#844da2", "#3987e5"]);
+});
+
+test("the CPU & AMX size chart never draws a GPU kernel", () => {
+	const spec = throughputVsSize(acrossFamilies, f, makeCtx(acrossFamilies));
+	expect(spec?.color?.domain).toEqual(
+		expect.arrayContaining(["ikj", "rayon-ikj", "accelerate-blas"]),
+	);
+	expect(spec?.color?.domain).not.toContain("mps");
+	expect(spec?.color?.domain).not.toContain("metal-tiled");
 });

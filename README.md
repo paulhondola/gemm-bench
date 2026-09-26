@@ -214,7 +214,7 @@ The dashboard in [`web/`](web) is a Vite + Svelte 5 + TypeScript app linted and 
 - **Build:** `just build` (or `bun run build` in `web/`) writes static files to `web/dist/`. Preview them with `bun run preview`.
 - **Deploy:** every push to `main` builds `web/` and publishes `web/dist/` to GitHub Pages via [`deploy.yml`](.github/workflows/deploy.yml).
 
-It loads `web/public/results.parquet` into DuckDB-WASM in the browser and charts it with [Observable Plot](https://observablehq.com/plot/) in five tabs: Overview, CPU threading, Precision, GPU, and Block size. Pickers narrow each tab by precision, matrix size, block size, or kernel, and a Relative toggle switches from GOP/s to speedup over `naive-ijk`. Chart definitions live in `web/src/lib/charts/`, each with a `bun test` suite next to it.
+It loads `web/public/results.parquet` into DuckDB-WASM in the browser and charts it with [Observable Plot](https://observablehq.com/plot/) in six tabs: Overview (one line per kernel family), CPU & AMX, CPU threading, Precision, GPU, and Block size. Pickers narrow each tab by precision, matrix size, block size, or kernel, and a Relative toggle switches to speedup (over `naive-ijk` on CPU & AMX, over one thread on CPU threading). GPU kernels are charted with their end-to-end (`-e2e`) timings, the same host-to-host scope as the CPU kernels; the GPU tab plots the GPU-only share as copy overhead. Charts that span kernel families colour by family, and per-kernel charts show either host or GPU kernels, never both. Chart definitions live in `web/src/lib/charts/`, each with a `bun test` suite next to it.
 
 ---
 

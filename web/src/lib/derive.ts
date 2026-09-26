@@ -183,6 +183,28 @@ export function bestPerKernel(rows: Row[]): Row[] {
 	return [...best.values()];
 }
 
+/** A row's family; a kernel families() never saw counts as serial. */
+export function familyOf(row: Row, family: Map<string, Family>): Family {
+	return family.get(String(row.kernel)) ?? "serial";
+}
+
+/**
+ * One row per (family, precision, n): the family's best row, whatever kernel,
+ * thread count or block size produced it. The whole winning row is kept so a
+ * family chart can name the kernel behind each point. Precision is part of
+ * the key because the Precision tab passes every precision at once. A strict
+ * `>` keeps the first row on a tie, so the result is stable.
+ */
+export function bestPerFamily(rows: Row[], family: Map<string, Family>): Row[] {
+	const best = new Map<string, Row>();
+	for (const r of rows) {
+		const key = `${familyOf(r, family)}\u0000${r.precision}\u0000${r.n}`;
+		const current = best.get(key);
+		if (!current || Number(r.gops) > Number(current.gops)) best.set(key, r);
+	}
+	return [...best.values()];
+}
+
 export function hasKernel(rows: Row[], kernel: string): boolean {
 	return rows.some((r) => r.kernel === kernel);
 }
@@ -208,4 +230,55 @@ export function defaultParallelKernel(rows: Row[], precision: string): string {
 		}
 	}
 	return best;
+}
+
+const E2E_SUFFIX = "-e2e";
+
+/** The fields one measurement's GPU-only row and its `-e2e` twin share. */
+function measurementKey(r: Row, kernel: string): string {
+	return [
+		kernel,
+		r.precision,
+		r.n,
+		r.threads,
+		r.block_size,
+		r.host,
+		r.timestamp,
+	].join("\u0000");
+}
+
+/**
+ * Metal kernels record two rows per measurement: `X` times GPU execution only,
+ * `X-e2e` adds the host copies and command encoding. CPU kernels are timed
+ * host-memory-in to host-memory-out, so any GPU-vs-CPU comparison must use the
+ * `-e2e` timing. Each pair folds into one row named `X` with the end-to-end
+ * timings, keeping the GPU-only median as `gpu_ms` for the copy-overhead
+ * chart. A GPU-only row with no `-e2e` twin is dropped rather than silently
+ * standing in for end-to-end. Every other row gets `gpu_ms: null`, so the data
+ * view (which reads its columns off the first row) stays uniform.
+ */
+export function withEndToEnd(rows: Row[]): Row[] {
+	const gpuOnly = new Map<string, Row>();
+	for (const r of rows) {
+		const kernel = String(r.kernel);
+		if (r.backend === "metal" && !kernel.endsWith(E2E_SUFFIX)) {
+			gpuOnly.set(measurementKey(r, kernel), r);
+		}
+	}
+	const out: Row[] = [];
+	for (const r of rows) {
+		const kernel = String(r.kernel);
+		if (r.backend !== "metal") {
+			out.push({ ...r, gpu_ms: null });
+		} else if (kernel.endsWith(E2E_SUFFIX)) {
+			const base = kernel.slice(0, -E2E_SUFFIX.length);
+			const twin = gpuOnly.get(measurementKey(r, base));
+			out.push({
+				...r,
+				kernel: base,
+				gpu_ms: twin ? Number(twin.median_ms) : null,
+			});
+		}
+	}
+	return out;
 }

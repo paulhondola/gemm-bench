@@ -33,39 +33,63 @@ test("precisions are ordered by descending best throughput", () => {
 	expect(spec?.fx?.domain).toEqual(["f32", "i64"]);
 });
 
-test("the legend lists only the kernels plotted, not the whole palette", () => {
-	const withUnplotted: Row[] = [
-		...rows,
-		row({ kernel: "tiled", n: 128, gops: 40 }),
-	];
-	// tiled only has an n=128 row, so at f.n=64 it must not appear in the legend.
-	const spec = throughputByPrecision(withUnplotted, f, makeCtx(withUnplotted));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	expect(spec.color?.domain).toEqual(
-		expect.arrayContaining(["ikj", "rayon-ikj"]),
-	);
-	expect(spec.color?.domain).toHaveLength(2);
+test("one bar per family, in legend order and family ink", () => {
+	const spec = throughputByPrecision(rows, f, makeCtx(rows));
+	expect(spec?.color?.domain).toEqual(["serial", "parallel"]);
+	expect(spec?.color?.range).toEqual(["#844da2", "#008300"]);
 });
 
 test("a row at a different size does not leak into the pinned size", () => {
-	// The best-per-(kernel,precision) map keys on kernel+precision, not n, so
-	// a missing `f.n` filter would let this n=128 row's huge gops win over
-	// the real n=64 ikj/i64 result (6).
+	// A missing `f.n` filter would let this n=128 row's huge gops win the
+	// serial bar at i64 over the real n=64 ikj result (6).
 	const multiSize: Row[] = [
 		...rows,
 		row({ kernel: "ikj", precision: "i64", n: 128, gops: 999 }),
 	];
 	const spec = throughputByPrecision(multiSize, f, makeCtx(multiSize));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const bars = (
-		spec.marks[0] as {
-			data: { kernel: string; precision: string; gops: number }[];
-		}
-	).data;
-	const ikjAtI64 = bars.find(
-		(b) => b.kernel === "ikj" && b.precision === "i64",
+	const bars =
+		(
+			spec?.marks?.[0] as
+				| { data: { family: string; precision: string; gops: number }[] }
+				| undefined
+		)?.data ?? [];
+	const serialAtI64 = bars.find(
+		(b) => b.family === "serial" && b.precision === "i64",
 	);
-	expect(ikjAtI64?.gops).toBe(6);
+	expect(serialAtI64?.gops).toBe(6);
+});
+
+test("the i32 group has a GPU bar and no AMX bar", () => {
+	const mixed: Row[] = [
+		row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "amx" }),
+		row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 27 }),
+		row({
+			kernel: "rayon-ikj",
+			precision: "i32",
+			n: 64,
+			threads: 4,
+			gops: 27,
+		}),
+		row({
+			kernel: "metal-tiled",
+			precision: "i32",
+			n: 64,
+			gops: 2,
+			backend: "metal",
+		}),
+	];
+	const spec = throughputByPrecision(mixed, f, makeCtx(mixed));
+	const bars =
+		(
+			spec?.marks?.[0] as
+				| { data: { family: string; precision: string }[] }
+				| undefined
+		)?.data ?? [];
+	const at = (p: string) =>
+		bars
+			.filter((b) => b.precision === p)
+			.map((b) => b.family)
+			.sort();
+	expect(at("i32")).toEqual(["gpu", "parallel"]);
+	expect(at("f32")).toEqual(["amx", "parallel"]);
 });

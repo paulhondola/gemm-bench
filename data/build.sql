@@ -29,19 +29,6 @@ WHERE kernel IS NULL OR backend IS NULL OR device IS NULL OR precision IS NULL
 HAVING count(*) > 0;
 
 COPY (
-  -- The BLAS kernel was `accelerate` before `accelerate-bnns` joined it;
-  -- publish old runs under the new name so they share one series.
-  SELECT CASE kernel WHEN 'accelerate' THEN 'accelerate-blas' ELSE kernel END AS kernel,
-         backend, device, precision, n, threads,
-         gops,
-         -- Runs before accuracy measurement landed wrote a 0.0 placeholder,
-         -- which would read as "exact"; publish it as unknown instead.
-         -- ponytail: keyed on the date, so an old binary run later still
-         -- writes 0.0; key on commit if contributors lag behind.
-         CASE WHEN "timestamp" < TIMESTAMPTZ '2026-09-24 00:00:00+00' THEN NULL
-              ELSE mean_rel_error_f64 END AS mean_rel_error_f64,
-         median_ms, min_ms, stddev_ms,
-         block_size, repetitions, host, commit, "timestamp"
-  FROM runs
+  SELECT * EXCLUDE (filename) FROM runs
   ORDER BY host, "timestamp", precision, kernel, n, threads, block_size, repetitions
 ) TO 'web/public/results.parquet' (FORMAT parquet, COMPRESSION zstd);

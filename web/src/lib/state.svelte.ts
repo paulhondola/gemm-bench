@@ -5,6 +5,7 @@ import {
 	defaultPrecision,
 	defaultSize,
 	partitionPlottable,
+	withEndToEnd,
 } from "./derive";
 
 export const store = $state({
@@ -24,7 +25,10 @@ export const store = $state({
 export async function boot(): Promise<void> {
 	try {
 		const queried = await query("SELECT * FROM results");
-		const { rows, dropped } = partitionPlottable(queried);
+		const { rows: usable, dropped } = partitionPlottable(queried);
+		// One row per measurement from here on: Metal rows carry end-to-end
+		// timings under their plain name (see withEndToEnd).
+		const rows = withEndToEnd(usable);
 		store.rows = rows;
 		store.dropped = dropped;
 		store.precision = defaultPrecision(rows);

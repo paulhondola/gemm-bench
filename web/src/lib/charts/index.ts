@@ -1,7 +1,12 @@
 import type { Row } from "../db";
 import { blockSizeSweep } from "./blocksize";
-import { gpuRatio, gpuVsCpu } from "./gpu";
-import { fastestPerSize, serialOnly, throughputVsSize } from "./overview";
+import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
+import {
+	fastestPerSize,
+	serialOnly,
+	throughputByFamily,
+	throughputVsSize,
+} from "./overview";
 import { throughputByPrecision } from "./precision";
 import { parallelEfficiency, throughputVsThreads } from "./threading";
 import type { ChartSpec, Ctx, Filters } from "./types";
@@ -22,10 +27,12 @@ export interface Tab {
 	/** The precision pills render disabled: precision is this tab's x-axis. */
 	inertPrecision?: boolean;
 	/**
-	 * The block size pills render disabled: block size is this tab's x-axis
-	 * (the Block size tab itself). A kernel measured at only one block size
-	 * (e.g. `mps`) is exempted from scoping automatically, via
-	 * `ctx.singleBlockSize` in `rowsForTab` — that's a property of the data,
+	 * Block size is not a dimension of this tab: no pills, and rowsForTab does
+	 * not scope by it. Either block size is the x-axis (the Block size tab) or
+	 * the tab shows each family's best configuration (Overview, Precision,
+	 * GPU), the same way bestPerKernel takes the best thread count. A kernel
+	 * measured at only one block size is exempted from scoping automatically,
+	 * via `ctx.singleBlockSize` in `rowsForTab`. That's a property of the data,
 	 * not something a tab should assert about itself, so it is never a reason
 	 * to set this flag.
 	 */
@@ -36,17 +43,30 @@ export const TABS: Tab[] = [
 	{
 		id: "overview",
 		label: "Overview",
+		controls: ["precision"],
+		inertBlockSize: true,
+		panels: [
+			{
+				title: "Throughput by family",
+				note: "Each family's best kernel, thread count and block size at every size · log–log · GPU timings are end-to-end (host copies included), like the CPU timings",
+				spec: throughputByFamily,
+			},
+			{
+				title: "Fastest kernel per size",
+				note: "Computed over every kernel and coloured by the winner's family",
+				spec: fastestPerSize,
+			},
+		],
+	},
+	{
+		id: "cpu",
+		label: "CPU & AMX",
 		controls: ["precision", "blockSize"],
 		panels: [
 			{
 				title: "Throughput vs matrix size",
 				note: "Each kernel's best thread count, at the selected block size · log–log · band is ±1 stddev",
 				spec: throughputVsSize,
-			},
-			{
-				title: "Fastest kernel per size",
-				note: "Computed over every kernel at the selected block size, independent of the legend above",
-				spec: fastestPerSize,
 			},
 			{
 				title: "Single-threaded kernels",
@@ -75,12 +95,13 @@ export const TABS: Tab[] = [
 	{
 		id: "precision",
 		label: "Precision",
-		controls: ["n", "blockSize"],
+		controls: ["n"],
 		inertPrecision: true,
+		inertBlockSize: true,
 		panels: [
 			{
 				title: "Throughput by precision",
-				note: "Each kernel's best thread count, at the selected size and block size",
+				note: "Each family's best kernel, thread count and block size at the selected size · GPU timings are end-to-end",
 				spec: throughputByPrecision,
 			},
 		],
@@ -89,16 +110,22 @@ export const TABS: Tab[] = [
 		id: "gpu",
 		label: "GPU",
 		controls: ["precision"],
+		inertBlockSize: true,
 		panels: [
 			{
-				title: "GPU vs CPU",
-				note: "Metal-backed kernels are dashed: their timed region is GPU execution only, excluding buffer copies and command encoding",
-				spec: gpuVsCpu,
+				title: "GPU kernels vs CPU",
+				note: "GPU timings are end-to-end (host copies and command encoding included), like the CPU timings · references are each family's best kernel, thread count and block size",
+				spec: gpuKernels,
 			},
 			{
-				title: "GPU ÷ best parallel CPU",
-				note: "Crosses 1.0 where the GPU overtakes the hand-written parallel kernels; AMX is compared in the chart above",
-				spec: gpuRatio,
+				title: "GPU ÷ CPU at equal effort",
+				note: "Hand-written shaders against the best hand-written parallel CPU kernel, MPS against the best AMX (Accelerate) kernel · above 1.0 the GPU wins",
+				spec: gpuEqualEffort,
+			},
+			{
+				title: "Copy overhead",
+				note: "Share of end-to-end time spent copying inputs in, encoding, and copying the result out · copies grow as N², arithmetic as N³",
+				spec: gpuCopyOverhead,
 			},
 		],
 	},
@@ -118,14 +145,16 @@ export const TABS: Tab[] = [
 ];
 
 /**
- * The rows a tab actually renders. The precision tab puts precision on its
- * x-axis, so it needs every precision; the Block size tab puts block size on
- * its x-axis. Every other tab is scoped to both selected values — except for
- * a kernel with only one distinct block size in the whole dataset (`mps`):
- * the dimension doesn't vary for it, so a block-size selection must not
- * filter it away, whichever tab it appears on. A row with no block size (a kernel that doesn't tile) is never filtered by a block-size selection either. This is the single place
- * scoping happens: visibility and rendering must agree, or a tab can appear
- * and then render nothing.
+ * The rows a tab actually renders. A tab with inertPrecision needs every
+ * precision (precision is its x-axis); a tab with inertBlockSize needs every
+ * block size (block size is its x-axis, or it shows each family's best
+ * configuration). Every other tab is scoped to both selected values, except
+ * for a kernel with only one distinct block size in the whole dataset: the
+ * dimension doesn't vary for it, so a block-size selection must not filter it
+ * away, whichever tab it appears on. A row with no block size (a kernel that
+ * doesn't tile) is never filtered by a block-size selection either. This is
+ * the single place scoping happens: visibility and rendering must agree, or a
+ * tab can appear and then render nothing.
  */
 export function rowsForTab(
 	tab: Tab,

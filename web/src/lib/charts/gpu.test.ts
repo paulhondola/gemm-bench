@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
 import { row } from "../fixtures";
-import { gpuRatio, gpuVsCpu, hasGpu } from "./gpu";
+import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
 import { type Filters, makeCtx } from "./types";
 
 const f: Filters = {
@@ -12,55 +12,146 @@ const f: Filters = {
 	relative: false,
 };
 
-const rows: Row[] = [
-	row({ kernel: "mps", n: 256, gops: 93, backend: "metal" }),
-	row({ kernel: "mps", n: 512, gops: 738, backend: "metal" }),
-	row({ kernel: "rayon-ikj", n: 256, threads: 4, gops: 138 }),
-	row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 194 }),
-	row({ kernel: "ikj", n: 256, gops: 30 }),
-	row({ kernel: "ikj", n: 512, gops: 32 }),
+// GPU rows as withEndToEnd emits them: the plain kernel name, end-to-end
+// timings, and the GPU-only median as gpu_ms.
+const gpu = (
+	kernel: string,
+	n: number,
+	gops: number,
+	median_ms: number,
+	gpu_ms: number | null,
+) => row({ kernel, n, gops, median_ms, gpu_ms, backend: "metal" });
+
+const f32: Row[] = [
+	gpu("metal-naive", 512, 184, 1.458, 1.381),
+	gpu("metal-naive", 1024, 303, 7.099, 6.771),
+	gpu("metal-tiled", 512, 268, 1.001, 0.829),
+	gpu("metal-tiled", 1024, 500, 4.297, 3.976),
+	gpu("mps", 512, 699, 0.384, 0.304),
+	gpu("mps", 1024, 1675, 1.282, 0.995),
+	row({ kernel: "rayon-ikj", n: 512, threads: 8, gops: 174 }),
+	row({ kernel: "rayon-ikj", n: 1024, threads: 8, gops: 197 }),
+	row({ kernel: "accelerate-blas", n: 512, gops: 1968, backend: "amx" }),
+	row({ kernel: "accelerate-blas", n: 1024, gops: 1748, backend: "amx" }),
 ];
 
-test("the GPU tab is present only with metal rows", () => {
-	expect(hasGpu(rows)).toBe(true);
-	expect(hasGpu(rows.filter((r) => r.backend !== "metal"))).toBe(false);
-});
+type Dot = {
+	series: string;
+	kernel: string;
+	counterpart: string;
+	n: number;
+	gops: number | null;
+	ratio: number;
+	pct: number;
+	text: string;
+};
+const marksData = (spec: ReturnType<typeof gpuKernels>, i: number) =>
+	(spec?.marks?.[i] as { data: Dot[] } | undefined)?.data ?? [];
 
-test("both GPU charts build from metal plus CPU rows", () => {
-	const ctx = makeCtx(rows);
-	expect(gpuVsCpu(rows, f, ctx)).not.toBeNull();
-	expect(gpuRatio(rows, f, ctx)).not.toBeNull();
-});
-
-test("neither GPU chart builds without metal rows", () => {
-	const cpu = rows.filter((r) => r.backend !== "metal");
+test("no GPU chart builds without metal rows", () => {
+	const cpu = f32.filter((r) => r.backend !== "metal");
 	const ctx = makeCtx(cpu);
-	expect(gpuVsCpu(cpu, f, ctx)).toBeNull();
-	expect(gpuRatio(cpu, f, ctx)).toBeNull();
+	expect(gpuKernels(cpu, f, ctx)).toBeNull();
+	expect(gpuEqualEffort(cpu, f, ctx)).toBeNull();
+	expect(gpuCopyOverhead(cpu, f, ctx)).toBeNull();
 });
 
-test("the gpu family gets an explicit gap where it has no row, instead of a line straight through it", () => {
+test("the kernel chart draws each GPU kernel then both CPU references, in validated order", () => {
+	const spec = gpuKernels(f32, f, makeCtx(f32));
+	expect(spec?.color?.domain).toEqual([
+		"metal-naive",
+		"metal-tiled",
+		"mps",
+		"AMX",
+		"parallel CPU",
+	]);
+	expect(spec?.color?.range).toEqual([
+		"#d95926",
+		"#9085e9",
+		"#e66767",
+		"#3987e5",
+		"#008300",
+	]);
+});
+
+test("at an integer precision there is no AMX or mps, leaving three labelled series", () => {
+	const i32 = [
+		gpu("metal-naive", 512, 172, 1, 0.9),
+		gpu("metal-naive", 1024, 317, 1, 0.9),
+		gpu("metal-tiled", 512, 292, 1, 0.9),
+		gpu("metal-tiled", 1024, 438, 1, 0.9),
+		row({ kernel: "rayon-ikj", n: 512, threads: 8, gops: 177 }),
+		row({ kernel: "rayon-ikj", n: 1024, threads: 8, gops: 205 }),
+	].map((r) => ({ ...r, precision: "i32" }));
+	const spec = gpuKernels(i32, { ...f, precision: "i32" }, makeCtx(i32));
+	expect(spec?.color?.domain).toEqual([
+		"metal-naive",
+		"metal-tiled",
+		"parallel CPU",
+	]);
+	// line, dot, direct labels, tip
+	expect(spec?.marks).toHaveLength(4);
+});
+
+test("a GPU kernel missing a size gets an explicit gap, not a line straight through it", () => {
 	const ragged: Row[] = [
-		row({ kernel: "mps", n: 256, gops: 93, backend: "metal" }),
-		// mps has no n=512 row; rayon-ikj does, so the union x-axis includes 512.
-		row({ kernel: "mps", n: 1024, gops: 900, backend: "metal" }),
-		row({ kernel: "rayon-ikj", n: 256, threads: 4, gops: 138 }),
-		row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 194 }),
-		row({ kernel: "rayon-ikj", n: 1024, threads: 4, gops: 250 }),
+		...f32,
+		gpu("metal-naive", 2048, 242, 1, 0.9),
+		row({ kernel: "rayon-ikj", n: 2048, threads: 8, gops: 152 }),
 	];
-	const spec = gpuVsCpu(ragged, f, makeCtx(ragged));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	// marks[0] is the non-gpu Plot.line, marks[1] is the dashed gpu-only
-	// Plot.line (split so a constant strokeDasharray can be used — Plot.line
-	// draws one <path> per series, so a per-datum dasharray channel is a
-	// no-op), confirmed by introspecting spec.marks[i].data for this exact
-	// fixture: index 1 carried the gap-filled gpu series (with a null-gops
-	// entry at n=512), index 2 the dot mark's real-points-only data, index 3
-	// the text labels, index 4 tip.
-	const line = spec.marks[1] as {
-		data: { family: string; n: number; gops: number | null }[];
-	};
-	const gap = line.data.find((d) => d.family === "gpu" && d.n === 512);
-	expect(gap?.gops).toBeNull();
+	const line = marksData(gpuKernels(ragged, f, makeCtx(ragged)), 0);
+	expect(line.find((d) => d.series === "mps" && d.n === 2048)?.gops).toBeNull();
+});
+
+test("mps is divided by AMX and the shaders by the parallel CPU", () => {
+	const dots = marksData(gpuEqualEffort(f32, f, makeCtx(f32)), 2);
+	const at = (kernel: string, n: number) =>
+		dots.find((d) => d.kernel === kernel && d.n === n);
+	expect(at("mps", 1024)?.counterpart).toBe("accelerate-blas");
+	expect(at("mps", 1024)?.ratio).toBeCloseTo(1675 / 1748);
+	expect(at("metal-tiled", 512)?.counterpart).toBe("rayon-ikj");
+	expect(at("metal-tiled", 512)?.ratio).toBeCloseTo(268 / 174);
+});
+
+test("a size the counterpart never ran contributes no point, never NaN", () => {
+	const noAmxAt512 = f32.filter((r) => !(r.backend === "amx" && r.n === 512));
+	const dots = marksData(gpuEqualEffort(noAmxAt512, f, makeCtx(noAmxAt512)), 2);
+	expect(dots.some((d) => d.kernel === "mps" && d.n === 512)).toBe(false);
+	expect(dots.every((d) => Number.isFinite(d.ratio))).toBe(true);
+});
+
+test("end labels that would overlap on the log axis share one line of text", () => {
+	// f32 at N=4096: metal-naive 1.68× and mps 1.60× land a few pixels apart.
+	const converging: Row[] = [
+		...f32,
+		gpu("metal-naive", 4096, 261, 1, 0.99),
+		gpu("metal-tiled", 4096, 541, 1, 0.96),
+		gpu("mps", 4096, 3558, 1, 0.88),
+		row({ kernel: "rayon-ikj", n: 4096, threads: 8, gops: 155 }),
+		row({ kernel: "accelerate-blas", n: 4096, gops: 2224, backend: "amx" }),
+	];
+	const labels = marksData(
+		gpuEqualEffort(converging, f, makeCtx(converging)),
+		3,
+	);
+	expect(labels.map((d) => d.text)).toEqual([
+		"mps · metal-naive",
+		"metal-tiled",
+	]);
+});
+
+test("copy overhead is the share of end-to-end time outside the GPU dispatch", () => {
+	const dots = marksData(gpuCopyOverhead(f32, f, makeCtx(f32)), 1);
+	expect(dots.find((d) => d.kernel === "mps" && d.n === 512)?.pct).toBeCloseTo(
+		((0.384 - 0.304) / 0.384) * 100,
+	);
+});
+
+test("a GPU row without a GPU-only twin is left out of the overhead chart", () => {
+	const noTwin = f32.map((r) =>
+		r.kernel === "mps" ? { ...r, gpu_ms: null } : r,
+	);
+	const dots = marksData(gpuCopyOverhead(noTwin, f, makeCtx(noTwin)), 1);
+	expect(dots.some((d) => d.kernel === "mps")).toBe(false);
+	expect(dots.some((d) => d.kernel === "metal-tiled")).toBe(true);
 });

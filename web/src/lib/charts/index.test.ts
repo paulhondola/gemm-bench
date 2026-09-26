@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
 import { row } from "../fixtures";
-import { gpuVsCpu } from "./gpu";
+import { gpuKernels } from "./gpu";
 import { rowsForTab, TABS, visibleTabs } from "./index";
 import { type Filters, makeCtx } from "./types";
 
@@ -50,14 +50,20 @@ const cpuOnly: Row[] = [
 ];
 
 test("every tab declares its own controls", () => {
-	const overview = TABS.find((t) => t.id === "overview");
-	expect(overview?.controls).toEqual(["precision", "blockSize"]);
-	const precision = TABS.find((t) => t.id === "precision");
-	expect(precision?.inertPrecision).toBe(true);
-	const gpu = TABS.find((t) => t.id === "gpu");
-	expect(gpu?.inertBlockSize).toBeUndefined();
-	const blocksize = TABS.find((t) => t.id === "blocksize");
-	expect(blocksize?.inertBlockSize).toBe(true);
+	const tab = (id: string) => TABS.find((t) => t.id === id);
+	expect(TABS.map((t) => t.id)).toEqual([
+		"overview",
+		"cpu",
+		"threads",
+		"precision",
+		"gpu",
+		"blocksize",
+	]);
+	expect(tab("overview")?.controls).toEqual(["precision"]);
+	expect(tab("overview")?.inertBlockSize).toBe(true);
+	expect(tab("cpu")?.controls).toEqual(["precision", "blockSize"]);
+	expect(tab("precision")?.inertPrecision).toBe(true);
+	expect(tab("blocksize")?.inertBlockSize).toBe(true);
 });
 
 test("the GPU tab is absent without metal rows", () => {
@@ -146,11 +152,11 @@ test("a non-selected block size does not leak into a pinned chart", () => {
 			block_size: 64,
 		}),
 	];
-	const overview = TABS.find((t) => t.id === "overview");
-	expect(overview).toBeDefined();
-	if (!overview) return;
+	const cpu = TABS.find((t) => t.id === "cpu");
+	expect(cpu).toBeDefined();
+	if (!cpu) return;
 	const scoped = rowsForTab(
-		overview,
+		cpu,
 		twoBlockSizes,
 		"f32",
 		32,
@@ -258,84 +264,55 @@ test("the GPU tab survives selecting a block size mps does not have", () => {
 	expect(ids).toContain("gpu");
 });
 
-test("the GPU tab's CPU-family line pins to the selected block size, not the max across both", () => {
-	// rayon-ikj is faster at block_size=64 (the non-selected one). mps has a
-	// single block size (32) and must survive scoping regardless; rayon-ikj
-	// has two, so it must be filtered to the selection. If the GPU tab stayed
-	// inertBlockSize (never scoped), byFamily's bestPerKernel would see both
-	// of rayon-ikj's block sizes and plot the higher one — the max-of-repeats
-	// upward bias this feature exists to remove.
+test("the GPU tab's CPU reference is the family's best block size", () => {
+	// rayon-tiled is faster at block_size=64, the non-selected one. The GPU tab
+	// is a family view (inertBlockSize), so its parallel reference is the
+	// family's best configuration whatever the hidden selection says. This
+	// reverses cc5b136's pin to the selection (see the spec).
 	const rows: Row[] = [
+		row({ kernel: "mps", n: 256, gops: 93, backend: "metal" }),
+		row({ kernel: "mps", n: 512, gops: 738, backend: "metal" }),
 		row({
-			kernel: "mps",
-			n: 256,
-			gops: 93,
-			backend: "metal",
-			median_ms: 1,
-			stddev_ms: 0,
-			block_size: 32,
-		}),
-		row({
-			kernel: "mps",
-			n: 512,
-			gops: 738,
-			backend: "metal",
-			median_ms: 1,
-			stddev_ms: 0,
-			block_size: 32,
-		}),
-		row({
-			kernel: "rayon-ikj",
+			kernel: "rayon-tiled",
 			n: 256,
 			threads: 4,
 			gops: 40,
-			median_ms: 1,
-			stddev_ms: 0,
 			block_size: 32,
 		}),
 		row({
-			kernel: "rayon-ikj",
+			kernel: "rayon-tiled",
 			n: 512,
 			threads: 4,
 			gops: 45,
-			median_ms: 1,
-			stddev_ms: 0,
 			block_size: 32,
 		}),
 		row({
-			kernel: "rayon-ikj",
+			kernel: "rayon-tiled",
 			n: 256,
 			threads: 4,
-			gops: 999,
-			median_ms: 1,
-			stddev_ms: 0,
+			gops: 60,
 			block_size: 64,
 		}),
 		row({
-			kernel: "rayon-ikj",
+			kernel: "rayon-tiled",
 			n: 512,
 			threads: 4,
-			gops: 999,
-			median_ms: 1,
-			stddev_ms: 0,
+			gops: 70,
 			block_size: 64,
 		}),
 	];
 	const gpu = TABS.find((t) => t.id === "gpu");
-	expect(gpu).toBeDefined();
+	expect(gpu?.inertBlockSize).toBe(true);
 	if (!gpu) return;
 	const ctx = makeCtx(rows);
 	const scoped = rowsForTab(gpu, rows, "f32", 32, ctx);
-	const spec = gpuVsCpu(scoped, { ...f, precision: "f32", blockSize: 32 }, ctx);
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	const line = spec.marks[0] as {
-		data: { family: string; n: number; gops: number | null }[];
-	};
-	const parallel = line.data.find(
-		(d) => d.family === "parallel" && d.n === 256,
-	);
-	expect(parallel?.gops).toBe(40);
+	const spec = gpuKernels(scoped, { ...f, blockSize: 32 }, ctx);
+	const line = spec?.marks?.[0] as
+		| { data: { series: string; n: number; gops: number | null }[] }
+		| undefined;
+	expect(
+		line?.data.find((d) => d.series === "parallel CPU" && d.n === 256)?.gops,
+	).toBe(60);
 });
 
 test("a row without a block size survives any block-size selection", () => {
@@ -370,9 +347,33 @@ test("a row without a block size survives any block-size selection", () => {
 			block_size: 32,
 		}),
 	];
-	const overview = TABS.find((t) => t.id === "overview");
-	expect(overview).toBeDefined();
-	if (!overview) return;
-	const scoped = rowsForTab(overview, mixed, "f32", 32, makeCtx(mixed));
+	const cpu = TABS.find((t) => t.id === "cpu");
+	expect(cpu).toBeDefined();
+	if (!cpu) return;
+	const scoped = rowsForTab(cpu, mixed, "f32", 32, makeCtx(mixed));
 	expect(scoped.map((r) => r.gops)).toEqual([10, 11, 12]);
+});
+
+test("the Overview is a family view: it keeps every block size", () => {
+	const twoBlockSizes: Row[] = [
+		row({ kernel: "tiled", n: 256, gops: 10, block_size: 32 }),
+		row({ kernel: "tiled", n: 512, gops: 11, block_size: 32 }),
+		row({ kernel: "tiled", n: 256, gops: 20, block_size: 64 }),
+	];
+	const overview = TABS.find((t) => t.id === "overview");
+	if (!overview) throw new Error("no overview tab");
+	const scoped = rowsForTab(
+		overview,
+		twoBlockSizes,
+		"f32",
+		32,
+		makeCtx(twoBlockSizes),
+	);
+	expect(scoped).toHaveLength(3);
+});
+
+test("the Precision tab is a family view pinned only by size", () => {
+	const precision = TABS.find((t) => t.id === "precision");
+	expect(precision?.controls).toEqual(["n"]);
+	expect(precision?.inertBlockSize).toBe(true);
 });
