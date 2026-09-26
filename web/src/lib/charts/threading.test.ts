@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { row } from "../fixtures";
+import { legendOf, plotted, row } from "../fixtures";
 import {
 	canShowScaling,
 	parallelEfficiency,
@@ -67,7 +67,7 @@ test("the speedup projection needs a 1-thread row", () => {
 test("efficiency builds per size and caps the axis at 100", () => {
 	const spec = parallelEfficiency(rows, f, makeCtx(rows));
 	expect(spec).not.toBeNull();
-	expect(spec?.y?.domain).toEqual([0, 100]);
+	expect(spec?.layout.yaxis?.range).toEqual([0, 100]);
 });
 
 test("efficiency without a 1-thread baseline is not shown", () => {
@@ -78,23 +78,49 @@ test("efficiency without a 1-thread baseline is not shown", () => {
 test("the legend lists only the kernels plotted, not the whole palette", () => {
 	// ikj is serial (filtered out by parallelRows), so it must not appear in
 	// the color domain even though it's in the fixture and the palette.
-	const spec = throughputVsThreads(rows, f, makeCtx(rows));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	expect(spec.color?.domain).toEqual(
-		expect.arrayContaining(["rayon-ikj", "static-ikj"]),
-	);
-	expect(spec.color?.domain).toHaveLength(2);
+	const { names } = legendOf(throughputVsThreads(rows, f, makeCtx(rows)));
+	expect(names).toEqual(expect.arrayContaining(["rayon-ikj", "static-ikj"]));
+	expect(names).toHaveLength(2);
 });
 
 test("parallelEfficiency plots only the selected kernel, one line per size", () => {
 	const spec = parallelEfficiency(rows, f, makeCtx(rows));
-	expect(spec).not.toBeNull();
-	if (!spec) return;
-	// marks[0] is Plot.line(points, ...): the first mark pushed.
-	const points = (spec.marks[0] as unknown as { data: { n: string }[] }).data;
+	expect(legendOf(spec).names).toEqual(["1024"]);
 	const rayonRows = rows.filter((r) => r.kernel === "rayon-ikj");
-	expect(points).toHaveLength(rayonRows.length);
+	expect(plotted(spec)).toHaveLength(rayonRows.length);
+});
+
+test("efficiency colours sizes in numeric order, light to dark", () => {
+	const twoSizes: Row[] = [
+		...rows,
+		row({ kernel: "rayon-ikj", precision: "f16", n: 128, gops: 9 }),
+		row({
+			kernel: "rayon-ikj",
+			precision: "f16",
+			n: 128,
+			threads: 4,
+			gops: 30,
+		}),
+	];
+	const spec = parallelEfficiency(twoSizes, f, makeCtx(twoSizes));
+	expect(legendOf(spec)).toEqual({
+		names: ["128", "1024"],
+		colors: ["#ffffd9", "#225ea8"],
+	});
+});
+
+test("the relative scaling chart draws the ideal line as a dashed reference", () => {
+	const spec = throughputVsThreads(
+		rows,
+		{ ...f, relative: true },
+		makeCtx(rows),
+	);
+	expect(spec?.layout.shapes).toEqual([
+		expect.objectContaining({ x0: 1, y0: 1, x1: 10, y1: 10 }),
+	]);
+	expect(throughputVsThreads(rows, f, makeCtx(rows))?.layout.shapes).toEqual(
+		[],
+	);
 });
 
 test("parallelEfficiency hides when the pinned kernel has no rows", () => {
@@ -123,13 +149,8 @@ test("the scaling chart plots only the selected size", () => {
 		}),
 	];
 	const spec = throughputVsThreads(twoSizes, f, makeCtx(twoSizes));
-	expect(spec).not.toBeNull();
-	if (!spec) return; // unreachable: the assertion above throws first
-	// marks[0] is Plot.line(points, ...): the first mark pushed when f.relative
-	// is false (no ideal-line mark prepended), verified against the actual
-	// spec rather than assumed.
-	const plotted = (spec.marks[0] as unknown as { data: { threads: number }[] })
-		.data;
 	// f pins n = 1024, so the three n = 256 rows must not appear.
-	expect(plotted).toHaveLength(rows.filter((r) => r.kernel !== "ikj").length);
+	expect(plotted(spec)).toHaveLength(
+		rows.filter((r) => r.kernel !== "ikj").length,
+	);
 });

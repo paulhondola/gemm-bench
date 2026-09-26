@@ -1,8 +1,15 @@
-import * as Plot from "@observablehq/plot";
 import type { Row } from "../db";
 import { hasSingleThreadBaseline } from "../derive";
-import { REFERENCE_INK } from "../palette";
-import { BASE, type Ctx, type PlotChartSpec } from "./types";
+import { REFERENCE_INK, sequentialRamp } from "../palette";
+import {
+	AXIS,
+	BASE_LAYOUT,
+	type ChartSpec,
+	type Ctx,
+	LABELLED_MARGIN,
+	lineTraces,
+	type SeriesPoint,
+} from "./types";
 
 /** Speedup is relative to one thread, so a 1-thread row must exist. */
 export function canShowScaling(rows: Row[]): boolean {
@@ -25,7 +32,7 @@ function singleThread(rows: Row[]): Map<string, number> {
 	return out;
 }
 
-export const throughputVsThreads: PlotChartSpec = (rows, f, ctx) => {
+export const throughputVsThreads: ChartSpec = (rows, f, ctx) => {
 	// The threading tab pins a size: without this, several sizes' rows land on
 	// the same x position and the 1-thread baseline below picks an arbitrary one.
 	const mine = parallelRows(rows, ctx).filter((r) => Number(r.n) === f.n);
@@ -34,91 +41,74 @@ export const throughputVsThreads: PlotChartSpec = (rows, f, ctx) => {
 
 	const relative = f.relative && canShowScaling(mine);
 	const base = singleThread(mine);
-	const points = mine
+	const points: SeriesPoint[] = mine
 		.map((r) => ({
-			threads: Number(r.threads),
-			kernel: String(r.kernel),
+			series: String(r.kernel),
+			x: Number(r.threads),
 			y: relative
 				? Number(r.gops) / (base.get(String(r.kernel)) ?? Number.NaN)
 				: Number(r.gops),
+			custom: [],
 		}))
 		.filter((p) => Number.isFinite(p.y));
 	if (!points.length) return null;
 
 	const ticks = [...counts].sort((a, b) => a - b);
-	const ideal = ticks.map((t) => ({ threads: t, y: t }));
+	const last = ticks[ticks.length - 1];
 
 	// Scoped to what's actually plotted, not the whole-dataset palette, so the
 	// legend never lists a kernel this chart doesn't draw. ctx.palette is
 	// still the hue lookup, so a kernel keeps its colour regardless of who
 	// else is present.
-	const present = [...new Set(points.map((p) => p.kernel))];
+	const present = [...new Set(points.map((p) => p.series))];
 
 	return {
-		...BASE,
-		// Direct labels below need room for the longest kernel name.
-		marginRight: 100,
-		// Linear, not log: 8 and 10 really are close, and linear shows the
-		// departure from ideal as curvature where log would straighten it.
-		x: { type: "linear", ticks, label: "Threads" },
-		y: {
-			type: "linear",
-			label: relative ? "× vs 1 thread" : "GOP/s",
-			labelAnchor: "top",
-		},
-		color: {
-			domain: present,
-			range: present.map((k) => ctx.palette.get(k) as string),
-			legend: true,
-		},
-		marks: [
-			...(relative
+		// No shared xs: a kernel swept over fewer thread counts is a shorter
+		// sweep, not a missing measurement, so its line is not broken.
+		data: lineTraces(points, {
+			order: present,
+			color: (k) => ctx.palette.get(k) as string,
+			labels: true,
+			hovertemplate: `<b>%{y:.1f}${relative ? "×" : " GOP/s"}</b>  %{fullData.name}<extra></extra>`,
+		}),
+		layout: {
+			...BASE_LAYOUT,
+			// Direct labels need room for the longest kernel name.
+			margin: LABELLED_MARGIN,
+			// Linear, not log: 8 and 10 really are close, and linear shows the
+			// departure from ideal as curvature where log would straighten it.
+			xaxis: {
+				...AXIS,
+				type: "linear",
+				tickvals: ticks,
+				title: { text: "Threads" },
+			},
+			yaxis: {
+				...AXIS,
+				type: "linear",
+				title: { text: relative ? "× vs 1 thread" : "GOP/s" },
+			},
+			// Ideal linear speedup, y = threads: a shape, so no legend entry or hover.
+			shapes: relative
 				? [
-						Plot.line(ideal, {
-							x: "threads",
-							y: "y",
-							stroke: REFERENCE_INK,
-							strokeDasharray: "5 5",
-						}),
+						{
+							type: "line",
+							x0: ticks[0],
+							y0: ticks[0],
+							x1: last,
+							y1: last,
+							line: { color: REFERENCE_INK, dash: "dash", width: 1.5 },
+						},
 					]
-				: []),
-			Plot.line(points, {
-				x: "threads",
-				y: "y",
-				stroke: "kernel",
-				strokeWidth: 2,
-			}),
-			Plot.dot(points, { x: "threads", y: "y", fill: "kernel", r: 4 }),
-			Plot.text(
-				points.filter((p) => p.threads === ticks[ticks.length - 1]),
-				{
-					x: "threads",
-					y: "y",
-					text: "kernel",
-					dx: 6,
-					textAnchor: "start",
-					fill: "#9aa1a8",
-					fontSize: 11,
-				},
-			),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "threads",
-					y: "y",
-					title: (d: { kernel: string; y: number }) =>
-						`${d.kernel}\n${d.y.toFixed(1)}`,
-				}),
-			),
-		],
+				: [],
+		},
 	};
 };
 
-export const parallelEfficiency: PlotChartSpec = (rows, f, ctx) => {
-	// Scoped to the pinned kernel: without this, one line per size interleaves
-	// every parallel kernel's points (Plot's z defaults to stroke, so a line
-	// groups by n alone), and the line jumps thread counts across kernels
-	// instead of running monotonically within one.
+export const parallelEfficiency: ChartSpec = (rows, f, ctx) => {
+	// Scoped to the pinned kernel: without this, each size's line would
+	// interleave every parallel kernel's points and jump between thread counts
+	// across kernels instead of running monotonically within one.
 	const mine = parallelRows(rows, ctx).filter((r) => r.kernel === f.kernel);
 	if (!mine.length) return null;
 	if (!canShowScaling(mine)) return null;
@@ -130,51 +120,55 @@ export const parallelEfficiency: PlotChartSpec = (rows, f, ctx) => {
 			base.set(`${r.kernel}\u0000${r.n}`, Number(r.gops));
 	}
 
-	const points = mine
+	const points: SeriesPoint[] = mine
 		.map((r) => ({
-			threads: Number(r.threads),
-			n: String(r.n),
+			series: String(r.n),
+			x: Number(r.threads),
 			y:
 				(Number(r.gops) /
 					(base.get(`${r.kernel}\u0000${r.n}`) ?? Number.NaN) /
 					Number(r.threads)) *
 				100,
+			custom: [],
 		}))
 		.filter((p) => Number.isFinite(p.y));
 	if (!points.length) return null;
 
-	const ticks = [...new Set(points.map((p) => p.threads))].sort(
-		(a, b) => a - b,
-	);
+	const ticks = [...new Set(points.map((p) => p.x))].sort((a, b) => a - b);
 	if (ticks.length < 2) return null;
 
 	// Extend rather than clamp: a real result above 100% (cache-locality
 	// effects on small problems) must still be visible, not silently capped.
 	const ceiling = Math.max(100, ...points.map((p) => p.y));
 
+	// Numeric order, so the ramp runs light (small N) to dark: sorted as
+	// strings, "1024" would come before "128".
+	const sizes = [...new Set(points.map((p) => p.series))].sort(
+		(a, b) => Number(a) - Number(b),
+	);
+	const ramp = sequentialRamp(sizes.length);
+
 	return {
-		...BASE,
-		x: { type: "linear", ticks, label: "Threads" },
-		y: {
-			type: "linear",
-			domain: [0, ceiling],
-			label: "% of ideal",
-			labelAnchor: "top",
+		data: lineTraces(points, {
+			order: sizes,
+			color: (n) => ramp[sizes.indexOf(n)],
+			hovertemplate: "<b>%{y:.0f}%</b>  N = %{fullData.name}<extra></extra>",
+		}),
+		layout: {
+			...BASE_LAYOUT,
+			legend: { ...BASE_LAYOUT.legend, title: { text: "N" } },
+			xaxis: {
+				...AXIS,
+				type: "linear",
+				tickvals: ticks,
+				title: { text: "Threads" },
+			},
+			yaxis: {
+				...AXIS,
+				type: "linear",
+				range: [0, ceiling],
+				title: { text: "% of ideal" },
+			},
 		},
-		// n is ordinal, so a sequential ramp — not the categorical kernel palette.
-		color: { type: "ordinal", scheme: "YlGnBu", legend: true, label: "N" },
-		marks: [
-			Plot.line(points, { x: "threads", y: "y", stroke: "n", strokeWidth: 2 }),
-			Plot.dot(points, { x: "threads", y: "y", fill: "n", r: 4 }),
-			Plot.tip(
-				points,
-				Plot.pointer({
-					x: "threads",
-					y: "y",
-					title: (d: { n: string; y: number }) =>
-						`N = ${d.n}\n${d.y.toFixed(0)}%`,
-				}),
-			),
-		],
 	};
 };
