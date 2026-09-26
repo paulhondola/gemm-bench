@@ -8,7 +8,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"test": "bun test",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "bun run check",
 		"lint": "biome check src",
 		"lint:fix": "biome check --write src",
 		"check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
@@ -17,6 +17,7 @@
 		"@biomejs/biome": "2.5.13",
 		"@sveltejs/vite-plugin-svelte": "^7.3.0",
 		"@tsconfig/svelte": "^5.0.8",
+		"@types/bun": "^1.4.2",
 		"@types/node": "^24.13.3",
 		"svelte": "^5.57.0",
 		"svelte-check": "^4.7.6",

@@ -228,7 +228,7 @@ After `lefthook install`, each commit runs checks scoped to the files it touches
 | :--- | :--- |
 | `benchmark/**/*.rs` | `cargo fmt` (fixes are re-staged), `cargo clippy -D warnings`, `cargo test` |
 | `web/**/*.{ts,tsx,js,jsx,json,svelte}` | `biome check --write` (fixes are re-staged) |
-| `web/**/*.{ts,tsx}` | `bun run typecheck` |
+| `web/**/*.{ts,tsx,svelte}` | `bun run typecheck` (svelte-check) |
 | `data/runs/**/*.csv` | `duckdb -bail < data/build.sql` |
 
 ### Continuous Integration
