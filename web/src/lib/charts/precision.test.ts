@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { row } from "../fixtures";
+import { legendOf, plotted, pointsOf, row } from "../fixtures";
 import { throughputByPrecision } from "./precision";
 import { type Filters, makeCtx } from "./types";
 
@@ -30,13 +30,15 @@ test("one precision is not a comparison", () => {
 
 test("precisions are ordered by descending best throughput", () => {
 	const spec = throughputByPrecision(rows, f, makeCtx(rows));
-	expect(spec?.fx?.domain).toEqual(["f32", "i64"]);
+	expect(spec?.layout.xaxis?.categoryarray).toEqual(["f32", "i64"]);
 });
 
 test("one bar per family, in legend order and family ink", () => {
 	const spec = throughputByPrecision(rows, f, makeCtx(rows));
-	expect(spec?.color?.domain).toEqual(["serial", "parallel"]);
-	expect(spec?.color?.range).toEqual(["#844da2", "#008300"]);
+	expect(legendOf(spec)).toEqual({
+		names: ["serial", "parallel"],
+		colors: ["#844da2", "#008300"],
+	});
 });
 
 test("a row at a different size does not leak into the pinned size", () => {
@@ -47,16 +49,8 @@ test("a row at a different size does not leak into the pinned size", () => {
 		row({ kernel: "ikj", precision: "i64", n: 128, gops: 999 }),
 	];
 	const spec = throughputByPrecision(multiSize, f, makeCtx(multiSize));
-	const bars =
-		(
-			spec?.marks?.[0] as
-				| { data: { family: string; precision: string; gops: number }[] }
-				| undefined
-		)?.data ?? [];
-	const serialAtI64 = bars.find(
-		(b) => b.family === "serial" && b.precision === "i64",
-	);
-	expect(serialAtI64?.gops).toBe(6);
+	const serialAtI64 = pointsOf(spec, "serial").find((b) => b.x === "i64");
+	expect(serialAtI64?.y).toBe(6);
 });
 
 test("the i32 group has a GPU bar and no AMX bar", () => {
@@ -79,16 +73,10 @@ test("the i32 group has a GPU bar and no AMX bar", () => {
 		}),
 	];
 	const spec = throughputByPrecision(mixed, f, makeCtx(mixed));
-	const bars =
-		(
-			spec?.marks?.[0] as
-				| { data: { family: string; precision: string }[] }
-				| undefined
-		)?.data ?? [];
 	const at = (p: string) =>
-		bars
-			.filter((b) => b.precision === p)
-			.map((b) => b.family)
+		plotted(spec)
+			.filter((b) => b.x === p)
+			.map((b) => b.series)
 			.sort();
 	expect(at("i32")).toEqual(["gpu", "parallel"]);
 	expect(at("f32")).toEqual(["amx", "parallel"]);
