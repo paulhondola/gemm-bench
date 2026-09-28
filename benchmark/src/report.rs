@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     io::{Seek, SeekFrom},
+    time::Duration,
 };
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -31,8 +32,10 @@ impl BenchmarkProgress {
             .progress_chars("=>-");
 
         bar.set_style(style);
-        // No steady tick: its redraw thread would wake inside timed regions.
-        // The bar redraws on set_target/step, between cells.
+        // Without a steady tick the elapsed time only redraws between cells, so
+        // it freezes for a whole cell. The tick's thread wakes inside timed
+        // regions, so it runs once a second: a redraw is ~0.1 ms.
+        bar.enable_steady_tick(Duration::from_secs(1));
         Self { bar }
     }
 
