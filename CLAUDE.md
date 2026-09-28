@@ -1,6 +1,6 @@
 # gemm-bench
 
-Rust GEMM benchmarks (`benchmark/`) plus a Svelte dashboard (`web/`) that queries `data/runs/**/*.csv` (merged by `data/build.sql` into `web/public/results.parquet`) with DuckDB-WASM. README.md has the full CLI, methodology, and CSV schema.
+Rust GEMM benchmarks (`benchmark/`) plus a Svelte dashboard (`web/`) that charts `data/runs/**/*.csv`, merged by `data/build.sql` into `web/public/results.json`. README.md has the full CLI, methodology, and CSV schema.
 
 ## Commands
 

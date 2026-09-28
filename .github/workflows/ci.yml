@@ -53,7 +53,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       # Rejects contributor run files with missing values before they merge.
-      - name: Build Results Parquet
+      - name: Build Results JSON
         run: duckdb -bail < data/build.sql
 
       - name: Biome Lint & Format Check

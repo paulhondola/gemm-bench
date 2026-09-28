@@ -6,16 +6,18 @@ export function precisions(rows: Row[]): string[] {
 }
 
 /**
- * Contributor CSVs are untrusted: build.sql only rejects NULLs, so NaN,
- * Infinity, zero and negative values all reach the parquet. A single
- * non-positive n or gops poisons a log scale's whole domain, blanking every
- * series on the chart rather than just the bad row — so unusable rows are
- * dropped at the door.
+ * Contributor CSVs are untrusted: build.sql only rejects NULLs, so zero and
+ * negative values reach results.json, and NaN and Infinity reach it as null
+ * (JSON has neither). A single non-positive n or gops poisons a log scale's
+ * whole domain, blanking every series on the chart rather than just the bad
+ * row — so unusable rows are dropped at the door. Number(null) is 0, so only
+ * a real number counts.
  */
 export function isPlottable(row: Row): boolean {
-	const positive = (v: unknown) => Number.isFinite(Number(v)) && Number(v) > 0;
-	const nonNegative = (v: unknown) =>
-		Number.isFinite(Number(v)) && Number(v) >= 0;
+	const finite = (v: unknown): v is number =>
+		typeof v === "number" && Number.isFinite(v);
+	const positive = (v: unknown) => finite(v) && v > 0;
+	const nonNegative = (v: unknown) => finite(v) && v >= 0;
 	return (
 		positive(row.n) &&
 		positive(row.threads) &&

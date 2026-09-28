@@ -9,7 +9,7 @@ High-performance, safe Rust benchmarks for dense, row-major square matrix multip
 | Path | Contents |
 | :--- | :--- |
 | [`benchmark/`](benchmark) | Rust crate `gemm-bench`: the GEMM kernels and the benchmark CLI that produces the data. |
-| [`web/`](web) | Bun + Vite + Svelte + TypeScript dashboard that queries the data in the browser with DuckDB-WASM. Deployed to GitHub Pages. |
+| [`web/`](web) | Bun + Vite + Svelte + TypeScript dashboard that charts the run data in the browser. Deployed to GitHub Pages. |
 | [`data/`](data) | Benchmark runs as `runs/<host>/<timestamp>.csv`, and `build.sql`, which validates and merges them for the dashboard. |
 | [`justfile`](justfile) | Task runner for every build, run, lint, and check command. |
 | [`lefthook.yml`](lefthook.yml) | Pre-commit hooks for both halves of the repo. |
@@ -52,7 +52,7 @@ Run `just` with no arguments to list every recipe.
 | :--- | :--- | :--- |
 | `just bench [ARGS]` | `cargo run --release --manifest-path benchmark/Cargo.toml -- [ARGS]` | Run a benchmark sweep. Every argument is forwarded to the CLI (see [CLI Options](#cli-options)). Results go to `data/runs/<host>/<timestamp>.csv` unless `--output` is given. |
 | `just build` | `just build-bench`, then `just build-web` | Produce the optimized benchmark binary (`benchmark/target/release/gemm-bench`) and the static dashboard (`web/dist/`). Run one half with `just build-bench` (`cargo build --release`) or `just build-web` (`just data`, then `bun install && bun run build`). |
-| `just data` | `duckdb -bail < data/build.sql` | Validate every `data/runs/**/*.csv` and merge them into `web/public/results.parquet`, the file the dashboard queries. A run file missing a required value fails with its filename. `just dev` and `just build` run it first. |
+| `just data` | `duckdb -bail < data/build.sql` | Validate every `data/runs/**/*.csv` and merge them into `web/public/results.json`, the file the dashboard loads. A run file missing a required value fails with its filename. `just dev` and `just build` run it first. |
 | `just dev` | `bun dev` in `web/` | Start the Vite dev server with hot reload for the dashboard. |
 | `just test` | `just test-bench`, then `just test-web` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests, then the dashboard's data and chart tests. Run one half with `just test-bench` (`cargo test --manifest-path benchmark/Cargo.toml`) or `just test-web` (`bun test` in `web/`, which runs `web/src/**/*.test.ts`). |
 | `just lint` | `just lint-bench`, then `just lint-web` | Auto-fix formatting and lint issues in both halves. Run one half with `just lint-bench` (`cargo fmt`) or `just lint-web` (`bun run lint:fix`, Biome). |
@@ -196,7 +196,7 @@ just bench \
 
 ## Benchmark Data
 
-Every run is its own file under [`data/runs/`](data/runs), at `data/runs/<host>/<timestamp>.csv`, so reruns and other machines add data instead of replacing it. [`data/build.sql`](data/build.sql) validates the files and merges them into `web/public/results.parquet`.
+Every run is its own file under [`data/runs/`](data/runs), at `data/runs/<host>/<timestamp>.csv`, so reruns and other machines add data instead of replacing it. [`data/build.sql`](data/build.sql) validates the files and merges them into `web/public/results.json`.
 
 To contribute results from your machine:
 
@@ -214,7 +214,7 @@ The dashboard in [`web/`](web) is a Vite + Svelte 5 + TypeScript app linted and 
 - **Build:** `just build` (or `bun run build` in `web/`) writes static files to `web/dist/`. Preview them with `bun run preview`.
 - **Deploy:** every push to `main` builds `web/` and publishes `web/dist/` to GitHub Pages via [`deploy.yml`](.github/workflows/deploy.yml).
 
-It loads `web/public/results.parquet` into DuckDB-WASM in the browser and charts it with [Plotly.js](https://plotly.com/javascript/) in six tabs: Overview (one line per kernel family), CPU & AMX, CPU threading, Precision, GPU, and Block size. Pickers narrow each tab by precision, matrix size, block size, or kernel, and a Relative toggle switches to speedup (over `naive-ijk` on CPU & AMX, over one thread on CPU threading). Every chart has Plotly's built-ins: drag to zoom and double-click to reset, click a legend entry to hide that series or double-click it to show only that one, hover for every series' value at that point, and download the chart as SVG from its toolbar. A hidden series stays hidden while you change pickers. GPU kernels are charted with their end-to-end (`-e2e`) timings, the same host-to-host scope as the CPU kernels; the GPU tab plots the GPU-only share as copy overhead. Charts that span kernel families colour by family, and per-kernel charts show either host or GPU kernels, never both. Chart definitions live in `web/src/lib/charts/` as pure functions that return Plotly JSON, each with a `bun test` suite next to it.
+It loads `web/public/results.json` and charts it with [Plotly.js](https://plotly.com/javascript/) in six tabs: Overview (one line per kernel family), CPU & AMX, CPU threading, Precision, GPU, and Block size. Pickers narrow each tab by precision, matrix size, block size, or kernel, and a Relative toggle switches to speedup (over `naive-ijk` on CPU & AMX, over one thread on CPU threading). Every chart has Plotly's built-ins: drag to zoom and double-click to reset, click a legend entry to hide that series or double-click it to show only that one, hover for every series' value at that point, and download the chart as SVG from its toolbar. A hidden series stays hidden while you change pickers. GPU kernels are charted with their end-to-end (`-e2e`) timings, the same host-to-host scope as the CPU kernels; the GPU tab plots the GPU-only share as copy overhead. Charts that span kernel families colour by family, and per-kernel charts show either host or GPU kernels, never both. Chart definitions live in `web/src/lib/charts/` as pure functions that return Plotly JSON, each with a `bun test` suite next to it.
 
 ---
 
