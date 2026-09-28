@@ -1,6 +1,8 @@
 use std::{
     fs::File,
     io::{Seek, SeekFrom},
+    sync::mpsc::{self, RecvTimeoutError, Sender},
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
@@ -15,6 +17,8 @@ use crate::benchmark::BenchmarkRecord;
 /// Interactive progress tracker wrapping `indicatif::ProgressBar`.
 pub(crate) struct BenchmarkProgress {
     bar: ProgressBar,
+    /// `None` when nothing draws: `--no-progress`, or stderr isn't a terminal.
+    ticker: Option<Ticker>,
 }
 
 impl BenchmarkProgress {
@@ -22,6 +26,7 @@ impl BenchmarkProgress {
         if disabled {
             return Self {
                 bar: ProgressBar::hidden(),
+                ticker: None,
             };
         }
 
@@ -32,11 +37,10 @@ impl BenchmarkProgress {
             .progress_chars("=>-");
 
         bar.set_style(style);
-        // Without a steady tick the elapsed time only redraws between cells, so
-        // it freezes for a whole cell. The tick's thread wakes inside timed
-        // regions, so it runs once a second: a redraw is ~0.1 ms.
-        bar.enable_steady_tick(Duration::from_secs(1));
-        Self { bar }
+        // Without a ticker the elapsed time only redraws between cells, so it
+        // freezes for a whole cell.
+        let ticker = (!bar.is_hidden()).then(|| Ticker::spawn(bar.clone()));
+        Self { bar, ticker }
     }
 
     pub(crate) fn set_target(
@@ -57,7 +61,10 @@ impl BenchmarkProgress {
         self.bar.inc(1);
     }
 
-    pub(crate) fn finish(&self) {
+    pub(crate) fn finish(&mut self) {
+        // Stopped first: a finished bar always redraws, so a tick after this
+        // would draw over the final line.
+        self.ticker = None;
         if self.bar.is_hidden() {
             return;
         }
@@ -75,6 +82,7 @@ impl BenchmarkProgress {
 
 impl Drop for BenchmarkProgress {
     fn drop(&mut self) {
+        self.ticker = None;
         if !self.bar.is_finished() {
             self.bar.finish_with_message("Aborted");
             if !self.bar.is_hidden() {
@@ -82,6 +90,50 @@ impl Drop for BenchmarkProgress {
             }
         }
     }
+}
+
+/// Redraws the bar just after each whole second of its elapsed time, so the
+/// timer counts up by one per redraw. (indicatif's steady tick waits a fixed
+/// interval after each redraw instead, so it drifts and now and then skips a
+/// second.) It wakes once a second, inside timed regions too; a redraw is
+/// ~0.1 ms. Dropping it stops the thread.
+struct Ticker {
+    stop: Sender<()>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Ticker {
+    fn spawn(bar: ProgressBar) -> Self {
+        let (stop, stopped) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            // `force_draw` skips indicatif's rate limiter, which could drop a
+            // tick that lands just after a burst of fast cells.
+            while stopped.recv_timeout(until_next_second(bar.elapsed()))
+                == Err(RecvTimeoutError::Timeout)
+            {
+                bar.force_draw();
+            }
+        });
+        Self {
+            stop,
+            thread: Some(thread),
+        }
+    }
+}
+
+impl Drop for Ticker {
+    fn drop(&mut self) {
+        // Anything but a timeout ends the thread's wait, so it exits now.
+        let _ = self.stop.send(());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Time until `elapsed` next reaches a whole second.
+fn until_next_second(elapsed: Duration) -> Duration {
+    Duration::from_secs(elapsed.as_secs() + 1) - elapsed
 }
 
 /// Renders the human-facing view after all timed work is complete.
@@ -148,9 +200,11 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::render_results_table;
     use crate::benchmark::BenchmarkRecord;
-    use indicatif::ProgressStyle;
+    use indicatif::{ProgressBar, ProgressStyle};
 
     fn record() -> BenchmarkRecord {
         BenchmarkRecord {
@@ -205,8 +259,24 @@ mod tests {
     }
 
     #[test]
+    fn ticker_waits_until_the_next_whole_second() {
+        let wait = |ms| super::until_next_second(Duration::from_millis(ms));
+        assert_eq!(wait(2_300), Duration::from_millis(700));
+        assert_eq!(wait(5_000), Duration::from_secs(1));
+        assert_eq!(wait(0), Duration::from_secs(1));
+    }
+
+    #[test]
+    fn dropping_the_ticker_stops_it_without_waiting_for_a_tick() {
+        let ticker = super::Ticker::spawn(ProgressBar::hidden());
+        let start = Instant::now();
+        drop(ticker);
+        assert!(start.elapsed() < Duration::from_millis(500));
+    }
+
+    #[test]
     fn progress_bar_lifecycle_disabled() {
-        let progress = super::BenchmarkProgress::new(5, true);
+        let mut progress = super::BenchmarkProgress::new(5, true);
         progress.set_target("naive", 64, "f32", 1, None);
         progress.set_target("tiled", 64, "f32", 1, Some(64));
         progress.step();

@@ -54,7 +54,7 @@ pub(crate) fn run(
     plan: &BenchmarkPlan,
 ) -> Result<Vec<BenchmarkRecord>, Box<dyn std::error::Error>> {
     let mut records = Vec::new();
-    let progress = BenchmarkProgress::new(plan.total_configurations(), plan.no_progress);
+    let mut progress = BenchmarkProgress::new(plan.total_configurations(), plan.no_progress);
 
     // Each arm monomorphizes the whole sweep, so kernels compile to native
     // arithmetic for that precision with no per-element dispatch.
