@@ -1,4 +1,4 @@
-import { query, type Row } from "./db";
+import { loadRows, type Row } from "./db";
 import {
 	defaultBlockSizeFor,
 	defaultParallelKernel,
@@ -21,11 +21,10 @@ export const store = $state({
 	dropped: 0,
 });
 
-/** One query at boot; every derivation downstream is synchronous. */
+/** One fetch at boot; every derivation downstream is synchronous. */
 export async function boot(): Promise<void> {
 	try {
-		const queried = await query("SELECT * FROM results");
-		const { rows: usable, dropped } = partitionPlottable(queried);
+		const { rows: usable, dropped } = partitionPlottable(await loadRows());
 		// One row per measurement from here on: Metal rows carry end-to-end
 		// timings under their plain name (see withEndToEnd).
 		const rows = withEndToEnd(usable);

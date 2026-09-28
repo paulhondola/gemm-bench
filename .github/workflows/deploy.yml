@@ -35,7 +35,7 @@ jobs:
           unzip -q duckdb.zip -d "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Build Results Parquet
+      - name: Build Results JSON
         run: duckdb -bail < data/build.sql
 
       - name: Build Web App

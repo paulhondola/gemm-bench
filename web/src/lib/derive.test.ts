@@ -154,6 +154,16 @@ test("isPlottable rejects Infinity median_ms", () => {
 	).toBe(false);
 });
 
+test("isPlottable rejects null stddev_ms", () => {
+	// build.sql writes non-finite doubles as null (JSON has no NaN or
+	// Infinity), and Number(null) is 0, which a >= 0 check would let through.
+	expect(isPlottable({ ...validRow, stddev_ms: null })).toBe(false);
+});
+
+test("isPlottable rejects null gops", () => {
+	expect(isPlottable({ ...validRow, gops: null })).toBe(false);
+});
+
 test("isPlottable rejects negative threads", () => {
 	expect(isPlottable({ ...validRow, threads: -1 })).toBe(false);
 });

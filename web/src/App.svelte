@@ -97,7 +97,7 @@ function selectTab(id: string) {
 	{#if store.error}
 		<p class="error">{store.error}</p>
 	{:else if !store.loaded}
-		<p class="muted">Loading DuckDB…</p>
+		<p class="muted">Loading results…</p>
 	{:else if !tab}
 		<p class="muted">No results yet. Run <code>just bench</code> and <code>just data</code>.</p>
 	{:else}

@@ -1,7 +1,7 @@
--- Validates every benchmark run and merges them into the Parquet file the
--- dashboard queries. Run from the repo root: duckdb -bail < data/build.sql
+-- Validates every benchmark run and merges them into the JSON file the
+-- dashboard loads. Run from the repo root: duckdb -bail < data/build.sql
 -- -bail matters: without it DuckDB keeps executing after a failed check and
--- the COPY would still overwrite the Parquet file.
+-- the COPY would still overwrite the JSON file.
 
 CREATE VIEW runs AS
 SELECT * FROM read_csv('data/runs/**/*.csv', union_by_name = true, filename = true,
@@ -28,7 +28,18 @@ WHERE kernel IS NULL OR backend IS NULL OR device IS NULL OR precision IS NULL
    OR host IS NULL OR commit IS NULL OR "timestamp" IS NULL
 HAVING count(*) > 0;
 
+-- JSON has no NaN or Infinity: DuckDB writes them bare and JSON.parse rejects
+-- the whole file. They can't be rejected here instead, since the harness
+-- records an infinite mean_rel_error_f64 on purpose (a kernel that produced
+-- NaN), so every DOUBLE column writes them as null. isPlottable drops a row
+-- whose plotted column is null.
 COPY (
-  SELECT * EXCLUDE (filename) FROM runs
+  SELECT * EXCLUDE (filename) REPLACE (
+      CASE WHEN isfinite(gops) THEN gops END AS gops,
+      CASE WHEN isfinite(mean_rel_error_f64) THEN mean_rel_error_f64 END AS mean_rel_error_f64,
+      CASE WHEN isfinite(median_ms) THEN median_ms END AS median_ms,
+      CASE WHEN isfinite(min_ms) THEN min_ms END AS min_ms,
+      CASE WHEN isfinite(stddev_ms) THEN stddev_ms END AS stddev_ms)
+  FROM runs
   ORDER BY host, "timestamp", precision, kernel, n, threads, block_size, repetitions
-) TO 'web/public/results.parquet' (FORMAT parquet, COMPRESSION zstd);
+) TO 'web/public/results.json' (FORMAT json, ARRAY true);
