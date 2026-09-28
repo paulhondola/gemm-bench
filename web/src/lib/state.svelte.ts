@@ -5,7 +5,6 @@ import {
 	defaultPrecision,
 	defaultSize,
 	partitionPlottable,
-	withEndToEnd,
 } from "./derive";
 
 export const store = $state({
@@ -24,10 +23,9 @@ export const store = $state({
 /** One fetch at boot; every derivation downstream is synchronous. */
 export async function boot(): Promise<void> {
 	try {
-		const { rows: usable, dropped } = partitionPlottable(await loadRows());
-		// One row per measurement from here on: Metal rows carry end-to-end
-		// timings under their plain name (see withEndToEnd).
-		const rows = withEndToEnd(usable);
+		// One row per measurement: Metal rows carry end-to-end timings, with
+		// the GPU-only median as gpu_ms.
+		const { rows, dropped } = partitionPlottable(await loadRows());
 		store.rows = rows;
 		store.dropped = dropped;
 		store.precision = defaultPrecision(rows);
