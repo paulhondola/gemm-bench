@@ -21,7 +21,7 @@ Add a `KernelChoice` variant and its row in `KernelChoice::info()`: the `label` 
 
 ## 3. Wire the harness (`benchmark/src/benchmark.rs`)
 
-Add the import and a one-line `measure` arm: `sample(&MyGemm::new(..)?, io)`. `sample` runs the untimed warm-up and the timed repetitions; build any pool or setup in the arm, before it. Rayon-style kernels go through `InPool::new(threads, kernel)?`, which keeps `pool.install` inside each timed run.
+Add the import and a one-line `measure` arm: `sample(&MyGemm::new(..)?, setup_start, io)`. `sample` runs the untimed warm-up and the timed repetitions; build any pool or setup in the arm, before it, so it is timed as `setup_ms`. Rayon-style kernels go through `InPool::new(threads, kernel)?`, which keeps `pool.install` inside each timed run.
 
 ## 4. Test
 

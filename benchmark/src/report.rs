@@ -113,6 +113,8 @@ struct TerminalBenchmarkRecord<'a> {
     precision: &'a str,
     median_ms: String,
     stddev_ms: String,
+    gpu_ms: String,
+    setup_ms: String,
     gops: String,
     err_f64: String,
 }
@@ -128,6 +130,10 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
         precision: record.precision,
         median_ms: format!("{:.3}", record.median_ms),
         stddev_ms: format!("{:.3}", record.stddev_ms),
+        gpu_ms: record
+            .gpu_ms
+            .map_or_else(|| "-".to_owned(), |ms| format!("{ms:.3}")),
+        setup_ms: format!("{:.3}", record.setup_ms),
         gops: format!("{:.3}", record.gops),
         err_f64: format!("{:.1e}", record.mean_rel_error_f64),
     });
@@ -156,6 +162,8 @@ mod tests {
             median_ms: 12.345_67,
             min_ms: 12.0,
             stddev_ms: 0.25,
+            gpu_ms: None,
+            setup_ms: 0.05,
             block_size: None,
             repetitions: 5,
             host: "test-host".to_owned(),
@@ -166,8 +174,18 @@ mod tests {
 
     #[test]
     fn terminal_table_uses_schema_headers_and_compact_float_precision() {
-        let table = render_results_table(&[record()]);
+        let mps = BenchmarkRecord {
+            kernel: "mps".to_owned(),
+            backend: "metal",
+            gpu_ms: Some(10.5),
+            ..record()
+        };
+        let table = render_results_table(&[record(), mps]);
 
+        assert!(table.contains("gpu_ms"));
+        assert!(table.contains("10.500"));
+        assert!(table.contains("setup_ms"));
+        assert!(table.contains("0.050"));
         assert!(table.contains("kernel"));
         assert!(table.contains("precision"));
         assert!(table.contains("f32"));
@@ -208,16 +226,26 @@ mod tests {
             block_size: Some(64),
             ..record()
         };
+        let mps = BenchmarkRecord {
+            kernel: "mps".to_owned(),
+            backend: "metal",
+            device: "Test GPU".to_owned(),
+            threads: 1,
+            gpu_ms: Some(10.5),
+            ..record()
+        };
 
-        super::write_records(csv_file, &[record(), tiled]).expect("write records");
+        super::write_records(csv_file, &[record(), tiled, mps]).expect("write records");
 
         let csv_content = std::fs::read_to_string(&csv_path).expect("read csv");
-        // Kernels that don't tile leave block_size empty; tiled ones record it.
+        // Kernels that don't tile leave block_size empty, and kernels off Metal
+        // leave gpu_ms empty; the others record them.
         assert_eq!(
             csv_content,
-            "kernel,backend,device,precision,n,threads,gops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,block_size,repetitions,host,commit,timestamp\n\
-             rayon-ikj,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
-             tiled,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
+            "kernel,backend,device,precision,n,threads,gops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,gpu_ms,setup_ms,block_size,repetitions,host,commit,timestamp\n\
+             rayon-ikj,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,,0.05,,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
+             tiled,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,,0.05,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
+             mps,metal,Test GPU,f32,256,1,2.5,0.001234,12.34567,12.0,0.25,10.5,0.05,,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
         );
         let _ = std::fs::remove_file(csv_path);
     }
