@@ -14,18 +14,29 @@ SELECT * FROM read_csv('data/runs/**/*.csv', union_by_name = true, filename = tr
              'timestamp': 'TIMESTAMPTZ', 'n': 'BIGINT', 'threads': 'BIGINT',
              'gops': 'DOUBLE', 'mean_rel_error_f64': 'DOUBLE',
              'median_ms': 'DOUBLE', 'min_ms': 'DOUBLE', 'stddev_ms': 'DOUBLE',
+             'gpu_ms': 'DOUBLE', 'setup_ms': 'DOUBLE',
              'block_size': 'BIGINT', 'repetitions': 'BIGINT'});
 
 -- union_by_name fills a column missing from one file with NULL instead of
--- failing, so required values are checked explicitly. block_size is exempt:
--- roadmap item 4 leaves it empty for kernels that don't use blocks.
+-- failing, so required values are checked explicitly; a run file from before
+-- setup_ms existed fails here. block_size is exempt: roadmap item 4 leaves it
+-- empty for kernels that don't use blocks. gpu_ms is checked below.
 CREATE TEMP TABLE _validation_failed AS
 SELECT error('run files missing required values: ' || string_agg(DISTINCT filename, ', '))
 FROM runs
 WHERE kernel IS NULL OR backend IS NULL OR device IS NULL OR precision IS NULL
    OR n IS NULL OR threads IS NULL OR gops IS NULL OR mean_rel_error_f64 IS NULL
-   OR median_ms IS NULL OR min_ms IS NULL OR stddev_ms IS NULL OR repetitions IS NULL
-   OR host IS NULL OR commit IS NULL OR "timestamp" IS NULL
+   OR median_ms IS NULL OR min_ms IS NULL OR stddev_ms IS NULL OR setup_ms IS NULL
+   OR repetitions IS NULL OR host IS NULL OR commit IS NULL OR "timestamp" IS NULL
+HAVING count(*) > 0;
+
+-- gpu_ms is the GPU window inside a Metal round trip, so it is set on exactly
+-- the Metal rows: without it the row's timings can't be told apart from a
+-- GPU-only measurement, and a CPU row has no GPU window to report.
+CREATE TEMP TABLE _gpu_ms_misplaced AS
+SELECT error('gpu_ms must be set on exactly the metal rows: ' || string_agg(DISTINCT filename, ', '))
+FROM runs
+WHERE (backend = 'metal') <> (gpu_ms IS NOT NULL)
 HAVING count(*) > 0;
 
 -- JSON has no NaN or Infinity: DuckDB writes them bare and JSON.parse rejects
@@ -39,7 +50,9 @@ COPY (
       CASE WHEN isfinite(mean_rel_error_f64) THEN mean_rel_error_f64 END AS mean_rel_error_f64,
       CASE WHEN isfinite(median_ms) THEN median_ms END AS median_ms,
       CASE WHEN isfinite(min_ms) THEN min_ms END AS min_ms,
-      CASE WHEN isfinite(stddev_ms) THEN stddev_ms END AS stddev_ms)
+      CASE WHEN isfinite(stddev_ms) THEN stddev_ms END AS stddev_ms,
+      CASE WHEN isfinite(gpu_ms) THEN gpu_ms END AS gpu_ms,
+      CASE WHEN isfinite(setup_ms) THEN setup_ms END AS setup_ms)
   FROM runs
   ORDER BY host, "timestamp", precision, kernel, n, threads, block_size, repetitions
 ) TO 'web/public/results.json' (FORMAT json, ARRAY true);
