@@ -1,6 +1,14 @@
 <script lang="ts">
 import { KERNEL_DOCS } from "./docs";
+import { renderMarkdown } from "./markdown";
 import { FAMILY_INK } from "./palette";
+
+// Each file's "## `<kernel>`" renders as an h4, under the page's h2 and the
+// family's h3.
+const families = KERNEL_DOCS.map((g) => ({
+	...g,
+	html: renderMarkdown(g.doc, 2),
+}));
 </script>
 
 <article>
@@ -14,19 +22,13 @@ import { FAMILY_INK } from "./palette";
 
 	<section class="panel">
 		<h2>Kernels</h2>
-		{#each KERNEL_DOCS as group (group.family)}
+		{#each families as g (g.family)}
 			<h3>
-				<span class="dot" style:background={FAMILY_INK[group.family]}></span>
-				<code>{group.family}</code> · {group.title}
+				<span class="dot" style:background={FAMILY_INK[g.family]}></span>
+				<code>{g.family}</code> · {g.title}
 			</h3>
-			<p class="muted">{group.blurb}</p>
-			<dl>
-				{#each group.kernels as k (k.name)}
-					<dt><code>{k.name}</code></dt>
-					<dd>{k.what}</dd>
-					<dd class="muted">Runs via: {k.via}</dd>
-				{/each}
-			</dl>
+			<!-- The dashboard's own Markdown, never contributed data. -->
+			<div class="prose">{@html g.html}</div>
 		{/each}
 	</section>
 </article>
@@ -58,17 +60,15 @@ import { FAMILY_INK } from "./palette";
 		font-weight: 600;
 	}
 	h3 {
-		margin: 20px 0 4px;
+		margin: 28px 0 4px;
 		font-size: 15px;
 		font-weight: 600;
 		display: flex;
 		align-items: center;
 		gap: 8px;
 	}
-	p {
-		margin: 0;
-	}
-	code {
+	code,
+	.prose :global(code) {
 		font-family: "IBM Plex Mono", monospace;
 		font-size: 13px;
 	}
@@ -78,17 +78,32 @@ import { FAMILY_INK } from "./palette";
 		border-radius: 50%;
 		flex: none;
 	}
-	.muted {
+	.prose > :global(p:first-child) {
+		margin-top: 0;
 		color: #9aa1a8;
 	}
-	dl {
-		margin: 12px 0 0;
+	.prose :global(p) {
+		margin: 8px 0;
 	}
-	dt {
-		margin-top: 14px;
+	.prose :global(h4) {
+		margin: 20px 0 4px;
+		font-size: 14px;
 		font-weight: 600;
 	}
-	dd {
-		margin: 2px 0 0 16px;
+	.prose :global(pre) {
+		margin: 8px 0;
+		padding: 10px 14px;
+		overflow-x: auto;
+		background: #0e1012;
+		border: 1px solid #24292e;
+		border-radius: 6px;
+		line-height: 1.45;
+	}
+	.prose :global(ul) {
+		margin: 8px 0;
+		padding-left: 20px;
+	}
+	.prose :global(a) {
+		color: #e6e3dc;
 	}
 </style>
