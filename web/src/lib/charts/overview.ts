@@ -254,9 +254,8 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 
 /**
  * One line per family: each family's best kernel, thread count and block size
- * at every size. Metal rows are end-to-end here (see withEndToEnd), the same
- * host-to-host scope as the CPU rows they are drawn against, so every line is
- * solid.
+ * at every size. Metal rows are timed end-to-end, the same host-to-host scope
+ * as the CPU rows they are drawn against, so every line is solid.
  */
 export const throughputByFamily: ChartSpec = (rows, _f, ctx) => {
 	const points: SeriesPoint[] = bestPerFamily(rows, ctx.family).map((r) => ({

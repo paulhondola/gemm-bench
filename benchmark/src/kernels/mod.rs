@@ -211,6 +211,8 @@ mod tests {
                 .zip(&samples.e2e)
                 .all(|(gpu, e2e)| gpu <= e2e)
         );
+        // Allocating the three shared buffers is timed once, as setup.
+        assert!(samples.setup > std::time::Duration::ZERO);
     }
 
     /// Checks a shader against `NaiveGemm` at n = 7 and at n = 37, which is

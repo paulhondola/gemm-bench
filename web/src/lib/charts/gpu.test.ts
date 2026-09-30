@@ -12,8 +12,8 @@ const f: Filters = {
 	relative: false,
 };
 
-// GPU rows as withEndToEnd emits them: the plain kernel name, end-to-end
-// timings, and the GPU-only median as gpu_ms.
+// GPU rows as the CSV records them: end-to-end timings, and the GPU-only
+// median as gpu_ms.
 const gpu = (
 	kernel: string,
 	n: number,
@@ -136,7 +136,7 @@ test("copy overhead is the share of end-to-end time outside the GPU dispatch", (
 	);
 });
 
-test("a GPU row without a GPU-only twin is left out of the overhead chart", () => {
+test("a GPU row without gpu_ms is left out of the overhead chart", () => {
 	const noTwin = f32.map((r) =>
 		r.kernel === "mps" ? { ...r, gpu_ms: null } : r,
 	);

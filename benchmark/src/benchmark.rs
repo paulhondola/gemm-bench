@@ -37,6 +37,11 @@ pub(crate) struct BenchmarkRecord {
     pub(crate) median_ms: f64,
     pub(crate) min_ms: f64,
     pub(crate) stddev_ms: f64,
+    /// Median GPU execution (`commit` → `waitUntilCompleted`) inside the
+    /// round trip that `median_ms` times. Empty in the CSV off Metal.
+    pub(crate) gpu_ms: Option<f64>,
+    /// One-time cost of building the kernel for this configuration, one sample.
+    pub(crate) setup_ms: f64,
     /// Empty in the CSV for kernels that don't tile.
     pub(crate) block_size: Option<usize>,
     pub(crate) repetitions: usize,
@@ -49,7 +54,7 @@ pub(crate) fn run(
     plan: &BenchmarkPlan,
 ) -> Result<Vec<BenchmarkRecord>, Box<dyn std::error::Error>> {
     let mut records = Vec::new();
-    let progress = BenchmarkProgress::new(plan.total_configurations(), plan.no_progress);
+    let mut progress = BenchmarkProgress::new(plan.total_configurations(), plan.no_progress);
 
     // Each arm monomorphizes the whole sweep, so kernels compile to native
     // arithmetic for that precision with no per-element dispatch.
@@ -124,33 +129,27 @@ fn run_precision<T: Element>(
                     .into());
                 }
 
-                // Both records come from the same runs, so they share one accuracy.
-                let mean_rel_error_f64 = mean_relative_error(&output, &truth);
-                let e2e_label = format!("{}-e2e", kernel.label());
-                let runs = std::iter::once((kernel.label(), &samples.timed))
-                    .chain(samples.e2e.as_ref().map(|e2e| (e2e_label.as_str(), e2e)));
-                for (label, timed) in runs {
-                    let stats = summarize(timed);
-                    let gops = 2.0 * (n as f64).powi(3) / (stats.median_ms / 1_000.0) / 1e9;
-                    records.push(BenchmarkRecord {
-                        kernel: label.to_owned(),
-                        backend: kernel.backend(),
-                        device: plan.devices.of(kernel).to_owned(),
-                        precision: precision.label(),
-                        n,
-                        threads: thread_count,
-                        gops,
-                        mean_rel_error_f64,
-                        median_ms: stats.median_ms,
-                        min_ms: stats.min_ms,
-                        stddev_ms: stats.stddev_ms,
-                        block_size,
-                        repetitions: plan.repetitions,
-                        host: plan.context.host.clone(),
-                        commit: plan.context.commit.clone(),
-                        timestamp: plan.context.timestamp.clone(),
-                    });
-                }
+                let stats = summarize(&samples.timed);
+                records.push(BenchmarkRecord {
+                    kernel: kernel.label().to_owned(),
+                    backend: kernel.backend(),
+                    device: plan.devices.of(kernel).to_owned(),
+                    precision: precision.label(),
+                    n,
+                    threads: thread_count,
+                    gops: 2.0 * (n as f64).powi(3) / (stats.median_ms / 1_000.0) / 1e9,
+                    mean_rel_error_f64: mean_relative_error(&output, &truth),
+                    median_ms: stats.median_ms,
+                    min_ms: stats.min_ms,
+                    stddev_ms: stats.stddev_ms,
+                    gpu_ms: samples.gpu.as_deref().map(|gpu| summarize(gpu).median_ms),
+                    setup_ms: samples.setup.as_secs_f64() * 1_000.0,
+                    block_size,
+                    repetitions: plan.repetitions,
+                    host: plan.context.host.clone(),
+                    commit: plan.context.commit.clone(),
+                    timestamp: plan.context.timestamp.clone(),
+                });
             }
         }
     }
@@ -168,28 +167,32 @@ fn benchmark_inputs<T: Element>(n: usize) -> (Matrix<T>, Matrix<T>) {
     (lhs, rhs)
 }
 
-/// One configuration's timed runs. Metal kernels also time the round trip
-/// (upload, encode, dispatch, download), reported as a second `-e2e` record.
+/// One configuration's measurements. `timed` is what a caller waits for per
+/// run: one `compute` call, or a Metal kernel's whole round trip (upload,
+/// encode, dispatch, download), with its GPU execution alone in `gpu`.
+/// `setup` is the one-time cost of building the kernel, taken once.
 struct Samples {
     timed: Vec<Duration>,
-    e2e: Option<Vec<Duration>>,
+    gpu: Option<Vec<Duration>>,
+    setup: Duration,
 }
 
+/// A Metal kernel's round trip and GPU window, with its buffer allocation
+/// added to the time it took to build the kernel.
 #[cfg(target_os = "macos")]
-impl From<GpuSamples> for Samples {
-    fn from(samples: GpuSamples) -> Self {
-        Self {
-            timed: samples.gpu,
-            e2e: Some(samples.e2e),
-        }
+fn on_gpu(built: Duration, samples: GpuSamples) -> Samples {
+    Samples {
+        timed: samples.e2e,
+        gpu: Some(samples.gpu),
+        setup: built + samples.setup,
     }
 }
 
-/// Returns the durations of `repetitions` timed runs.
+/// Returns the timed runs and the kernel's one-time setup time.
 ///
-/// Kernel setup (a pool, a compiled graph, a Metal queue) happens here,
-/// before `sample`'s untimed warm-up run, so one-time costs (the process's
-/// first Rayon call, a fresh pool's idle workers) stay out of the samples.
+/// Kernel setup (a pool, a compiled graph, a Metal device and buffers) happens
+/// here, before `sample`'s untimed warm-up run, so one-time costs stay out of
+/// the timed samples; they are recorded once, as `setup`.
 fn measure<T: Element>(
     choice: KernelChoice,
     threads: usize,
@@ -202,54 +205,71 @@ fn measure<T: Element>(
     // `BenchmarkPlan::cells` gives every tiled kernel a block size.
     let block = || block_size.expect("tiled kernels always get a block size");
     let io = (lhs, rhs, output, repetitions);
+    // Each arm builds its kernel before `sample` starts, so the time from here
+    // to `sample`'s first line is that kernel's setup.
+    let setup_start = Instant::now();
     Ok(match choice {
-        KernelChoice::Naive => sample(&NaiveGemm, io),
-        KernelChoice::Ikj => sample(&IkjGemm, io),
-        KernelChoice::Tiled => sample(&TiledGemm::new(block()), io),
-        KernelChoice::RayonIkj => sample(&InPool::new(threads, RayonIkjGemm)?, io),
-        KernelChoice::RayonTiled => {
-            sample(&InPool::new(threads, RayonTiledGemm::new(block()))?, io)
+        KernelChoice::Naive => sample(&NaiveGemm, setup_start, io),
+        KernelChoice::Ikj => sample(&IkjGemm, setup_start, io),
+        KernelChoice::Tiled => sample(&TiledGemm::new(block()), setup_start, io),
+        KernelChoice::RayonIkj => sample(&InPool::new(threads, RayonIkjGemm)?, setup_start, io),
+        KernelChoice::RayonTiled => sample(
+            &InPool::new(threads, RayonTiledGemm::new(block()))?,
+            setup_start,
+            io,
+        ),
+        KernelChoice::StaticIkj => sample(&StaticIkjGemm::new(threads)?, setup_start, io),
+        KernelChoice::StaticTiled => {
+            sample(&StaticTiledGemm::new(threads, block())?, setup_start, io)
         }
-        KernelChoice::StaticIkj => sample(&StaticIkjGemm::new(threads)?, io),
-        KernelChoice::StaticTiled => sample(&StaticTiledGemm::new(threads, block())?, io),
         #[cfg(target_os = "macos")]
-        KernelChoice::AccelerateBlas => sample(&AccelerateBlasGemm, io),
+        KernelChoice::AccelerateBlas => sample(&AccelerateBlasGemm, setup_start, io),
         #[cfg(target_os = "macos")]
         KernelChoice::AccelerateBnns => sample(
             &AccelerateBnnsGemm::<T>::new(lhs.rows())
                 .expect("accelerate-bnns needs macOS 26 (the BNNSGraph builder)"),
+            setup_start,
             io,
         ),
-        // Metal kernels time the GPU dispatch and the round trip in their own loop.
+        // Metal kernels time the GPU window and the round trip in their own loop.
         #[cfg(target_os = "macos")]
-        KernelChoice::Mps => MpsGemm::<T>::new()
-            .expect("MPS needs a Metal device and f16 or f32")
-            .benchmark(lhs, rhs, io.2, repetitions)?
-            .into(),
+        KernelChoice::Mps => {
+            let kernel = MpsGemm::<T>::new().expect("MPS needs a Metal device and f16 or f32");
+            let built = setup_start.elapsed();
+            on_gpu(built, kernel.benchmark(lhs, rhs, io.2, repetitions)?)
+        }
         #[cfg(target_os = "macos")]
-        KernelChoice::MetalNaive => ShaderGemm::<T>::new(Shader::Naive)?
-            .expect("metal-naive needs a Metal device and f16, f32, i32 or i64")
-            .benchmark(lhs, rhs, io.2, repetitions)?
-            .into(),
+        KernelChoice::MetalNaive => {
+            let kernel = ShaderGemm::<T>::new(Shader::Naive)?
+                .expect("metal-naive needs a Metal device and f16, f32, i32 or i64");
+            let built = setup_start.elapsed();
+            on_gpu(built, kernel.benchmark(lhs, rhs, io.2, repetitions)?)
+        }
         #[cfg(target_os = "macos")]
-        KernelChoice::MetalTiled => ShaderGemm::<T>::new(Shader::Tiled)?
-            .expect("metal-tiled needs a Metal device and f16, f32, i32 or i64")
-            .benchmark(lhs, rhs, io.2, repetitions)?
-            .into(),
+        KernelChoice::MetalTiled => {
+            let kernel = ShaderGemm::<T>::new(Shader::Tiled)?
+                .expect("metal-tiled needs a Metal device and f16, f32, i32 or i64");
+            let built = setup_start.elapsed();
+            on_gpu(built, kernel.benchmark(lhs, rhs, io.2, repetitions)?)
+        }
     })
 }
 
-/// One untimed warm-up run, then `repetitions` timed ones.
+/// One untimed warm-up run, then `repetitions` timed ones. `setup_start` is
+/// when building `kernel` began, so the time until this call is its setup.
 fn sample<T: Element>(
     kernel: &impl GemmKernel<T>,
+    setup_start: Instant,
     (lhs, rhs, output, repetitions): (&Matrix<T>, &Matrix<T>, &mut Matrix<T>, usize),
 ) -> Samples {
+    let setup = setup_start.elapsed();
     kernel.compute(lhs, rhs, output);
     Samples {
         timed: (0..repetitions)
             .map(|_| time_kernel(kernel, lhs, rhs, output))
             .collect(),
-        e2e: None,
+        gpu: None,
+        setup,
     }
 }
 
@@ -386,15 +406,16 @@ fn tolerance<T: Element>(n: usize) -> f64 {
 mod tests {
     use std::time::Duration;
 
+    use clap::Parser;
     use gemm_bench::Matrix;
 
     use gemm_bench::{GemmKernel, kernels::IkjGemm};
 
     use super::{
-        benchmark_inputs, f64_reference, max_relative_error, mean_relative_error, measure,
-        summarize, tolerance,
+        BenchmarkRecord, benchmark_inputs, f64_reference, max_relative_error, mean_relative_error,
+        measure, run, summarize, tolerance,
     };
-    use crate::kernel::KernelChoice;
+    use crate::{cli::Cli, kernel::KernelChoice};
 
     fn ms(values: &[u64]) -> Vec<Duration> {
         values.iter().map(|&v| Duration::from_millis(v)).collect()
@@ -505,25 +526,83 @@ mod tests {
     }
 
     #[test]
-    fn cpu_kernels_have_no_end_to_end_samples() {
+    fn cpu_kernels_have_a_setup_time_and_no_gpu_window() {
         let (lhs, rhs) = benchmark_inputs::<f32>(8);
         let mut output = Matrix::zeros(8, 8);
-        let samples = measure(KernelChoice::Ikj, 1, None, 2, &lhs, &rhs, &mut output)
-            .expect("ikj should run");
+        let samples = measure(KernelChoice::RayonIkj, 2, None, 2, &lhs, &rhs, &mut output)
+            .expect("rayon-ikj should run");
         assert_eq!(samples.timed.len(), 2);
-        assert!(samples.e2e.is_none());
+        assert!(samples.gpu.is_none());
+        // Building a two-worker pool spawns threads, which takes measurable time.
+        assert!(samples.setup > Duration::ZERO);
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn metal_kernels_time_the_gpu_and_the_round_trip() {
+    fn metal_kernels_time_the_round_trip_the_gpu_window_and_setup() {
         let (lhs, rhs) = benchmark_inputs::<f32>(8);
         let mut output = Matrix::zeros(8, 8);
         let samples = measure(KernelChoice::Mps, 1, None, 2, &lhs, &rhs, &mut output)
             .expect("mps should run");
-        let e2e = samples
-            .e2e
-            .expect("a Metal kernel records end-to-end samples");
-        assert_eq!((samples.timed.len(), e2e.len()), (2, 2));
+        let gpu = samples.gpu.expect("a Metal kernel records its GPU window");
+        assert_eq!((samples.timed.len(), gpu.len()), (2, 2));
+        // `timed` is the round trip, and the GPU window sits inside it.
+        assert!(gpu.iter().zip(&samples.timed).all(|(gpu, e2e)| gpu <= e2e));
+        assert!(samples.setup > Duration::ZERO);
+    }
+
+    /// One real run of `kernel` at n = 8, planned through the CLI as `main` does.
+    fn run_one(kernel: &str) -> Vec<BenchmarkRecord> {
+        let output = std::env::temp_dir().join(format!(
+            "gemm-bench-run-test-{}-{kernel}.csv",
+            std::process::id()
+        ));
+        let plan = Cli::try_parse_from([
+            "gemm-bench",
+            "--output",
+            output.to_str().expect("temp paths are UTF-8"),
+            "--sizes",
+            "8",
+            "--kernel",
+            kernel,
+            "--threads",
+            "1",
+            "--precision",
+            "f32",
+            "--repetitions",
+            "2",
+            "--no-progress",
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect("the plan should be valid");
+        let records = run(&plan).expect("the run should succeed");
+        let _ = std::fs::remove_file(output);
+        records
+    }
+
+    #[test]
+    fn a_cpu_measurement_writes_one_record_without_gpu_ms() {
+        let records = run_one("ikj");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].kernel, "ikj");
+        assert_eq!(records[0].gpu_ms, None);
+        assert!(records[0].setup_ms >= 0.0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_metal_measurement_writes_one_end_to_end_record_with_gpu_ms() {
+        let records = run_one("mps");
+        assert_eq!(records.len(), 1, "no separate -e2e record");
+        let record = &records[0];
+        assert_eq!(record.kernel, "mps");
+        let gpu_ms = record.gpu_ms.expect("Metal records carry gpu_ms");
+        // Each GPU window sits inside its round trip, so the medians keep that order.
+        assert!(gpu_ms <= record.median_ms);
+        // gops comes from the round trip, like every CPU row.
+        let expected = 2.0 * 8f64.powi(3) / (record.median_ms / 1_000.0) / 1e9;
+        assert!((record.gops - expected).abs() <= 1e-9 * expected);
+        assert!(record.setup_ms > 0.0);
     }
 }

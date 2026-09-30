@@ -138,6 +138,8 @@ pub struct GpuSamples {
     pub gpu: Vec<Duration>,
     /// Upload, encode, commit, wait and download: what a caller pays.
     pub e2e: Vec<Duration>,
+    /// Allocating the `n`×`n` operand buffers, once, before the warm-up.
+    pub setup: Duration,
 }
 
 /// Runs one untimed warm-up iteration, then `repetitions` timed ones, and
@@ -154,10 +156,12 @@ pub(crate) fn time_dispatch<T: Element>(
     assert_gemm_dimensions(lhs, rhs, output);
     autoreleasepool(|_| {
         let context = kernel.context();
+        let allocation = Instant::now();
         let operands = GpuOperands::<T>::new(&context.device, lhs.rows())?;
         let mut samples = GpuSamples {
             gpu: Vec::with_capacity(repetitions),
             e2e: Vec::with_capacity(repetitions),
+            setup: allocation.elapsed(),
         };
         // Iteration 0 is the warm-up: it brings the GPU clock up and is not recorded.
         for iteration in 0..=repetitions {

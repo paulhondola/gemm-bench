@@ -49,7 +49,7 @@ const toPoint = (series: string, r: Row): Point => ({
 	gops: Number(r.gops),
 });
 
-/** Each GPU kernel's best row at each size; rows are end-to-end (withEndToEnd). */
+/** Each GPU kernel's best row at each size; Metal rows are end-to-end. */
 function gpuPoints(rows: Row[], ctx: Ctx): Point[] {
 	return bestPerKernel(rows)
 		.filter(
@@ -265,8 +265,9 @@ export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
  * arithmetic as N³, so the share falls at large sizes.
  */
 export const gpuCopyOverhead: ChartSpec = (rows, _f, ctx) => {
-	// The same best-per-(kernel, n) rows the kernel chart plots. A row with no
-	// GPU-only twin (gpu_ms null) has nothing to subtract, so it is skipped.
+	// The same best-per-(kernel, n) rows the kernel chart plots. Only Metal
+	// rows carry gpu_ms; a row without it has nothing to subtract, so it is
+	// skipped.
 	const points: SeriesPoint[] = bestPerKernel(rows)
 		.filter(
 			(r) =>
