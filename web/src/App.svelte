@@ -1,4 +1,5 @@
 <script lang="ts">
+import About from "./lib/About.svelte";
 import Chart from "./lib/Chart.svelte";
 import { rowsForTab, visibleTabs } from "./lib/charts/index";
 import { makeCtx } from "./lib/charts/types";
@@ -27,6 +28,8 @@ const filters = $derived({
 	relative: store.relative,
 });
 const tabs = $derived(visibleTabs(store.rows, filters, ctx));
+// Not a TABS entry: it has no panels to make it visible and no controls.
+const about = $derived(store.tab === "about");
 const tab = $derived(tabs.find((t) => t.id === store.tab) ?? tabs[0]);
 const scoped = $derived(
 	tab ? rowsForTab(tab, store.rows, store.precision, store.blockSize, ctx) : [],
@@ -105,99 +108,107 @@ function selectTab(id: string) {
 			{#each tabs as t}
 				<button
 					type="button"
-					class:current={t.id === tab.id}
+					class:current={!about && t.id === tab.id}
 					onclick={() => selectTab(t.id)}>{t.label}</button>
 			{/each}
+			<button
+				type="button"
+				class:current={about}
+				onclick={() => selectTab("about")}>About</button>
 		</nav>
 
-		<div class="controls">
-			{#if tab.controls.includes("precision") || tab.inertPrecision}
-				<PickerGroup
-					label="Precision"
-					items={[...new Set(store.rows.map((r) => String(r.precision)))].sort()}
-					selected={store.precision}
-					disabled={() => Boolean(tab.inertPrecision)}
-					title={() =>
-						tab.inertPrecision ? "Precision is this chart's x-axis" : ""}
-					onSelect={pickPrecision} />
-			{/if}
+		{#if about}
+			<About />
+		{:else}
+			<div class="controls">
+				{#if tab.controls.includes("precision") || tab.inertPrecision}
+					<PickerGroup
+						label="Precision"
+						items={[...new Set(store.rows.map((r) => String(r.precision)))].sort()}
+						selected={store.precision}
+						disabled={() => Boolean(tab.inertPrecision)}
+						title={() =>
+							tab.inertPrecision ? "Precision is this chart's x-axis" : ""}
+						onSelect={pickPrecision} />
+				{/if}
 
-			{#if tab.controls.includes("n")}
-				<PickerGroup
-					label="Matrix size"
-					items={allSizes(store.rows)}
-					selected={store.n}
-					format={(s) => `N = ${s}`}
-					disabled={(s) => !available.includes(s)}
-					title={(s) =>
-						available.includes(s) ? "" : `no ${store.precision} runs at N = ${s}`}
-					onSelect={pickSize} />
-			{/if}
+				{#if tab.controls.includes("n")}
+					<PickerGroup
+						label="Matrix size"
+						items={allSizes(store.rows)}
+						selected={store.n}
+						format={(s) => `N = ${s}`}
+						disabled={(s) => !available.includes(s)}
+						title={(s) =>
+							available.includes(s) ? "" : `no ${store.precision} runs at N = ${s}`}
+						onSelect={pickSize} />
+				{/if}
 
-			{#if tab.controls.includes("blockSize")}
-				<PickerGroup
-					label="Block size"
-					items={blockSizes(store.rows)}
-					selected={store.blockSize}
-					format={(b) => `b = ${b}`}
-					disabled={(b) => !availableBlockSizes.includes(b)}
-					title={(b) =>
-						availableBlockSizes.includes(b)
-							? ""
-							: `no ${store.precision} b = ${b} runs at N = ${store.n}`}
-					onSelect={pickBlockSize} />
-			{/if}
+				{#if tab.controls.includes("blockSize")}
+					<PickerGroup
+						label="Block size"
+						items={blockSizes(store.rows)}
+						selected={store.blockSize}
+						format={(b) => `b = ${b}`}
+						disabled={(b) => !availableBlockSizes.includes(b)}
+						title={(b) =>
+							availableBlockSizes.includes(b)
+								? ""
+								: `no ${store.precision} b = ${b} runs at N = ${store.n}`}
+						onSelect={pickBlockSize} />
+				{/if}
 
-			{#if tab.controls.includes("kernel")}
-				<PickerGroup
-					label="Kernel"
-					items={parallelKernelList}
-					selected={store.kernel}
-					onSelect={(k) => (store.kernel = k)} />
-			{/if}
+				{#if tab.controls.includes("kernel")}
+					<PickerGroup
+						label="Kernel"
+						items={parallelKernelList}
+						selected={store.kernel}
+						onSelect={(k) => (store.kernel = k)} />
+				{/if}
 
-			<label class="toggle">
-				<input type="checkbox" bind:checked={store.relative} />
-				Relative
-			</label>
-		</div>
-
-		<div class="panels">
-			<!-- Keyed: one Chart per panel, so a panel never inherits another
-			     tab's chart state. -->
-			{#each tab.panels as panel (panel.title)}
-				<Chart
-					title={panel.title}
-					note={panel.note}
-					spec={panel.spec(scoped, filters, ctx)} />
-			{/each}
-		</div>
-
-		<details class="table">
-			<summary>Data view ({scoped.length} rows)</summary>
-			<div class="scroll">
-				<table>
-					<thead>
-						<tr>
-							{#each scoped.length ? Object.keys(scoped[0]) : [] as c}<th>{c}</th>{/each}
-						</tr>
-					</thead>
-					<tbody>
-						{#each scoped as row}
-							<tr>
-								{#each Object.keys(scoped[0]) as c}
-									<td>
-										{typeof row[c] === "number" && !Number.isInteger(row[c])
-											? (row[c] as number).toFixed(3)
-											: row[c]}
-									</td>
-								{/each}
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+				<label class="toggle">
+					<input type="checkbox" bind:checked={store.relative} />
+					Relative
+				</label>
 			</div>
-		</details>
+
+			<div class="panels">
+				<!-- Keyed: one Chart per panel, so a panel never inherits another
+				     tab's chart state. -->
+				{#each tab.panels as panel (panel.title)}
+					<Chart
+						title={panel.title}
+						note={panel.note}
+						spec={panel.spec(scoped, filters, ctx)} />
+				{/each}
+			</div>
+
+			<details class="table">
+				<summary>Data view ({scoped.length} rows)</summary>
+				<div class="scroll">
+					<table>
+						<thead>
+							<tr>
+								{#each scoped.length ? Object.keys(scoped[0]) : [] as c}<th>{c}</th>{/each}
+							</tr>
+						</thead>
+						<tbody>
+							{#each scoped as row}
+								<tr>
+									{#each Object.keys(scoped[0]) as c}
+										<td>
+											{typeof row[c] === "number" && !Number.isInteger(row[c])
+												? (row[c] as number).toFixed(3)
+												: row[c]}
+										</td>
+									{/each}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</details>
+		{/if}
 	{/if}
 </main>
 

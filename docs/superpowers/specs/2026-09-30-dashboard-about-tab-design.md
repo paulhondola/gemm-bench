@@ -1,6 +1,6 @@
 # Dashboard About Tab: What Each View Compares, What Each Kernel Does
 
-- **Status:** Draft, for review (2026-09-30).
+- **Status:** MVP implemented (2026-09-30), with the draft copy below as written; the copy may be revised later.
 - **Branch:** `claude/gracious-einstein-ywu39k`
 - **Builds on:** PR #22 (`feat/dashboard-hpc-metrics`), merged into `main` as `33b705c`.
 
@@ -60,6 +60,8 @@ export interface KernelDoc {
 
 export interface FamilyDoc {
 	family: Family;
+	/** The heading beside the family's legend name. */
+	title: string;
 	/** One line: what the family's kernels share. */
 	blurb: string;
 	kernels: KernelDoc[];

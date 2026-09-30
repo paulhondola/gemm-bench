@@ -23,6 +23,8 @@ export interface Panel {
 export interface Tab {
 	id: string;
 	label: string;
+	/** What the tab compares and how to read it, for the About tab. */
+	about: string;
 	controls: Control[];
 	panels: Panel[];
 	/** The precision pills render disabled: precision is this tab's x-axis. */
@@ -44,6 +46,8 @@ export const TABS: Tab[] = [
 	{
 		id: "overview",
 		label: "Overview",
+		about:
+			"The headline: how fast each kind of kernel gets. The optimization ladder starts at naive-ijk and shows what each technique buys over the one before it: better single-core code, then threads, then AMX, then the GPU. Every rung is read at the largest size they all ran. Throughput by family plots each family's best result at every size, with dashed lines at the hardware's theoretical peak. Fastest kernel per size names the winner at each size.",
 		controls: ["precision"],
 		inertBlockSize: true,
 		panels: [
@@ -67,6 +71,8 @@ export const TABS: Tab[] = [
 	{
 		id: "cpu",
 		label: "CPU & AMX",
+		about:
+			"Every CPU and AMX kernel as the matrices grow, each at its best thread count and the selected block size. The gaps between lines show what loop order, cache blocking, threads and AMX each add. Relative re-plots every line as a speedup over naive-ijk. The second chart shows only the single-threaded kernels, on a scale where their differences are visible.",
 		controls: ["precision", "blockSize"],
 		panels: [
 			{
@@ -84,6 +90,8 @@ export const TABS: Tab[] = [
 	{
 		id: "threads",
 		label: "CPU threading",
+		about:
+			"How the multi-threaded CPU kernels scale as threads are added, at one matrix size. The rayon-* kernels balance work by letting idle threads take it from busy ones; the static-* kernels split it evenly up front. Relative re-plots each line as a speedup over one thread. Parallel efficiency divides that speedup by the thread count for the selected kernel at every size: 100% means every added thread paid for itself in full.",
 		controls: ["precision", "n", "kernel", "blockSize"],
 		panels: [
 			{
@@ -101,6 +109,8 @@ export const TABS: Tab[] = [
 	{
 		id: "precision",
 		label: "Precision",
+		about:
+			"Each family's best result at every element type, at one matrix size: 16-, 32- and 64-bit floats (f16, f32, f64) and 32- and 64-bit integers (i32, i64). Narrower types fit more values into each SIMD register, so they can run faster. Accuracy vs throughput plots each float kernel's error against its speed: up and to the left is faster and more accurate.",
 		controls: ["n"],
 		inertPrecision: true,
 		inertBlockSize: true,
@@ -120,6 +130,8 @@ export const TABS: Tab[] = [
 	{
 		id: "gpu",
 		label: "GPU",
+		about:
+			"Each GPU kernel against the best threaded-CPU and AMX results. GPU times include copying the matrices into and out of the GPU's buffers, so they compare like for like with the CPU times. GPU ÷ CPU at equal effort pairs hand-written code with hand-written code (the shaders against the threaded CPU kernels) and vendor library with vendor library (MPS against Accelerate); above 1.0 the GPU wins. Copy overhead shows how much of each GPU run goes to copying data in and out and preparing the GPU's work rather than computing; that share shrinks as N grows.",
 		controls: ["precision"],
 		inertBlockSize: true,
 		panels: [
@@ -143,6 +155,8 @@ export const TABS: Tab[] = [
 	{
 		id: "blocksize",
 		label: "Block size",
+		about:
+			"How the tile size changes the throughput of the tiled kernels at one matrix size. Smaller tiles fit in faster caches; larger ones spend less time on loop bookkeeping. Small differences between points are run-to-run noise.",
 		controls: ["precision", "n"],
 		inertBlockSize: true,
 		panels: [

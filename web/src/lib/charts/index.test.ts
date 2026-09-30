@@ -380,3 +380,9 @@ test("panel titles are unique across all tabs", () => {
 	const titles = TABS.flatMap((t) => t.panels.map((p) => p.title));
 	expect(new Set(titles).size).toBe(titles.length);
 });
+
+test("every tab explains itself on the About tab, which no tab shadows", () => {
+	for (const t of TABS) expect(t.about).not.toBe("");
+	// App.svelte opens the About tab on store.tab === "about".
+	expect(TABS.map((t) => t.id)).not.toContain("about");
+});

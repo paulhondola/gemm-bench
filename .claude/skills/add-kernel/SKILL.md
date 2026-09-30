@@ -29,7 +29,7 @@ Add it to the kernel list in `every_kernel_matches_naive` (`kernels/mod.rs` test
 
 ## 5. Docs
 
-Add a row to the CPU kernel table and the `--kernel` list in `README.md`.
+Add a row to the CPU kernel table and the `--kernel` list in `README.md`, and an entry (what it does, and how it reaches the hardware) to its family in `KERNEL_DOCS` in `web/src/lib/docs.ts`, which the dashboard's About tab renders. `web/src/lib/docs.test.ts` fails until it's there.
 
 ## 6. Verify
 
