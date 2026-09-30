@@ -4,13 +4,17 @@ import { FAMILY_INK, REFERENCE_INK } from "../palette";
 import {
 	AXIS,
 	BASE_LAYOUT,
+	type Ceiling,
 	type ChartSpec,
 	type Ctx,
+	ceilingOf,
+	ceilingShape,
 	LABEL_INK,
 	LABELLED_MARGIN,
 	lineTraces,
 	log2Axis,
 	log2Ticks,
+	pctOfPeak,
 	type SeriesPoint,
 } from "./types";
 
@@ -50,14 +54,17 @@ const toPoint = (series: string, r: Row): Point => ({
 });
 
 /** Each GPU kernel's best row at each size; Metal rows are end-to-end. */
-function gpuPoints(rows: Row[], ctx: Ctx): Point[] {
-	return bestPerKernel(rows)
-		.filter(
-			(r) =>
-				familyOf(r, ctx.family) === "gpu" && ctx.palette.has(String(r.kernel)),
-		)
-		.map((r) => toPoint(String(r.kernel), r));
+function gpuRows(rows: Row[], ctx: Ctx): Row[] {
+	return bestPerKernel(rows).filter(
+		(r) =>
+			familyOf(r, ctx.family) === "gpu" && ctx.palette.has(String(r.kernel)),
+	);
 }
+
+const toKernelPoint = (r: Row): Point => toPoint(String(r.kernel), r);
+
+const gpuPoints = (rows: Row[], ctx: Ctx): Point[] =>
+	gpuRows(rows, ctx).map(toKernelPoint);
 
 /** A family's best row at each size, keyed by n. */
 function familyBest(rows: Row[], ctx: Ctx, family: Family): Map<number, Row> {
@@ -71,13 +78,21 @@ function familyBest(rows: Row[], ctx: Ctx, family: Family): Map<number, Row> {
 /**
  * Each GPU kernel against the best parallel-CPU and AMX result at every size.
  * GPU rows carry end-to-end timings, the same host-to-host scope as the CPU
- * rows, so every line is solid.
+ * rows, so every line is solid. The GPU ceiling spans three kernel series and
+ * so belongs to no legend group; the parallel one shares its reference's, so
+ * hiding that line hides its ceiling. Each point's hover is measured against
+ * its own series' ceiling.
  */
 export const gpuKernels: ChartSpec = (rows, _f, ctx) => {
-	const kernelPoints = gpuPoints(rows, ctx);
+	const kernelRows = gpuRows(rows, ctx);
+	const kernelPoints = kernelRows.map(toKernelPoint);
 	if (!kernelPoints.length) return null;
-	const referencePoints = REFERENCES.flatMap(({ family, label }) =>
-		[...familyBest(rows, ctx, family).values()].map((r) => toPoint(label, r)),
+	const referenceRows = REFERENCES.map((reference) => ({
+		...reference,
+		best: [...familyBest(rows, ctx, reference.family).values()],
+	}));
+	const referencePoints = referenceRows.flatMap(({ label, best }) =>
+		best.map((r) => toPoint(label, r)),
 	);
 	const points = [...kernelPoints, ...referencePoints];
 	const sizes = log2Ticks(points.map((p) => p.n));
@@ -86,7 +101,7 @@ export const gpuKernels: ChartSpec = (rows, _f, ctx) => {
 	// The validated legend order: GPU kernels (metal-naive, metal-tiled, mps
 	// sort that way), then the references.
 	const kernels = [...new Set(kernelPoints.map((p) => p.series))].sort();
-	const references = REFERENCES.filter(({ label }) =>
+	const references = referenceRows.filter(({ label }) =>
 		referencePoints.some((p) => p.series === label),
 	);
 	const ink = new Map([
@@ -96,15 +111,33 @@ export const gpuKernels: ChartSpec = (rows, _f, ctx) => {
 	const order = [...ink.keys()];
 	const showLabels = order.length <= 4;
 
+	const gpuCeiling = ceilingOf(kernelRows, "gpu", ctx);
+	const ceilings = new Map<string, Ceiling | undefined>([
+		...kernels.map((k) => [k, gpuCeiling] as const),
+		...references.map(
+			(r) => [r.label, ceilingOf(r.best, r.family, ctx)] as const,
+		),
+	]);
+	const shapes = [
+		...(gpuCeiling ? [ceilingShape(gpuCeiling)] : []),
+		...references.flatMap((r) => {
+			const c = ceilings.get(r.label);
+			return c ? [ceilingShape(c, r.label)] : [];
+		}),
+	];
+
 	return {
 		data: lineTraces(
 			points.map((p) => ({
 				series: p.series,
 				x: p.n,
 				y: p.gops,
-				// A reference line names the kernel and thread count behind each
-				// point; a GPU kernel's own line already is that kernel.
-				custom: [p.series === p.kernel ? "" : ` · ${p.kernel} · ${p.threads}T`],
+				custom: [
+					// A reference line names the kernel and thread count behind each
+					// point; a GPU kernel's own line already is that kernel.
+					p.series === p.kernel ? "" : ` · ${p.kernel} · ${p.threads}T`,
+					pctOfPeak(p.gops, ceilings.get(p.series)),
+				],
 			})),
 			{
 				order,
@@ -112,7 +145,7 @@ export const gpuKernels: ChartSpec = (rows, _f, ctx) => {
 				xs: sizes,
 				labels: showLabels,
 				hovertemplate:
-					"<b>%{y:.1f} GOP/s</b>  %{fullData.name}%{customdata[0]}<extra></extra>",
+					"<b>%{y:.1f} GOP/s</b>  %{fullData.name}%{customdata[0]}%{customdata[1]}<extra></extra>",
 			},
 		),
 		layout: {
@@ -120,6 +153,7 @@ export const gpuKernels: ChartSpec = (rows, _f, ctx) => {
 			...(showLabels ? { margin: LABELLED_MARGIN } : {}),
 			xaxis: log2Axis(sizes, "N"),
 			yaxis: { ...AXIS, type: "log", title: { text: "GOP/s" } },
+			...(shapes.length ? { shapes } : {}),
 		},
 	};
 };

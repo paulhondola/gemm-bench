@@ -3,11 +3,12 @@ import { blockSizeSweep } from "./blocksize";
 import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
 import {
 	fastestPerSize,
+	optimizationLadder,
 	serialOnly,
 	throughputByFamily,
 	throughputVsSize,
 } from "./overview";
-import { throughputByPrecision } from "./precision";
+import { accuracyVsThroughput, throughputByPrecision } from "./precision";
 import { parallelEfficiency, throughputVsThreads } from "./threading";
 import type { ChartSpec, Ctx, Filters } from "./types";
 
@@ -47,8 +48,13 @@ export const TABS: Tab[] = [
 		inertBlockSize: true,
 		panels: [
 			{
+				title: "Optimization ladder",
+				note: "Each rung is the fastest result of the next technique up, at the largest N every rung measured · log scale · × is the step over the rung above",
+				spec: optimizationLadder,
+			},
+			{
 				title: "Throughput by family",
-				note: "Each family's best kernel, thread count and block size at every size · log–log · GPU timings are end-to-end (host copies included), like the CPU timings",
+				note: "Each family's best kernel, thread count and block size at every size · log–log · GPU timings are end-to-end (host copies included), like the CPU timings · dashed lines are hardware peaks (data/peaks.csv), and hover gives % of peak; AMX has no published peak and the integer precisions no sourced one, so they have none",
 				spec: throughputByFamily,
 			},
 			{
@@ -104,6 +110,11 @@ export const TABS: Tab[] = [
 				note: "Each family's best kernel, thread count and block size at the selected size · GPU timings are end-to-end",
 				spec: throughputByPrecision,
 			},
+			{
+				title: "Accuracy vs throughput",
+				note: "Each kernel's fastest configuration at the selected size, float precisions only · error is the mean relative error against an f64 CPU reference · results equal to the reference (every integer kernel, and f64 CPU kernels, which add in the reference's order) and non-finite ones can't sit on a log axis, so they are left out",
+				spec: accuracyVsThroughput,
+			},
 		],
 	},
 	{
@@ -114,7 +125,7 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "GPU kernels vs CPU",
-				note: "GPU timings are end-to-end (host copies and command encoding included), like the CPU timings · references are each family's best kernel, thread count and block size",
+				note: "GPU timings are end-to-end (host copies and command encoding included), like the CPU timings · references are each family's best kernel, thread count and block size · dashed lines are hardware peaks (data/peaks.csv), and hover gives % of peak; AMX has no published peak and the integer precisions no sourced one, so they have none",
 				spec: gpuKernels,
 			},
 			{

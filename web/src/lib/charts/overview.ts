@@ -8,17 +8,23 @@ import {
 	familyOf,
 	hasKernel,
 } from "../derive";
-import { FAMILY_INK, FAMILY_ORDER } from "../palette";
+import { BASELINE_INK, FAMILY_INK, FAMILY_ORDER } from "../palette";
 import {
 	AXIS,
 	BASE_LAYOUT,
+	type Ceiling,
 	type ChartSpec,
 	type Ctx,
+	ceilingOf,
+	ceilingShape,
 	type Figure,
+	LABEL_INK,
 	LABELLED_MARGIN,
 	lineTraces,
 	log2Axis,
 	log2Ticks,
+	MARGIN,
+	pctOfPeak,
 	type SeriesPoint,
 	uidOf,
 } from "./types";
@@ -255,21 +261,40 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 /**
  * One line per family: each family's best kernel, thread count and block size
  * at every size. Metal rows are timed end-to-end, the same host-to-host scope
- * as the CPU rows they are drawn against, so every line is solid.
+ * as the CPU rows they are drawn against, so every line is solid. A family
+ * with a hardware peak gets a dashed ceiling in its legend group, so hiding
+ * the family hides its ceiling.
  */
 export const throughputByFamily: ChartSpec = (rows, _f, ctx) => {
-	const points: SeriesPoint[] = bestPerFamily(rows, ctx.family).map((r) => ({
-		series: familyOf(r, ctx.family),
-		x: Number(r.n),
-		y: Number(r.gops),
-		custom: [String(r.kernel), Number(r.threads)],
-	}));
-	const sizes = log2Ticks(points.map((p) => p.x));
+	const best = bestPerFamily(rows, ctx.family);
+	const sizes = log2Ticks(best.map((r) => Number(r.n)));
 	if (sizes.length < 2) return null;
 
 	const present = FAMILY_ORDER.filter((family) =>
-		points.some((p) => p.series === family),
+		best.some((r) => familyOf(r, ctx.family) === family),
 	);
+	const ceilings = new Map<Family, Ceiling>();
+	for (const family of present) {
+		const c = ceilingOf(
+			best.filter((r) => familyOf(r, ctx.family) === family),
+			family,
+			ctx,
+		);
+		if (c) ceilings.set(family, c);
+	}
+	const points: SeriesPoint[] = best.map((r) => {
+		const family = familyOf(r, ctx.family);
+		return {
+			series: family,
+			x: Number(r.n),
+			y: Number(r.gops),
+			custom: [
+				String(r.kernel),
+				Number(r.threads),
+				pctOfPeak(Number(r.gops), ceilings.get(family)),
+			],
+		};
+	});
 
 	return {
 		data: lineTraces(points, {
@@ -279,13 +304,149 @@ export const throughputByFamily: ChartSpec = (rows, _f, ctx) => {
 			// At most four series, so direct labels as well as the legend.
 			labels: true,
 			hovertemplate:
-				"<b>%{y:.1f} GOP/s</b>  %{fullData.name} · %{customdata[0]} · %{customdata[1]}T<extra></extra>",
+				"<b>%{y:.1f} GOP/s</b>  %{fullData.name} · %{customdata[0]} · %{customdata[1]}T%{customdata[2]}<extra></extra>",
 		}),
 		layout: {
 			...BASE_LAYOUT,
 			margin: LABELLED_MARGIN,
 			xaxis: log2Axis(sizes, "N"),
 			yaxis: { ...AXIS, type: "log", title: { text: "GOP/s" } },
+			...(ceilings.size
+				? {
+						shapes: [...ceilings.values()].map((c) =>
+							ceilingShape(c, c.family),
+						),
+					}
+				: {}),
+		},
+	};
+};
+
+/**
+ * The optimization techniques, in the order a programmer reaches for them:
+ * effort order, never sorted by speed, so a rung that buys less than the one
+ * above it (the GPU under AMX) shows a step below 1 instead of moving.
+ * naive-ijk is its own rung and is not counted in the serial one: it is the
+ * baseline every other rung is measured against.
+ */
+const RUNGS: { label: string; family: Family | null }[] = [
+	{ label: BASELINE_KERNEL, family: null },
+	{ label: "serial", family: "serial" },
+	{ label: "parallel", family: "parallel" },
+	{ label: "amx", family: "amx" },
+	{ label: "gpu", family: "gpu" },
+];
+
+/** 3 significant figures below 100, whole numbers with separators above. */
+const fmtGops = (v: number) =>
+	v >= 100
+		? Math.round(v).toLocaleString("en-US")
+		: String(Number(v.toPrecision(3)));
+
+/** A multiplier to 2 significant figures: 0.86, 6.3, 49, 6,600. */
+const fmtX = (r: number) => Number(r.toPrecision(2)).toLocaleString("en-US");
+
+/**
+ * The fastest result of each rung, from naive-ijk to the GPU, and what each
+ * step up bought. Every rung is read at one N, the largest every present rung
+ * measured, so the bars are comparable: a rung with no rows (f64 has no GPU,
+ * the integers no AMX) is left out rather than blocking the rest. The N is
+ * derived, not picked, and carried in the annotation with the total.
+ *
+ * Kernel names appear only in the bar text and customdata, which escapeLabels
+ * escapes; the annotation and the y labels are the dashboard's own strings.
+ */
+export const optimizationLadder: ChartSpec = (rows, _f, ctx) => {
+	const rungs = RUNGS.map((rung) => ({
+		...rung,
+		rows: rows.filter((r) =>
+			rung.family === null
+				? r.kernel === BASELINE_KERNEL
+				: r.kernel !== BASELINE_KERNEL &&
+					familyOf(r, ctx.family) === rung.family,
+		),
+	})).filter((rung) => rung.rows.length);
+	if (rungs.length < 2) return null;
+
+	const sizes = rungs.map((rung) => new Set(rung.rows.map((r) => Number(r.n))));
+	const shared = [...sizes[0]].filter((n) => sizes.every((s) => s.has(n)));
+	if (!shared.length) return null;
+	const n = Math.max(...shared);
+
+	// Each rung's rows are one family at one precision (the Overview is scoped
+	// to one), so at n bestPerFamily leaves exactly one row: the rung's best.
+	const winners = rungs.map(
+		(rung) =>
+			bestPerFamily(
+				rung.rows.filter((r) => Number(r.n) === n),
+				ctx.family,
+			)[0],
+	);
+	const gops = winners.map((r) => Number(r.gops));
+	const first = gops[0];
+	const last = gops[gops.length - 1];
+
+	return {
+		data: [
+			{
+				type: "bar",
+				orientation: "h",
+				name: "ladder",
+				uid: "ladder",
+				x: gops,
+				y: rungs.map((rung) => rung.label),
+				text: winners.map(
+					(r, i) =>
+						`${r.kernel} · ${fmtGops(gops[i])} GOP/s` +
+						(i ? ` · ×${fmtX(gops[i] / gops[i - 1])}` : ""),
+				),
+				textposition: "outside",
+				// Lets the text run into the right margin instead of being cut at the
+				// plot edge.
+				cliponaxis: false,
+				textfont: { color: LABEL_INK, size: 11 },
+				customdata: winners.map((r) => [String(r.kernel), Number(r.threads)]),
+				marker: {
+					color: rungs.map((rung) =>
+						rung.family ? FAMILY_INK[rung.family] : BASELINE_INK,
+					),
+				},
+				hovertemplate:
+					"<b>%{x:.1f} GOP/s</b>  %{customdata[0]} · %{customdata[1]}T<extra></extra>",
+			},
+		],
+		layout: {
+			...BASE_LAYOUT,
+			height: 260,
+			showlegend: false,
+			// Each bar is its own hit target; a crosshair readout is for lines.
+			hovermode: "closest",
+			// Right: the outside text of the longest bar. Top: the annotation.
+			margin: { ...MARGIN, t: 36, r: 200 },
+			xaxis: { ...AXIS, type: "log", title: { text: "GOP/s" } },
+			yaxis: {
+				...AXIS,
+				type: "category",
+				categoryorder: "array",
+				categoryarray: rungs.map((rung) => rung.label),
+				// Category axes draw bottom to top; the ladder reads top to bottom.
+				autorange: "reversed",
+				fixedrange: true,
+			},
+			annotations: [
+				{
+					text: `${fmtGops(first)} → ${fmtGops(last)} GOP/s · ${fmtX(last / first)}× at N = ${n}`,
+					xref: "paper",
+					yref: "paper",
+					x: 0,
+					xanchor: "left",
+					y: 1,
+					yanchor: "bottom",
+					yshift: 8,
+					showarrow: false,
+					font: { color: LABEL_INK, size: 13, weight: "bold" },
+				},
+			],
 		},
 	};
 };

@@ -24,5 +24,7 @@ pre-commit:
       glob: "*.{ts,tsx,svelte}"
       run: bun run typecheck
     data-build:
-      glob: "data/runs/**/*.csv"
+      glob:
+        - "data/runs/**/*.csv"
+        - "data/peaks.csv"
       run: duckdb -bail < data/build.sql

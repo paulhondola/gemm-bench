@@ -1,4 +1,4 @@
-import { loadRows, type Row } from "./db";
+import { loadPeaks, loadRows, type Peak, type Row } from "./db";
 import {
 	defaultBlockSizeFor,
 	defaultParallelKernel,
@@ -9,6 +9,7 @@ import {
 
 export const store = $state({
 	rows: [] as Row[],
+	peaks: [] as Peak[],
 	error: "",
 	loaded: false,
 	precision: "",
@@ -20,13 +21,17 @@ export const store = $state({
 	dropped: 0,
 });
 
-/** One fetch at boot; every derivation downstream is synchronous. */
+/** Both files are fetched at boot; every derivation downstream is synchronous. */
 export async function boot(): Promise<void> {
 	try {
+		// Together, so a missing peaks.json is an error like a missing
+		// results.json: `just data` always writes both.
+		const [all, peaks] = await Promise.all([loadRows(), loadPeaks()]);
 		// One row per measurement: Metal rows carry end-to-end timings, with
 		// the GPU-only median as gpu_ms.
-		const { rows, dropped } = partitionPlottable(await loadRows());
+		const { rows, dropped } = partitionPlottable(all);
 		store.rows = rows;
+		store.peaks = peaks;
 		store.dropped = dropped;
 		store.precision = defaultPrecision(rows);
 		store.n = defaultSize(rows, store.precision);

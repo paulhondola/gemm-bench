@@ -1,7 +1,7 @@
 <script lang="ts">
-import type { Config } from "plotly.js-dist-min";
+import type { Config, PlotlyHTMLElement, Shape } from "plotly.js-dist-min";
 import Plotly from "plotly.js-dist-min";
-import { escapeLabels, type Figure } from "./charts/types";
+import { escapeLabels, type Figure, type Trace } from "./charts/types";
 
 let {
 	spec,
@@ -30,6 +30,34 @@ const CONFIG: Partial<Config> = {
 	modeBarButtonsToRemove: ["select2d", "lasso2d"],
 };
 
+/**
+ * A shape in a legend group (a peak ceiling) hides with its series on a
+ * legend click, but legend.uirevision restores only the traces' visibility
+ * across a redraw, so a hidden series' ceiling would come back with the next
+ * filter change. Each such shape follows its group's traces instead.
+ */
+function syncGroupedShapes(gd: PlotlyHTMLElement) {
+	// The panel can unmount, and Plotly.purge clear the div, before the
+	// redraw's promise settles.
+	if (!gd.layout) return;
+	const hidden = new Set(
+		(gd.data as Trace[])
+			.filter((t) => t.visible === "legendonly")
+			.map((t) => t.legendgroup),
+	);
+	const shapes = gd.layout.shapes ?? [];
+	const synced = shapes.map(
+		(s): Shape =>
+			s.legendgroup === undefined
+				? s
+				: { ...s, visible: hidden.has(s.legendgroup) ? "legendonly" : true },
+	);
+	if (
+		synced.some((s, i) => (s.visible ?? true) !== (shapes[i].visible ?? true))
+	)
+		Plotly.relayout(gd, { shapes: synced });
+}
+
 $effect(() => {
 	if (!host || !spec) return;
 	// A copy: Plotly writes zoom state back into the layout it is handed, and
@@ -45,7 +73,7 @@ $effect(() => {
 			legend: { ...layout.legend, uirevision: title },
 		},
 		{ ...CONFIG, toImageButtonOptions: { format: "svg", filename: title } },
-	);
+	).then(syncGroupedShapes);
 });
 
 // Its own effect: a cleanup in the draw effect would run before every redraw

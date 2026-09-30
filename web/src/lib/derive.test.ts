@@ -13,6 +13,7 @@ import {
 	defaultSize,
 	families,
 	familyOf,
+	familyPeak,
 	hasKernel,
 	hasSingleThreadBaseline,
 	isPlottable,
@@ -21,7 +22,7 @@ import {
 	singleBlockSizeKernels,
 	sizesFor,
 } from "./derive";
-import { row } from "./fixtures";
+import { peak, row } from "./fixtures";
 
 const rows: Row[] = [
 	row({ kernel: "ikj", n: 64, gops: 10 }),
@@ -111,6 +112,21 @@ test("bestPerKernel keeps the first row on a tie", () => {
 		row({ kernel: "ikj", n: 64, threads: 2, gops: 10 }),
 	];
 	expect(bestPerKernel(tied)[0].threads).toBe(1);
+});
+
+test("bestPerKernel keeps one row per kernel, precision and size", () => {
+	// The Precision tab passes every precision at once: without precision in the
+	// key, a kernel's f16 and f32 rows would collapse into whichever is faster.
+	const both: Row[] = [
+		row({ kernel: "ikj", precision: "f16", n: 64, gops: 20 }),
+		row({ kernel: "ikj", precision: "f32", n: 64, gops: 10 }),
+		row({ kernel: "ikj", precision: "f32", n: 64, threads: 2, gops: 14 }),
+	];
+	const best = bestPerKernel(both);
+	expect(best.map((r) => `${r.precision}@${r.gops}`).sort()).toEqual([
+		"f16@20",
+		"f32@14",
+	]);
 });
 
 test("bestPerKernel returns nothing for no rows", () => {
@@ -265,4 +281,67 @@ test("familyOf counts a kernel the family map never saw as serial", () => {
 	expect(familyOf(row({ kernel: "mystery", n: 64, gops: 1 }), new Map())).toBe(
 		"serial",
 	);
+});
+
+const M1_PEAKS = [
+	peak({ cores: 8, gflops: 777 }),
+	peak({ cores: 1, gflops: 103 }),
+	peak({ backend: "metal", cores: 16, gflops: 5308 }),
+];
+
+test("familyPeak: serial takes the 1-core row, even when the 8-core row is listed first", () => {
+	expect(familyPeak(M1_PEAKS, "serial", "Apple M1 Pro", "f32")?.gflops).toBe(
+		103,
+	);
+});
+
+test("familyPeak: parallel takes the widest cpu row", () => {
+	const peaks = [
+		peak({ cores: 1, gflops: 103 }),
+		peak({ cores: 8, gflops: 777 }),
+		peak({ cores: 4, gflops: 400 }),
+	];
+	expect(familyPeak(peaks, "parallel", "Apple M1 Pro", "f32")?.cores).toBe(8);
+});
+
+test("familyPeak: parallel gets nothing when the cpu only has a 1-core row", () => {
+	// A 1-core ceiling is the serial one; drawing it over a parallel family
+	// would make every multi-thread result look like it broke the peak.
+	expect(
+		familyPeak([peak({ cores: 1 })], "parallel", "Apple M1 Pro", "f32"),
+	).toBeUndefined();
+});
+
+test("familyPeak: gpu takes the metal row, never a cpu one", () => {
+	const found = familyPeak(M1_PEAKS, "gpu", "Apple M1 Pro", "f32");
+	expect(found?.backend).toBe("metal");
+	expect(found?.gflops).toBe(5308);
+	expect(
+		familyPeak([peak({ cores: 8 })], "gpu", "Apple M1 Pro", "f32"),
+	).toBeUndefined();
+});
+
+test("familyPeak: amx has no peak, even with cpu and metal rows present", () => {
+	expect(familyPeak(M1_PEAKS, "amx", "Apple M1 Pro", "f32")).toBeUndefined();
+});
+
+test("familyPeak: another device gets nothing", () => {
+	expect(familyPeak(M1_PEAKS, "serial", "Apple M3", "f32")).toBeUndefined();
+	expect(familyPeak(M1_PEAKS, "gpu", "Apple M3", "f32")).toBeUndefined();
+});
+
+test("familyPeak: an integer precision gets nothing when only f32 rows exist", () => {
+	expect(familyPeak(M1_PEAKS, "serial", "Apple M1 Pro", "i32")).toBeUndefined();
+	expect(
+		familyPeak(M1_PEAKS, "parallel", "Apple M1 Pro", "i32"),
+	).toBeUndefined();
+	expect(familyPeak(M1_PEAKS, "gpu", "Apple M1 Pro", "i32")).toBeUndefined();
+});
+
+test("familyPeak: only rows of the asked precision count", () => {
+	const peaks = [
+		peak({ precision: "f16", cores: 1, gflops: 206 }),
+		peak({ precision: "f32", cores: 1, gflops: 103 }),
+	];
+	expect(familyPeak(peaks, "serial", "Apple M1 Pro", "f16")?.gflops).toBe(206);
 });

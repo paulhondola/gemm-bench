@@ -1,4 +1,4 @@
-import type { Row } from "./db";
+import type { Peak, Row } from "./db";
 
 /** Every precision present in the rows, once each, sorted. */
 export function precisions(rows: Row[]): string[] {
@@ -169,16 +169,19 @@ export function defaultSize(rows: Row[], precision: string): number {
 export const BASELINE_KERNEL = "naive-ijk";
 
 /**
- * One row per (kernel, n): the kernel's best result at that size, whatever
- * thread count produced it. Pinning a thread count instead would drop every
- * serial kernel, since those only ever have threads=1 rows.
+ * One row per (kernel, precision, n): the kernel's best result at that size,
+ * whatever thread count produced it. Pinning a thread count instead would drop
+ * every serial kernel, since those only ever have threads=1 rows. Precision is
+ * part of the key because the Precision tab passes every precision at once,
+ * and would otherwise merge a kernel's f16, f32 and f64 rows into one point.
+ * Every other caller is scoped to one precision, so it changes nothing there.
  *
  * A strict `>` keeps the first row on a tie, so the result is stable.
  */
 export function bestPerKernel(rows: Row[]): Row[] {
 	const best = new Map<string, Row>();
 	for (const r of rows) {
-		const key = `${r.kernel}\u0000${r.n}`;
+		const key = `${r.kernel}\u0000${r.precision}\u0000${r.n}`;
 		const current = best.get(key);
 		if (!current || Number(r.gops) > Number(current.gops)) best.set(key, r);
 	}
@@ -205,6 +208,47 @@ export function bestPerFamily(rows: Row[], family: Map<string, Family>): Row[] {
 		if (!current || Number(r.gops) > Number(current.gops)) best.set(key, r);
 	}
 	return [...best.values()];
+}
+
+/**
+ * The hardware ceiling a family is measured against on one device and
+ * precision, or undefined when it has none.
+ *
+ * peaks.csv holds one complete ceiling per core count rather than a per-core
+ * rate, because the P-core clock falls as more cores wake: multiplying the
+ * 1-core figure up would overstate the 8-core ceiling. So serial reads the
+ * 1-core row and parallel the widest cpu row. A cpu with only a 1-core row
+ * gives parallel nothing, since that row is the serial ceiling. Apple
+ * publishes no AMX peak, so amx never has one.
+ */
+export function familyPeak(
+	peaks: Peak[],
+	family: Family,
+	device: string,
+	precision: string,
+): Peak | undefined {
+	const own = peaks.filter(
+		(p) => p.device === device && p.precision === precision,
+	);
+	const widest = (backend: string) =>
+		own
+			.filter((p) => p.backend === backend)
+			.reduce<Peak | undefined>(
+				(best, p) => (!best || p.cores > best.cores ? p : best),
+				undefined,
+			);
+	switch (family) {
+		case "serial":
+			return own.find((p) => p.backend === "cpu" && p.cores === 1);
+		case "parallel": {
+			const cpu = widest("cpu");
+			return cpu && cpu.cores > 1 ? cpu : undefined;
+		}
+		case "gpu":
+			return widest("metal");
+		case "amx":
+			return undefined;
+	}
 }
 
 export function hasKernel(rows: Row[], kernel: string): boolean {
