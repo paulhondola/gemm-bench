@@ -169,16 +169,19 @@ export function defaultSize(rows: Row[], precision: string): number {
 export const BASELINE_KERNEL = "naive-ijk";
 
 /**
- * One row per (kernel, n): the kernel's best result at that size, whatever
- * thread count produced it. Pinning a thread count instead would drop every
- * serial kernel, since those only ever have threads=1 rows.
+ * One row per (kernel, precision, n): the kernel's best result at that size,
+ * whatever thread count produced it. Pinning a thread count instead would drop
+ * every serial kernel, since those only ever have threads=1 rows. Precision is
+ * part of the key because the Precision tab passes every precision at once,
+ * and would otherwise merge a kernel's f16, f32 and f64 rows into one point.
+ * Every other caller is scoped to one precision, so it changes nothing there.
  *
  * A strict `>` keeps the first row on a tie, so the result is stable.
  */
 export function bestPerKernel(rows: Row[]): Row[] {
 	const best = new Map<string, Row>();
 	for (const r of rows) {
-		const key = `${r.kernel}\u0000${r.n}`;
+		const key = `${r.kernel}\u0000${r.precision}\u0000${r.n}`;
 		const current = best.get(key);
 		if (!current || Number(r.gops) > Number(current.gops)) best.set(key, r);
 	}

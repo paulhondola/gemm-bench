@@ -8,7 +8,7 @@ import {
 	throughputByFamily,
 	throughputVsSize,
 } from "./overview";
-import { throughputByPrecision } from "./precision";
+import { accuracyVsThroughput, throughputByPrecision } from "./precision";
 import { parallelEfficiency, throughputVsThreads } from "./threading";
 import type { ChartSpec, Ctx, Filters } from "./types";
 
@@ -109,6 +109,11 @@ export const TABS: Tab[] = [
 				title: "Throughput by precision",
 				note: "Each family's best kernel, thread count and block size at the selected size · GPU timings are end-to-end",
 				spec: throughputByPrecision,
+			},
+			{
+				title: "Accuracy vs throughput",
+				note: "Each kernel's fastest configuration at the selected size, float precisions only · error is the mean relative error against an f64 CPU reference · results equal to the reference (every integer kernel, and f64 CPU kernels, which add in the reference's order) and non-finite ones can't sit on a log axis, so they are left out",
+				spec: accuracyVsThroughput,
 			},
 		],
 	},

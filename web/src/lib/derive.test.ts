@@ -114,6 +114,21 @@ test("bestPerKernel keeps the first row on a tie", () => {
 	expect(bestPerKernel(tied)[0].threads).toBe(1);
 });
 
+test("bestPerKernel keeps one row per kernel, precision and size", () => {
+	// The Precision tab passes every precision at once: without precision in the
+	// key, a kernel's f16 and f32 rows would collapse into whichever is faster.
+	const both: Row[] = [
+		row({ kernel: "ikj", precision: "f16", n: 64, gops: 20 }),
+		row({ kernel: "ikj", precision: "f32", n: 64, gops: 10 }),
+		row({ kernel: "ikj", precision: "f32", n: 64, threads: 2, gops: 14 }),
+	];
+	const best = bestPerKernel(both);
+	expect(best.map((r) => `${r.precision}@${r.gops}`).sort()).toEqual([
+		"f16@20",
+		"f32@14",
+	]);
+});
+
 test("bestPerKernel returns nothing for no rows", () => {
 	expect(bestPerKernel([])).toEqual([]);
 });
