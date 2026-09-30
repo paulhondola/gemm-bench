@@ -179,6 +179,7 @@ function selectTab(id: string) {
 					<Chart
 						title={panel.title}
 						note={panel.note}
+						doc={panel.doc}
 						spec={panel.spec(scoped, filters, ctx)} />
 				{/each}
 			</div>

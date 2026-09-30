@@ -1,5 +1,4 @@
 <script lang="ts">
-import { TABS } from "./charts/index";
 import { KERNEL_DOCS } from "./docs";
 import { FAMILY_INK } from "./palette";
 </script>
@@ -12,14 +11,6 @@ import { FAMILY_INK } from "./palette";
 		second, counting N³ multiplies and N³ adds against the median of several
 		timed runs. Higher is better.
 	</p>
-
-	<section class="panel">
-		<h2>Views</h2>
-		{#each TABS as t (t.id)}
-			<h3>{t.label}</h3>
-			<p>{t.about}</p>
-		{/each}
-	</section>
 
 	<section class="panel">
 		<h2>Kernels</h2>

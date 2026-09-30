@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readdirSync } from "node:fs";
 import type { Row } from "../db";
 import { pointsOf, row } from "../fixtures";
 import { gpuKernels } from "./gpu";
@@ -381,8 +382,20 @@ test("panel titles are unique across all tabs", () => {
 	expect(new Set(titles).size).toBe(titles.length);
 });
 
-test("every tab explains itself on the About tab, which no tab shadows", () => {
-	for (const t of TABS) expect(t.about).not.toBe("");
+const panels = TABS.flatMap((t) => t.panels);
+
+test("every panel has its own doc, and every chart doc belongs to a panel", () => {
+	for (const p of panels) expect(p.doc.trim()).not.toBe("");
+	expect(new Set(panels.map((p) => p.doc)).size).toBe(panels.length);
+	const files = readdirSync(new URL("../../docs/charts/", import.meta.url));
+	expect(files.filter((f) => f.endsWith(".md")).length).toBe(panels.length);
+});
+
+test("every caption fits on one line", () => {
+	for (const p of panels) expect(p.note.length).toBeLessThanOrEqual(120);
+});
+
+test("no tab shadows the About tab", () => {
 	// App.svelte opens the About tab on store.tab === "about".
 	expect(TABS.map((t) => t.id)).not.toContain("about");
 });

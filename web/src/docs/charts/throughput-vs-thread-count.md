@@ -1,0 +1,5 @@
+**What it shows.** Each multi-threaded CPU kernel's throughput as threads are added, at the selected precision, matrix size and block size. Both axes are linear.
+
+**How to read it.** A perfectly scaling kernel rises in a straight line. The `rayon-*` kernels balance work by letting idle threads take it from busy ones (work stealing); the `static-*` kernels split the rows evenly up front, like OpenMP's static schedule. Turn on **Relative** to plot speedup over the same kernel on one thread, with a dashed line for ideal scaling (speedup equal to the thread count).
+
+**Caveats.** The axes are linear on purpose: the highest thread counts sit close together, and a linear axis shows the fall-off from ideal as a bend that a log axis would straighten out. A kernel swept over fewer thread counts simply has a shorter line. On a chip with efficiency cores, threads beyond the performance-core count add little, and can even slow a kernel down. The kernel pill applies to the efficiency chart below, not this one.
