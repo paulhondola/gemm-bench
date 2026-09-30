@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { legendOf, plotted, pointsOf, row } from "../fixtures";
+import { legendOf, peak, plotted, pointsOf, row } from "../fixtures";
 import {
 	canShowSpeedup,
 	fastestPerSize,
@@ -156,6 +156,87 @@ test("each family point names the kernel that won it", () => {
 		pointsOf(spec, "gpu").find((p) => p.x === n)?.custom[0];
 	expect(gpuAt(256)).toBe("metal-tiled");
 	expect(gpuAt(512)).toBe("mps");
+});
+
+const familyPeaks = [
+	peak({ backend: "cpu", cores: 1, gflops: 100 }),
+	peak({ backend: "cpu", cores: 8, gflops: 800 }),
+	peak({ backend: "metal", cores: 16, gflops: 5000 }),
+];
+const withPeaks = makeCtx(acrossFamilies, familyPeaks);
+
+test("the family chart draws a dashed ceiling for serial, parallel and GPU, in family ink and each family's legend group", () => {
+	const spec = throughputByFamily(acrossFamilies, f, withPeaks);
+	expect(
+		spec?.layout.shapes?.map((s) => [
+			s.y0,
+			s.line?.color,
+			s.legendgroup,
+			s.label?.text,
+		]),
+	).toEqual([
+		[100, "#844da2", "serial", "1-core peak"],
+		[800, "#008300", "parallel", "CPU peak (8 P)"],
+		[5000, "#e66767", "gpu", "GPU peak"],
+	]);
+	// AMX has no published peak, so nothing is drawn in its blue.
+	expect(spec?.layout.shapes?.some((s) => s.line?.color === "#3987e5")).toBe(
+		false,
+	);
+});
+
+test("every ceiling is a legend group of a plotted series, so hiding the series hides it", () => {
+	const spec = throughputByFamily(acrossFamilies, f, withPeaks);
+	const groups = new Set(spec?.data.map((t) => t.legendgroup));
+	for (const s of spec?.layout.shapes ?? []) {
+		expect(groups.has(s.legendgroup)).toBe(true);
+	}
+});
+
+test("without peaks the figure has no shapes key at all", () => {
+	const spec = throughputByFamily(acrossFamilies, f, makeCtx(acrossFamilies));
+	expect(spec).not.toBeNull();
+	expect("shapes" in (spec?.layout ?? {})).toBe(false);
+});
+
+test("integer precisions have no ceiling", () => {
+	const ints = acrossFamilies.map((r) => ({ ...r, precision: "i32" }));
+	const spec = throughputByFamily(
+		ints,
+		{ ...f, precision: "i32" },
+		makeCtx(ints, familyPeaks),
+	);
+	expect(spec).not.toBeNull();
+	expect("shapes" in (spec?.layout ?? {})).toBe(false);
+});
+
+test("hover gives each point's share of its own family's ceiling", () => {
+	const spec = throughputByFamily(acrossFamilies, f, withPeaks);
+	const at = (series: string, n: number) =>
+		pointsOf(spec, series).find((p) => p.x === n)?.custom[2];
+	expect(at("serial", 256)).toBe(" · 26% of peak");
+	// 151 / 800 = 18.875%, to two figures.
+	expect(at("parallel", 256)).toBe(" · 19% of peak");
+	expect(at("gpu", 512)).toBe(" · 14% of peak");
+	expect(spec?.data[0].hovertemplate).toContain("%{customdata[2]}<extra>");
+});
+
+test("AMX points carry no percentage", () => {
+	const spec = throughputByFamily(acrossFamilies, f, withPeaks);
+	expect(pointsOf(spec, "amx").map((p) => p.custom[2])).toEqual(["", ""]);
+});
+
+test("a family whose rows span two devices loses its ceiling, and only that family", () => {
+	const mixed = acrossFamilies.map((r) =>
+		r.kernel === "ikj" && r.n === 512 ? { ...r, device: "Apple M3" } : r,
+	);
+	const spec = throughputByFamily(mixed, f, makeCtx(mixed, familyPeaks));
+	expect(spec?.layout.shapes?.map((s) => s.legendgroup)).toEqual([
+		"parallel",
+		"gpu",
+	]);
+	expect(pointsOf(spec, "serial").map((p) => p.custom[2])).toEqual(["", ""]);
+	expect(pointsOf(spec, "parallel").map((p) => p.custom[2])).not.toContain("");
 });
 
 test("fastest-per-size cells are filled by family, so every winner has a colour", () => {

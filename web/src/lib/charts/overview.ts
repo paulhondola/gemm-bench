@@ -12,13 +12,17 @@ import { FAMILY_INK, FAMILY_ORDER } from "../palette";
 import {
 	AXIS,
 	BASE_LAYOUT,
+	type Ceiling,
 	type ChartSpec,
 	type Ctx,
+	ceilingOf,
+	ceilingShape,
 	type Figure,
 	LABELLED_MARGIN,
 	lineTraces,
 	log2Axis,
 	log2Ticks,
+	pctOfPeak,
 	type SeriesPoint,
 	uidOf,
 } from "./types";
@@ -255,21 +259,40 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 /**
  * One line per family: each family's best kernel, thread count and block size
  * at every size. Metal rows are timed end-to-end, the same host-to-host scope
- * as the CPU rows they are drawn against, so every line is solid.
+ * as the CPU rows they are drawn against, so every line is solid. A family
+ * with a hardware peak gets a dashed ceiling in its legend group, so hiding
+ * the family hides its ceiling.
  */
 export const throughputByFamily: ChartSpec = (rows, _f, ctx) => {
-	const points: SeriesPoint[] = bestPerFamily(rows, ctx.family).map((r) => ({
-		series: familyOf(r, ctx.family),
-		x: Number(r.n),
-		y: Number(r.gops),
-		custom: [String(r.kernel), Number(r.threads)],
-	}));
-	const sizes = log2Ticks(points.map((p) => p.x));
+	const best = bestPerFamily(rows, ctx.family);
+	const sizes = log2Ticks(best.map((r) => Number(r.n)));
 	if (sizes.length < 2) return null;
 
 	const present = FAMILY_ORDER.filter((family) =>
-		points.some((p) => p.series === family),
+		best.some((r) => familyOf(r, ctx.family) === family),
 	);
+	const ceilings = new Map<Family, Ceiling>();
+	for (const family of present) {
+		const c = ceilingOf(
+			best.filter((r) => familyOf(r, ctx.family) === family),
+			family,
+			ctx,
+		);
+		if (c) ceilings.set(family, c);
+	}
+	const points: SeriesPoint[] = best.map((r) => {
+		const family = familyOf(r, ctx.family);
+		return {
+			series: family,
+			x: Number(r.n),
+			y: Number(r.gops),
+			custom: [
+				String(r.kernel),
+				Number(r.threads),
+				pctOfPeak(Number(r.gops), ceilings.get(family)),
+			],
+		};
+	});
 
 	return {
 		data: lineTraces(points, {
@@ -279,13 +302,20 @@ export const throughputByFamily: ChartSpec = (rows, _f, ctx) => {
 			// At most four series, so direct labels as well as the legend.
 			labels: true,
 			hovertemplate:
-				"<b>%{y:.1f} GOP/s</b>  %{fullData.name} · %{customdata[0]} · %{customdata[1]}T<extra></extra>",
+				"<b>%{y:.1f} GOP/s</b>  %{fullData.name} · %{customdata[0]} · %{customdata[1]}T%{customdata[2]}<extra></extra>",
 		}),
 		layout: {
 			...BASE_LAYOUT,
 			margin: LABELLED_MARGIN,
 			xaxis: log2Axis(sizes, "N"),
 			yaxis: { ...AXIS, type: "log", title: { text: "GOP/s" } },
+			...(ceilings.size
+				? {
+						shapes: [...ceilings.values()].map((c) =>
+							ceilingShape(c, c.family),
+						),
+					}
+				: {}),
 		},
 	};
 };

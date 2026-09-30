@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { legendOf, plotted, pointsOf, row } from "../fixtures";
+import { legendOf, peak, plotted, pointsOf, row } from "../fixtures";
 import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
 import { type Filters, makeCtx } from "./types";
 
@@ -57,6 +57,67 @@ test("a reference point names the CPU kernel and thread count behind it", () => 
 		pointsOf(spec, series).find((p) => p.x === 512)?.custom[0];
 	expect(at512("parallel CPU")).toBe(" · rayon-ikj · 8T");
 	expect(at512("mps")).toBe("");
+});
+
+const peaks = [
+	peak({ backend: "cpu", cores: 1, gflops: 100 }),
+	peak({ backend: "cpu", cores: 8, gflops: 800 }),
+	peak({ backend: "metal", cores: 16, gflops: 5000 }),
+];
+
+test("the kernel chart draws the GPU ceiling ungrouped and the parallel one in its reference's group", () => {
+	const spec = gpuKernels(f32, f, makeCtx(f32, peaks));
+	expect(
+		spec?.layout.shapes?.map((s) => [s.y0, s.line?.color, s.label?.text]),
+	).toEqual([
+		[5000, "#e66767", "GPU peak"],
+		[800, "#008300", "CPU peak (8 P)"],
+	]);
+	const [gpuShape, parallelShape] = spec?.layout.shapes ?? [];
+	// It spans three kernel series, so it belongs to none of their groups.
+	expect("legendgroup" in (gpuShape ?? {})).toBe(false);
+	// lineTraces names the reference's group after its series.
+	expect(parallelShape?.legendgroup).toBe("parallel CPU");
+	expect(spec?.data.some((t) => t.legendgroup === "parallel CPU")).toBe(true);
+	// AMX has no peak: nothing in its blue.
+	expect(spec?.layout.shapes?.some((s) => s.line?.color === "#3987e5")).toBe(
+		false,
+	);
+});
+
+test("each series' hover is measured against its own ceiling, and AMX has none", () => {
+	const spec = gpuKernels(f32, f, makeCtx(f32, peaks));
+	const at512 = (series: string) =>
+		pointsOf(spec, series).find((p) => p.x === 512)?.custom;
+	// 699 / 5000 = 13.98%.
+	expect(at512("mps")).toEqual(["", " · 14% of peak"]);
+	expect(at512("metal-naive")?.[1]).toBe(" · 3.7% of peak");
+	// 174 / 800 = 21.75%, and the kernel and thread text stays first.
+	expect(at512("parallel CPU")).toEqual([
+		" · rayon-ikj · 8T",
+		" · 22% of peak",
+	]);
+	expect(at512("AMX")?.[1]).toBe("");
+	expect(spec?.data[0].hovertemplate).toContain(
+		"%{customdata[0]}%{customdata[1]}<extra>",
+	);
+});
+
+test("without peaks the kernel chart has no shapes key and no percentages", () => {
+	const spec = gpuKernels(f32, f, makeCtx(f32));
+	expect("shapes" in (spec?.layout ?? {})).toBe(false);
+	expect(plotted(spec).every((p) => p.custom[1] === "")).toBe(true);
+});
+
+test("GPU rows from two devices lose the GPU ceiling but the CPU one stays", () => {
+	const mixed = f32.map((r) =>
+		r.kernel === "mps" && r.n === 1024 ? { ...r, device: "Apple M3" } : r,
+	);
+	const spec = gpuKernels(mixed, f, makeCtx(mixed, peaks));
+	expect(spec?.layout.shapes?.map((s) => s.legendgroup)).toEqual([
+		"parallel CPU",
+	]);
+	expect(pointsOf(spec, "mps").map((p) => p.custom[1])).toEqual(["", ""]);
 });
 
 test("at an integer precision there is no AMX or mps, leaving three labelled series", () => {

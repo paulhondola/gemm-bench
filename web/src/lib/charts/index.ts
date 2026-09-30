@@ -48,7 +48,7 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "Throughput by family",
-				note: "Each family's best kernel, thread count and block size at every size · log–log · GPU timings are end-to-end (host copies included), like the CPU timings",
+				note: "Each family's best kernel, thread count and block size at every size · log–log · GPU timings are end-to-end (host copies included), like the CPU timings · dashed lines are hardware peaks (data/peaks.csv), and hover gives % of peak; AMX has no published peak and the integer precisions no sourced one, so they have none",
 				spec: throughputByFamily,
 			},
 			{
@@ -114,7 +114,7 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "GPU kernels vs CPU",
-				note: "GPU timings are end-to-end (host copies and command encoding included), like the CPU timings · references are each family's best kernel, thread count and block size",
+				note: "GPU timings are end-to-end (host copies and command encoding included), like the CPU timings · references are each family's best kernel, thread count and block size · dashed lines are hardware peaks (data/peaks.csv), and hover gives % of peak; AMX has no published peak and the integer precisions no sourced one, so they have none",
 				spec: gpuKernels,
 			},
 			{
