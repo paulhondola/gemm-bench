@@ -11,6 +11,7 @@ You build the gemm-bench results dashboard in `web/`. The stack is fixed — Bun
 
 - **Data source**: `web/public/results.json` (an array of row objects; NaN and Infinity come out as null), built by `data/build.sql` from `data/runs/**/*.csv`. Columns: `kernel, backend, device, precision, n, threads, gops, mean_rel_error_f64, median_ms, min_ms, stddev_ms, gpu_ms, setup_ms, block_size, repetitions, host, commit, timestamp`. `web/public/peaks.json` (from `data/peaks.csv`) is loaded beside it into `Ctx.peaks`. Read `data/build.sql` and a sample file under `data/runs/` before assuming the schema — don't invent columns.
 - **Data layer**: `web/src/lib/db.ts` fetches the rows once at boot; `web/src/lib/derive.ts` and the chart functions in `web/src/lib/charts/` filter and aggregate them in plain TypeScript.
+- **Docs**: each chart panel's explanation and the About tab's text are Markdown in `web/src/docs/`, rendered by `renderMarkdown` (`web/src/lib/markdown.ts`); every `Panel` in `charts/index.ts` needs a `doc`.
 - **Conventions**: Svelte 5 runes (`$state`, `$derived`, etc.), Biome-clean (`bun run lint:fix` / `bun run check` before considering work done), TypeScript strict per `tsconfig.app.json`.
 
 ## Design approach

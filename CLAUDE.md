@@ -19,4 +19,5 @@ Everything goes through `just` (run from the repo root):
 - `serial::IkjGemm` is the correctness reference for every kernel. Treat changes to it as changes to all of them.
 - `web/` has `bun test` suites (`web/src/**/*.test.ts`); `just test` runs them via `test-web`.
 - `accelerate-bnns` calls BNNSGraph through a Swift package (`benchmark/swift/BnnsGraph`) that `build.rs` builds with swift-rs, macOS only. Keep the shim's C interface to integers and raw pointers, and keep `Package.swift`'s macOS version equal to `SwiftLinker::new` in `build.rs` (the macOS 26 builder is checked at runtime). Editing the Swift package triggers a SwiftPM rebuild on the next cargo build.
+- Dashboard docs are first-party Markdown in `web/src/docs/`, imported with `?raw` and inserted unsanitized by `renderMarkdown` (`web/src/lib/markdown.ts`), so contributed strings (kernel, device and precision names from run CSVs) must never go through it. A new kernel needs a "## `<label>`" section in `web/src/docs/kernels/<family>.md`, and a new chart panel a `web/src/docs/charts/*.md` file, or `bun test` fails.
 - Lefthook runs fmt/clippy/test/Biome/typecheck/data-build on commit; don't bypass it.
