@@ -1,8 +1,9 @@
 <script lang="ts">
 import { fmtGops } from "./charts/overview";
+import { percentOfPeak } from "./charts/types";
 import type { Peak, Row } from "./db";
 import type { Family } from "./derive";
-import { engineRows, percentOfPeak } from "./hardware";
+import { engineRows } from "./hardware";
 
 const {
 	rows,

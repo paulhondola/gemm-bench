@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
+import { percentOfPeak } from "./charts/types";
 import type { Row } from "./db";
 import { families } from "./derive";
 import { peak, row } from "./fixtures";
-import { engineRows, percentOfPeak } from "./hardware";
+import { engineRows } from "./hardware";
 
 const PEAKS = [
 	peak({ cores: 1, gflops: 100 }),
@@ -66,6 +67,7 @@ test("a device without peaks still gets its measured rows", () => {
 	const rows = [row({ device: "Other CPU", kernel: "ikj", n: 512, gops: 9 })];
 	const other = rowsFor(rows).filter((e) => e.device === "Other CPU");
 	expect(other).toHaveLength(1);
+	expect(other[0].engine).toBe("CPU (1 thread)");
 	expect(other[0].peak).toBeUndefined();
 	expect(other[0].best?.gops).toBe(9);
 });

@@ -20,8 +20,9 @@ export interface EngineRow {
 
 function engineLabel(family: Family, peak: Peak | undefined): string {
 	switch (family) {
+		// "P-core" is Apple's hybrid-CPU term, so it needs a peak to name one.
 		case "serial":
-			return "1 P-core";
+			return peak ? "1 P-core" : "CPU (1 thread)";
 		case "parallel":
 			return peak ? `${peak.cores} P-cores` : "CPU (all threads)";
 		case "amx":
@@ -78,12 +79,4 @@ export function engineRows(
 			}),
 		),
 	);
-}
-
-/**
- * The share of a peak reached, in percent, to 2 significant figures: the
- * charts' hover rule (pctOfPeak), so the table and the hover agree.
- */
-export function percentOfPeak(gops: number, gflops: number): number {
-	return Number(((100 * gops) / gflops).toPrecision(2));
 }

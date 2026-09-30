@@ -384,11 +384,26 @@ test("panel titles are unique across all tabs", () => {
 
 const panels = TABS.flatMap((t) => t.panels);
 
-test("every panel has its own doc, and every chart doc belongs to a panel", () => {
-	for (const p of panels) expect(p.doc.trim()).not.toBe("");
-	expect(new Set(panels.map((p) => p.doc)).size).toBe(panels.length);
-	const files = readdirSync(new URL("../../docs/charts/", import.meta.url));
-	expect(files.filter((f) => f.endsWith(".md")).length).toBe(panels.length);
+const DOCS = new URL("../../docs/charts/", import.meta.url);
+
+/** A panel's doc file: its title in kebab case, "÷" read as "vs". */
+const docFile = (title: string) =>
+	`${title
+		.replace("÷", "vs")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "")}.md`;
+
+test("every panel shows the doc file named after its title", async () => {
+	for (const p of panels) {
+		expect(p.doc.trim()).not.toBe("");
+		expect(p.doc).toBe(await Bun.file(new URL(docFile(p.title), DOCS)).text());
+	}
+});
+
+test("every chart doc belongs to a panel", () => {
+	const files = readdirSync(DOCS).filter((f) => f.endsWith(".md"));
+	expect(files.sort()).toEqual(panels.map((p) => docFile(p.title)).sort());
 });
 
 test("every caption fits on one line", () => {

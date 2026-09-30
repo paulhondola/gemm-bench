@@ -187,13 +187,21 @@ export function ceilingShape(c: Ceiling, legendgroup?: string): Partial<Shape> {
 }
 
 /**
- * " · 24% of peak" to 2 significant figures, or "" without a ceiling, so the
- * number and the drawn line always agree. Number() drops the exponent
- * toPrecision gives past 100%: 105 reads 110, not 1.1e+2.
+ * The share of a peak reached, in percent, to 2 significant figures: the one
+ * rule for the charts' hover and the About tab's hardware table. Number()
+ * drops the exponent toPrecision gives past 100%: 105 reads 110, not 1.1e+2.
+ */
+export function percentOfPeak(gops: number, gflops: number): number {
+	return Number(((100 * gops) / gflops).toPrecision(2));
+}
+
+/**
+ * " · 24% of peak", or "" without a ceiling, so the number and the drawn line
+ * always agree.
  */
 export function pctOfPeak(gops: number, c: Ceiling | undefined): string {
 	if (!c) return "";
-	return ` · ${Number(((100 * gops) / c.gflops).toPrecision(2))}% of peak`;
+	return ` · ${percentOfPeak(gops, c.gflops)}% of peak`;
 }
 
 /** A log axis ticked at exactly the measured powers of two, as integers. */

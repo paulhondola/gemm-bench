@@ -25,8 +25,12 @@ test("no kernel is documented twice", () => {
 	expect(new Set(documented).size).toBe(documented.length);
 });
 
-test("every family has a title and every kernel says how it runs", () => {
-	for (const g of KERNEL_DOCS) expect(g.title).not.toBe("");
+test("every family has a title and a blurb, and every kernel says how it runs", () => {
+	for (const g of KERNEL_DOCS) {
+		expect(g.title).not.toBe("");
+		// The blurb is everything before the first kernel section.
+		expect(g.doc.split(/^## /m)[0].trim()).not.toBe("");
+	}
 	for (const s of sections) expect(s.body).toContain("**Runs via:**");
 });
 

@@ -1,4 +1,4 @@
-The published runs come from one machine: a **MacBook Pro 16-inch (2021)** with an **Apple M1 Pro** chip and **16 GB** of unified memory, running macOS 26 or later (the `accelerate-bnns` kernel needs it).
+The project's own runs were measured on a **MacBook Pro 16-inch (2021)** with an **Apple M1 Pro** chip and **16 GB** of unified memory, running macOS 26 or later (the `accelerate-bnns` kernel needs it).
 
 | Part | Details | Source |
 | :--- | :--- | :--- |
@@ -9,4 +9,4 @@ The published runs come from one machine: a **MacBook Pro 16-inch (2021)** with 
 | GPU | 16 cores × 128 ALUs at 1.296 GHz, 256 KB L2; `f16` runs at the `f32` rate | [Philip Turner](https://github.com/philipturner/metal-benchmarks) |
 | Memory | 16 GB, shared by the CPU and GPU | The owner |
 
-The table below sets each engine's theoretical peak, from `data/peaks.csv`, against the fastest result in the runs at any size. The 8 P-core peak doesn't count the efficiency cores, so a best result that used 10 threads reads slightly high against it.
+The table below covers every device in the data. It sets each engine's theoretical peak, from `data/peaks.csv`, against the fastest result in the runs at any size. The 8 P-core peak doesn't count the efficiency cores, so a best result that used 10 threads reads slightly high against it.
