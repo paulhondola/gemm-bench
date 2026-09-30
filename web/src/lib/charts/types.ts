@@ -4,7 +4,7 @@ import type {
 	LayoutAxis,
 	ScatterData,
 } from "plotly.js-dist-min";
-import type { Row } from "../db";
+import type { Peak, Row } from "../db";
 import {
 	type Family,
 	families,
@@ -40,15 +40,18 @@ export interface Ctx {
 	/** Kernels measured at exactly one block size: the dimension does not vary
 	 *  for them, so a block-size selection must not filter them away. */
 	singleBlockSize: Set<string>;
+	/** Hardware ceilings from data/peaks.csv. Empty draws no ceiling anywhere. */
+	peaks: Peak[];
 }
 
 /** Built once from the whole dataset so colour never depends on the filter. */
-export function makeCtx(allRows: Row[]): Ctx {
+export function makeCtx(allRows: Row[], peaks: Peak[] = []): Ctx {
 	const family = families(allRows);
 	return {
 		palette: paletteFor(kernels(allRows), family),
 		family,
 		singleBlockSize: singleBlockSizeKernels(allRows),
+		peaks,
 	};
 }
 

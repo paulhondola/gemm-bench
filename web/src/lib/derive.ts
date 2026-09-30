@@ -1,4 +1,4 @@
-import type { Row } from "./db";
+import type { Peak, Row } from "./db";
 
 /** Every precision present in the rows, once each, sorted. */
 export function precisions(rows: Row[]): string[] {
@@ -205,6 +205,47 @@ export function bestPerFamily(rows: Row[], family: Map<string, Family>): Row[] {
 		if (!current || Number(r.gops) > Number(current.gops)) best.set(key, r);
 	}
 	return [...best.values()];
+}
+
+/**
+ * The hardware ceiling a family is measured against on one device and
+ * precision, or undefined when it has none.
+ *
+ * peaks.csv holds one complete ceiling per core count rather than a per-core
+ * rate, because the P-core clock falls as more cores wake: multiplying the
+ * 1-core figure up would overstate the 8-core ceiling. So serial reads the
+ * 1-core row and parallel the widest cpu row. A cpu with only a 1-core row
+ * gives parallel nothing, since that row is the serial ceiling. Apple
+ * publishes no AMX peak, so amx never has one.
+ */
+export function familyPeak(
+	peaks: Peak[],
+	family: Family,
+	device: string,
+	precision: string,
+): Peak | undefined {
+	const own = peaks.filter(
+		(p) => p.device === device && p.precision === precision,
+	);
+	const widest = (backend: string) =>
+		own
+			.filter((p) => p.backend === backend)
+			.reduce<Peak | undefined>(
+				(best, p) => (!best || p.cores > best.cores ? p : best),
+				undefined,
+			);
+	switch (family) {
+		case "serial":
+			return own.find((p) => p.backend === "cpu" && p.cores === 1);
+		case "parallel": {
+			const cpu = widest("cpu");
+			return cpu && cpu.cores > 1 ? cpu : undefined;
+		}
+		case "gpu":
+			return widest("metal");
+		case "amx":
+			return undefined;
+	}
 }
 
 export function hasKernel(rows: Row[], kernel: string): boolean {

@@ -18,7 +18,7 @@ import { boot, store } from "./lib/state.svelte";
 
 boot();
 
-const ctx = $derived(makeCtx(store.rows));
+const ctx = $derived(makeCtx(store.rows, store.peaks));
 const filters = $derived({
 	precision: store.precision,
 	n: store.n,

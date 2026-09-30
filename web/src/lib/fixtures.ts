@@ -1,10 +1,29 @@
 import type { Datum } from "plotly.js-dist-min";
 import type { Figure } from "./charts/types";
-import type { Row } from "./db";
+import type { Peak, Row } from "./db";
 
 /** A test row; most rows are single-threaded f32 CPU results. */
 export function row(fields: Row): Row {
-	return { precision: "f32", threads: 1, backend: "cpu", ...fields };
+	return {
+		device: "Apple M1 Pro",
+		precision: "f32",
+		threads: 1,
+		backend: "cpu",
+		...fields,
+	};
+}
+
+/** A test peak: a 1-core f32 CPU ceiling on the same device row() defaults to. */
+export function peak(fields: Partial<Peak>): Peak {
+	return {
+		device: "Apple M1 Pro",
+		backend: "cpu",
+		precision: "f32",
+		cores: 1,
+		gflops: 100,
+		source: "test",
+		...fields,
+	};
 }
 
 export interface Point {
