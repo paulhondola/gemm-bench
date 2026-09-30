@@ -118,7 +118,7 @@ function selectTab(id: string) {
 		</nav>
 
 		{#if about}
-			<About />
+			<About rows={store.rows} peaks={store.peaks} family={ctx.family} />
 		{:else}
 			<div class="controls">
 				{#if tab.controls.includes("precision") || tab.inertPrecision}

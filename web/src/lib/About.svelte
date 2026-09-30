@@ -1,7 +1,18 @@
 <script lang="ts">
+import about from "../docs/about.md?raw";
+import hardware from "../docs/hardware.md?raw";
+import type { Peak, Row } from "./db";
+import type { Family } from "./derive";
 import { KERNEL_DOCS } from "./docs";
+import HardwareTable from "./HardwareTable.svelte";
 import { renderMarkdown } from "./markdown";
 import { FAMILY_INK } from "./palette";
+
+const {
+	rows,
+	peaks,
+	family,
+}: { rows: Row[]; peaks: Peak[]; family: Map<string, Family> } = $props();
 
 // Each file's "## `<kernel>`" renders as an h4, under the page's h2 and the
 // family's h3.
@@ -12,13 +23,14 @@ const families = KERNEL_DOCS.map((g) => ({
 </script>
 
 <article>
-	<p class="intro">
-		gemm-bench times one operation, C = A × B on square N × N matrices,
-		implemented many ways: from textbook loops on one CPU core up to Apple's
-		AMX coprocessor and GPU. Throughput is in GOP/s: billions of operations per
-		second, counting N³ multiplies and N³ adds against the median of several
-		timed runs. Higher is better.
-	</p>
+	<!-- The dashboard's own Markdown, never contributed data. -->
+	<div class="intro prose">{@html renderMarkdown(about)}</div>
+
+	<section class="panel">
+		<h2>Hardware tested</h2>
+		<div class="prose">{@html renderMarkdown(hardware, 2)}</div>
+		<HardwareTable {rows} {peaks} {family} />
+	</section>
 
 	<section class="panel">
 		<h2>Kernels</h2>
@@ -28,7 +40,7 @@ const families = KERNEL_DOCS.map((g) => ({
 				<code>{g.family}</code> · {g.title}
 			</h3>
 			<!-- The dashboard's own Markdown, never contributed data. -->
-			<div class="prose">{@html g.html}</div>
+			<div class="prose family">{@html g.html}</div>
 		{/each}
 	</section>
 </article>
@@ -42,7 +54,6 @@ const families = KERNEL_DOCS.map((g) => ({
 		line-height: 1.6;
 	}
 	.intro {
-		margin: 0;
 		max-width: 72ch;
 	}
 	.panel {
@@ -78,7 +89,8 @@ const families = KERNEL_DOCS.map((g) => ({
 		border-radius: 50%;
 		flex: none;
 	}
-	.prose > :global(p:first-child) {
+	/* A family file opens with its blurb. */
+	.family > :global(p:first-child) {
 		margin-top: 0;
 		color: #9aa1a8;
 	}
@@ -105,5 +117,21 @@ const families = KERNEL_DOCS.map((g) => ({
 	}
 	.prose :global(a) {
 		color: #e6e3dc;
+	}
+	.prose :global(table) {
+		margin: 12px 0;
+		border-collapse: collapse;
+		font-size: 13px;
+	}
+	.prose :global(th),
+	.prose :global(td) {
+		padding: 6px 12px 6px 0;
+		text-align: left;
+		vertical-align: top;
+		border-bottom: 1px solid #24292e;
+	}
+	.prose :global(th) {
+		color: #9aa1a8;
+		font-weight: 500;
 	}
 </style>

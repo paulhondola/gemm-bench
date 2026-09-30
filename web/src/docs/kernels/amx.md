@@ -1,4 +1,4 @@
-A matrix unit beside the CPU cores. Apple doesn't document its instructions, so the only way to use it is through Apple's Accelerate library, which also decides how many threads to use.
+A matrix unit beside the CPU cores. Apple doesn't document its instructions, so the supported way to use it is through Apple's Accelerate library, which also decides how many threads to use.
 
 ## `accelerate-blas`
 
