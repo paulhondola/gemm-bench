@@ -1,14 +1,16 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
 import { legendOf, peak, plotted, pointsOf, row } from "../fixtures";
+import { BASELINE_INK, FAMILY_INK } from "../palette";
 import {
 	canShowSpeedup,
 	fastestPerSize,
+	optimizationLadder,
 	serialOnly,
 	throughputByFamily,
 	throughputVsSize,
 } from "./overview";
-import { type Filters, makeCtx } from "./types";
+import { escapeLabels, type Filters, makeCtx } from "./types";
 
 const f: Filters = {
 	precision: "f32",
@@ -287,4 +289,200 @@ test("a kernel named band-<kernel> can't collide with that kernel's band uid", (
 	const spec = throughputVsSize(collision, f, makeCtx(collision));
 	const uids = spec?.data.map((t) => t.uid) ?? [];
 	expect(new Set(uids).size).toBe(uids.length);
+});
+
+// One row per rung at two sizes, and a parallel kernel at two thread counts.
+// At 512 the GPU is slower than AMX, so speed order and effort order differ.
+const rungs: Row[] = [
+	row({ kernel: "naive-ijk", n: 256, gops: 1 }),
+	row({ kernel: "naive-ijk", n: 512, gops: 2 }),
+	row({ kernel: "ikj", n: 256, gops: 20 }),
+	row({ kernel: "ikj", n: 512, gops: 40 }),
+	row({ kernel: "rayon-ikj", n: 256, threads: 4, gops: 60 }),
+	row({ kernel: "rayon-ikj", n: 256, threads: 8, gops: 100 }),
+	row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 150 }),
+	row({ kernel: "rayon-ikj", n: 512, threads: 8, gops: 300 }),
+	row({ kernel: "accelerate-blas", n: 256, gops: 1000, backend: "amx" }),
+	row({ kernel: "accelerate-blas", n: 512, gops: 2000, backend: "amx" }),
+	row({ kernel: "mps", n: 256, gops: 400, backend: "metal" }),
+	row({ kernel: "mps", n: 512, gops: 1000, backend: "metal" }),
+];
+
+const ladder = (rs: Row[]) => optimizationLadder(rs, f, makeCtx(rs));
+const barOf = (rs: Row[]) => ladder(rs)?.data[0];
+const labelsOf = (rs: Row[]) => barOf(rs)?.y;
+
+test("the ladder is one horizontal bar trace, rungs in effort order rather than speed order", () => {
+	const spec = ladder(rungs);
+	expect(spec?.data).toHaveLength(1);
+	const bar = spec?.data[0];
+	expect(bar?.type).toBe("bar");
+	expect(bar?.orientation).toBe("h");
+	expect(bar?.name).toBe("ladder");
+	expect(bar?.uid).toBe("ladder");
+	expect(bar?.y).toEqual(["naive-ijk", "serial", "parallel", "amx", "gpu"]);
+	// The GPU rung is slower than AMX and stays below it.
+	expect(bar?.x).toEqual([2, 40, 300, 2000, 1000]);
+});
+
+test("each rung is its fastest row at N, whatever the thread count, and names it", () => {
+	expect(barOf(rungs)?.customdata).toEqual([
+		["naive-ijk", 1],
+		["ikj", 1],
+		["rayon-ikj", 8],
+		["accelerate-blas", 1],
+		["mps", 1],
+	]);
+	expect(barOf(rungs)?.hovertemplate).toContain(
+		"%{customdata[0]} · %{customdata[1]}T",
+	);
+});
+
+test("within a rung the fastest kernel wins, and the first row on a tie", () => {
+	const contested: Row[] = [
+		row({ kernel: "naive-ijk", n: 64, gops: 1 }),
+		row({ kernel: "ikj", n: 64, gops: 10 }),
+		row({ kernel: "tiled", n: 64, gops: 10 }),
+		row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 50 }),
+		row({ kernel: "rayon-tiled", n: 64, threads: 4, gops: 80 }),
+	];
+	expect(barOf(contested)?.customdata).toEqual([
+		["naive-ijk", 1],
+		["ikj", 1],
+		["rayon-tiled", 4],
+	]);
+});
+
+test("N is the largest size every rung measured", () => {
+	// mps has no 512 row, so the ladder drops to 256 rather than skipping the GPU.
+	const gpuStopsShort = rungs.filter(
+		(r) => !(r.kernel === "mps" && r.n === 512),
+	);
+	expect(barOf(gpuStopsShort)?.x).toEqual([1, 20, 100, 1000, 400]);
+	expect(ladder(gpuStopsShort)?.layout.annotations?.[0].text).toBe(
+		"1 → 400 GOP/s · 400× at N = 256",
+	);
+});
+
+test("bar text names the kernel, its GOP/s and the multiplier over the rung above", () => {
+	expect(barOf(rungs)?.text).toEqual([
+		"naive-ijk · 2 GOP/s",
+		"ikj · 40 GOP/s · ×20",
+		"rayon-ikj · 300 GOP/s · ×7.5",
+		"accelerate-blas · 2,000 GOP/s · ×6.7",
+		// A step below 1 is shown as it is, never reordered.
+		"mps · 1,000 GOP/s · ×0.5",
+	]);
+});
+
+test("the ladder rounds like the headline: 3 figures below 100, thousands separators, 2 figures on ×", () => {
+	const headline: Row[] = [
+		row({ kernel: "naive-ijk", n: 4096, gops: 0.5241 }),
+		row({ kernel: "ikj", n: 4096, gops: 25.68 }),
+		row({ kernel: "rayon-ikj", n: 4096, threads: 8, gops: 162.4 }),
+		row({ kernel: "accelerate-bnns", n: 4096, gops: 2289.3, backend: "amx" }),
+		row({ kernel: "mps", n: 4096, gops: 3436.2, backend: "metal" }),
+	];
+	expect(barOf(headline)?.text).toEqual([
+		"naive-ijk · 0.524 GOP/s",
+		"ikj · 25.7 GOP/s · ×49",
+		"rayon-ikj · 162 GOP/s · ×6.3",
+		"accelerate-bnns · 2,289 GOP/s · ×14",
+		"mps · 3,436 GOP/s · ×1.5",
+	]);
+	expect(ladder(headline)?.layout.annotations?.[0].text).toBe(
+		"0.524 → 3,436 GOP/s · 6,600× at N = 4096",
+	);
+});
+
+test("naive-ijk gets the baseline ink, every other rung its family's", () => {
+	expect(barOf(rungs)?.marker?.color).toEqual([
+		BASELINE_INK,
+		FAMILY_INK.serial,
+		FAMILY_INK.parallel,
+		FAMILY_INK.amx,
+		FAMILY_INK.gpu,
+	]);
+	expect(barOf(rungs)?.textposition).toBe("outside");
+	expect(barOf(rungs)?.cliponaxis).toBe(false);
+});
+
+test("naive-ijk is the first rung, never the serial one", () => {
+	const onlyNaiveIsSerial = rungs.filter((r) => r.kernel !== "ikj");
+	expect(labelsOf(onlyNaiveIsSerial)).toEqual([
+		"naive-ijk",
+		"parallel",
+		"amx",
+		"gpu",
+	]);
+});
+
+test("a rung with no rows is left out: f64 has no GPU, i32 no AMX", () => {
+	const noGpu = rungs.filter((r) => r.backend !== "metal");
+	expect(labelsOf(noGpu)).toEqual(["naive-ijk", "serial", "parallel", "amx"]);
+	const noAmx = rungs.filter((r) => r.backend !== "amx");
+	expect(labelsOf(noAmx)).toEqual(["naive-ijk", "serial", "parallel", "gpu"]);
+	// The multiplier is over the rung that is actually above, not the missing one.
+	expect(barOf(noAmx)?.text?.[3]).toBe("mps · 1,000 GOP/s · ×3.3");
+});
+
+test("the ladder is a log GOP/s axis over a reversed category axis in rung order", () => {
+	const { layout } = ladder(rungs) ?? {};
+	expect(layout?.height).toBe(260);
+	expect(layout?.showlegend).toBe(false);
+	expect(layout?.hovermode).toBe("closest");
+	expect(layout?.xaxis?.type).toBe("log");
+	expect(layout?.xaxis?.title).toEqual({ text: "GOP/s" });
+	expect(layout?.yaxis).toMatchObject({
+		type: "category",
+		categoryorder: "array",
+		categoryarray: ["naive-ijk", "serial", "parallel", "amx", "gpu"],
+		autorange: "reversed",
+		fixedrange: true,
+	});
+});
+
+test("the total is one bold annotation at the top left, with no kernel names", () => {
+	const notes = ladder(rungs)?.layout.annotations ?? [];
+	expect(notes).toHaveLength(1);
+	expect(notes[0]).toMatchObject({
+		text: "2 → 1,000 GOP/s · 500× at N = 512",
+		xref: "paper",
+		yref: "paper",
+		x: 0,
+		xanchor: "left",
+		showarrow: false,
+		font: { weight: "bold" },
+	});
+	// y sits above the plot, where the first bar can't reach it.
+	expect(Number(notes[0].y)).toBeGreaterThanOrEqual(1);
+});
+
+test("kernel names live only in escaped trace fields, never in the layout", () => {
+	const hostile = rungs.map((r) =>
+		r.kernel === "ikj" ? { ...r, kernel: "<i>ikj</i>" } : r,
+	);
+	const spec = ladder(hostile);
+	expect(JSON.stringify(spec?.layout)).not.toContain("ikj");
+	const escaped = spec ? escapeLabels(spec) : null;
+	expect(escaped?.data[0].text?.[1]).toBe(
+		"&lt;i&gt;ikj&lt;/i&gt; · 40 GOP/s · ×20",
+	);
+});
+
+test("the ladder needs two rungs and a size they share, else it hides", () => {
+	expect(ladder([])).toBeNull();
+	expect(ladder(rungs.filter((r) => r.kernel === "naive-ijk"))).toBeNull();
+	// naive-ijk alone in its rung, everything else at another size.
+	const apart: Row[] = [
+		row({ kernel: "naive-ijk", n: 64, gops: 1 }),
+		row({ kernel: "mps", n: 128, gops: 100, backend: "metal" }),
+	];
+	expect(ladder(apart)).toBeNull();
+	// Two serial kernels are still one rung.
+	const oneRung: Row[] = [
+		row({ kernel: "ikj", n: 64, gops: 10 }),
+		row({ kernel: "tiled", n: 64, gops: 12 }),
+	];
+	expect(ladder(oneRung)).toBeNull();
 });

@@ -8,7 +8,7 @@ import {
 	familyOf,
 	hasKernel,
 } from "../derive";
-import { FAMILY_INK, FAMILY_ORDER } from "../palette";
+import { BASELINE_INK, FAMILY_INK, FAMILY_ORDER } from "../palette";
 import {
 	AXIS,
 	BASE_LAYOUT,
@@ -18,10 +18,12 @@ import {
 	ceilingOf,
 	ceilingShape,
 	type Figure,
+	LABEL_INK,
 	LABELLED_MARGIN,
 	lineTraces,
 	log2Axis,
 	log2Ticks,
+	MARGIN,
 	pctOfPeak,
 	type SeriesPoint,
 	uidOf,
@@ -316,6 +318,133 @@ export const throughputByFamily: ChartSpec = (rows, _f, ctx) => {
 						),
 					}
 				: {}),
+		},
+	};
+};
+
+/**
+ * The optimization techniques, in the order a programmer reaches for them:
+ * effort order, never sorted by speed, so a rung that buys less than the one
+ * above it (the GPU under AMX) shows a step below 1 instead of moving.
+ * naive-ijk is its own rung and is not counted in the serial one: it is the
+ * baseline every other rung is measured against.
+ */
+const RUNGS: { label: string; family: Family | null }[] = [
+	{ label: BASELINE_KERNEL, family: null },
+	{ label: "serial", family: "serial" },
+	{ label: "parallel", family: "parallel" },
+	{ label: "amx", family: "amx" },
+	{ label: "gpu", family: "gpu" },
+];
+
+/** 3 significant figures below 100, whole numbers with separators above. */
+const fmtGops = (v: number) =>
+	v >= 100
+		? Math.round(v).toLocaleString("en-US")
+		: String(Number(v.toPrecision(3)));
+
+/** A multiplier to 2 significant figures: 0.86, 6.3, 49, 6,600. */
+const fmtX = (r: number) => Number(r.toPrecision(2)).toLocaleString("en-US");
+
+/**
+ * The fastest result of each rung, from naive-ijk to the GPU, and what each
+ * step up bought. Every rung is read at one N, the largest every present rung
+ * measured, so the bars are comparable: a rung with no rows (f64 has no GPU,
+ * the integers no AMX) is left out rather than blocking the rest. The N is
+ * derived, not picked, and carried in the annotation with the total.
+ *
+ * Kernel names appear only in the bar text and customdata, which escapeLabels
+ * escapes; the annotation and the y labels are the dashboard's own strings.
+ */
+export const optimizationLadder: ChartSpec = (rows, _f, ctx) => {
+	const rungs = RUNGS.map((rung) => ({
+		...rung,
+		rows: rows.filter((r) =>
+			rung.family === null
+				? r.kernel === BASELINE_KERNEL
+				: r.kernel !== BASELINE_KERNEL &&
+					familyOf(r, ctx.family) === rung.family,
+		),
+	})).filter((rung) => rung.rows.length);
+	if (rungs.length < 2) return null;
+
+	const sizes = rungs.map((rung) => new Set(rung.rows.map((r) => Number(r.n))));
+	const shared = [...sizes[0]].filter((n) => sizes.every((s) => s.has(n)));
+	if (!shared.length) return null;
+	const n = Math.max(...shared);
+
+	// Every rung has a row at n, so reduce never sees an empty list. A strict
+	// `>` keeps the first row on a tie, so the result is stable.
+	const winners = rungs.map((rung) =>
+		rung.rows
+			.filter((r) => Number(r.n) === n)
+			.reduce((best, r) => (Number(r.gops) > Number(best.gops) ? r : best)),
+	);
+	const gops = winners.map((r) => Number(r.gops));
+	const first = gops[0];
+	const last = gops[gops.length - 1];
+
+	return {
+		data: [
+			{
+				type: "bar",
+				orientation: "h",
+				name: "ladder",
+				uid: "ladder",
+				x: gops,
+				y: rungs.map((rung) => rung.label),
+				text: winners.map(
+					(r, i) =>
+						`${r.kernel} · ${fmtGops(gops[i])} GOP/s` +
+						(i ? ` · ×${fmtX(gops[i] / gops[i - 1])}` : ""),
+				),
+				textposition: "outside",
+				// Lets the text run into the right margin instead of being cut at the
+				// plot edge.
+				cliponaxis: false,
+				textfont: { color: LABEL_INK, size: 11 },
+				customdata: winners.map((r) => [String(r.kernel), Number(r.threads)]),
+				marker: {
+					color: rungs.map((rung) =>
+						rung.family ? FAMILY_INK[rung.family] : BASELINE_INK,
+					),
+				},
+				hovertemplate:
+					"<b>%{x:.1f} GOP/s</b>  %{customdata[0]} · %{customdata[1]}T<extra></extra>",
+			},
+		],
+		layout: {
+			...BASE_LAYOUT,
+			height: 260,
+			showlegend: false,
+			// Each bar is its own hit target; a crosshair readout is for lines.
+			hovermode: "closest",
+			// Right: the outside text of the longest bar. Top: the annotation.
+			margin: { ...MARGIN, t: 36, r: 200 },
+			xaxis: { ...AXIS, type: "log", title: { text: "GOP/s" } },
+			yaxis: {
+				...AXIS,
+				type: "category",
+				categoryorder: "array",
+				categoryarray: rungs.map((rung) => rung.label),
+				// Category axes draw bottom to top; the ladder reads top to bottom.
+				autorange: "reversed",
+				fixedrange: true,
+			},
+			annotations: [
+				{
+					text: `${fmtGops(first)} → ${fmtGops(last)} GOP/s · ${fmtX(last / first)}× at N = ${n}`,
+					xref: "paper",
+					yref: "paper",
+					x: 0,
+					xanchor: "left",
+					y: 1,
+					yanchor: "bottom",
+					yshift: 8,
+					showarrow: false,
+					font: { color: LABEL_INK, size: 13, weight: "bold" },
+				},
+			],
 		},
 	};
 };

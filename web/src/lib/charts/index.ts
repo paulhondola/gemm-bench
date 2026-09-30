@@ -3,6 +3,7 @@ import { blockSizeSweep } from "./blocksize";
 import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
 import {
 	fastestPerSize,
+	optimizationLadder,
 	serialOnly,
 	throughputByFamily,
 	throughputVsSize,
@@ -46,6 +47,11 @@ export const TABS: Tab[] = [
 		controls: ["precision"],
 		inertBlockSize: true,
 		panels: [
+			{
+				title: "Optimization ladder",
+				note: "Each rung is the fastest result of the next technique up, at the largest N every rung measured · log scale · × is the step over the rung above",
+				spec: optimizationLadder,
+			},
 			{
 				title: "Throughput by family",
 				note: "Each family's best kernel, thread count and block size at every size · log–log · GPU timings are end-to-end (host copies included), like the CPU timings · dashed lines are hardware peaks (data/peaks.csv), and hover gives % of peak; AMX has no published peak and the integer precisions no sourced one, so they have none",
