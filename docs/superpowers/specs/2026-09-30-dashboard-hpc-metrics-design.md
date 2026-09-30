@@ -20,6 +20,8 @@ The dashboard lists results but argues nothing. A reader skimming it for a portf
 - Claim-style panel titles, and reframing the Block size tab.
 - A per-row, thread-scaled peak (`peak × min(threads, cores)`). Every in-scope chart plots a family or a GPU kernel, and hover % is against the drawn ceiling, so nothing would call it. Add it with the first per-kernel % chart.
 - Peaks for AMX (no published figure) and the integer precisions (no well-sourced figure). Those families and precisions get no ceiling.
+- Counting the E-cores. The parallel ceiling covers the 8 P-cores, but the parallel family's best row is often a 10-thread run that also uses the 2 E-cores (worth about 5% more), so those points read slightly high against it. The label says "8 P" so the line doesn't overstate what it covers. This is sendoff future item 4.
+- Separating machines on the ladder. Like every family chart today, the ladder takes each rung's best row across all hosts, so contributed runs from a faster machine could supply one rung. The ceilings guard against mixed devices; the ladder does not, and nothing filters by host yet.
 - Telling 14-core and 16-core M1 Pro GPUs apart. Both report `device = "Apple M1 Pro"`; the peaks file lists the 16-core part, the one these runs used. A contributor with the 14-core GPU would be measured against the wrong ceiling. That is a known limit, not something this spec works around.
 
 ## Design

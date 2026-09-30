@@ -373,12 +373,14 @@ export const optimizationLadder: ChartSpec = (rows, _f, ctx) => {
 	if (!shared.length) return null;
 	const n = Math.max(...shared);
 
-	// Every rung has a row at n, so reduce never sees an empty list. A strict
-	// `>` keeps the first row on a tie, so the result is stable.
-	const winners = rungs.map((rung) =>
-		rung.rows
-			.filter((r) => Number(r.n) === n)
-			.reduce((best, r) => (Number(r.gops) > Number(best.gops) ? r : best)),
+	// Each rung's rows are one family at one precision (the Overview is scoped
+	// to one), so at n bestPerFamily leaves exactly one row: the rung's best.
+	const winners = rungs.map(
+		(rung) =>
+			bestPerFamily(
+				rung.rows.filter((r) => Number(r.n) === n),
+				ctx.family,
+			)[0],
 	);
 	const gops = winners.map((r) => Number(r.gops));
 	const first = gops[0];

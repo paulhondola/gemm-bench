@@ -37,6 +37,9 @@ const CONFIG: Partial<Config> = {
  * filter change. Each such shape follows its group's traces instead.
  */
 function syncGroupedShapes(gd: PlotlyHTMLElement) {
+	// The panel can unmount, and Plotly.purge clear the div, before the
+	// redraw's promise settles.
+	if (!gd.layout) return;
 	const hidden = new Set(
 		(gd.data as Trace[])
 			.filter((t) => t.visible === "legendonly")
