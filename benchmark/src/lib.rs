@@ -5,6 +5,7 @@
 //! `kernel.compute(&a, &b, &mut c)`, `c == a * b`.
 
 #![feature(f16)]
+#![feature(portable_simd)]
 
 pub mod element;
 pub mod kernels;
