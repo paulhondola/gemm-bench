@@ -52,7 +52,7 @@ Run `just` with no arguments to list every recipe.
 | :--- | :--- | :--- |
 | `just bench [ARGS]` | `cargo run --release --manifest-path benchmark/Cargo.toml -- [ARGS]` | Run a benchmark sweep. Every argument is forwarded to the CLI (see [CLI Options](#cli-options)). Results go to `data/runs/<host>/<timestamp>.csv` unless `--output` is given. |
 | `just build` | `just build-bench`, then `just build-web` | Produce the optimized benchmark binary (`benchmark/target/release/gemm-bench`) and the static dashboard (`web/dist/`). Run one half with `just build-bench` (`cargo build --release`) or `just build-web` (`just data`, then `bun install && bun run build`). |
-| `just data` | `duckdb -bail < data/build.sql` | Validate every `data/runs/**/*.csv` and merge them into `web/public/results.json`, the file the dashboard loads. A run file missing a required value fails with its filename. `just dev` and `just build` run it first. |
+| `just data` | `duckdb -bail < data/build.sql` | Validate every `data/runs/**/*.csv` and `data/peaks.csv`, and write the two files the dashboard loads: the merged runs to `web/public/results.json`, and the peaks to `web/public/peaks.json` beside it. A run file missing a required value fails with its filename, and a bad peaks row fails naming it. `just dev` and `just build` run it first. |
 | `just dev` | `bun dev` in `web/` | Start the Vite dev server with hot reload for the dashboard. |
 | `just test` | `just test-bench`, then `just test-web` | Run kernel correctness tests (every kernel against `naive-ijk` at all precisions), CLI validation, and report tests, then the dashboard's data and chart tests. Run one half with `just test-bench` (`cargo test --manifest-path benchmark/Cargo.toml`) or `just test-web` (`bun test` in `web/`, which runs `web/src/**/*.test.ts`). |
 | `just lint` | `just lint-bench`, then `just lint-web` | Auto-fix formatting and lint issues in both halves. Run one half with `just lint-bench` (`cargo fmt`) or `just lint-web` (`bun run lint:fix`, Biome). |
@@ -205,6 +205,8 @@ To contribute results from your machine:
 2. Commit the new file. The `data-build` pre-commit hook validates it if lefthook and DuckDB are installed.
 3. Open a PR. CI runs the same validation, and merged runs deploy to the dashboard.
 
+[`data/peaks.csv`](data/peaks.csv) holds hand-curated hardware ceilings in GFLOP/s, which the dashboard draws against the runs. Each row is one ceiling for a `device`, `backend`, `precision`, and number of busy `cores`, not a per-core rate, because the P-core clock falls as more cores are busy. Every row must cite its source. `build.sql` checks the file strictly and fails the build on any bad value, naming the row (or, for a malformed line, its line number): the header must match exactly, every value must be present, `cores` must be a whole number ≥ 1, `gflops` finite and positive, and `backend` either `cpu` or `metal`. No ceiling may be listed twice, and every row must match a run's `device`, `backend`, and `precision`. The 14- and 16-core M1 Pro GPUs report the same device string, so the file lists the 16-core part, the one these runs used; a 14-core GPU would be measured against the wrong ceiling.
+
 ---
 
 ## Web Dashboard
@@ -215,7 +217,7 @@ The dashboard in [`web/`](web) is a Vite + Svelte 5 + TypeScript app linted and 
 - **Build:** `just build` (or `bun run build` in `web/`) writes static files to `web/dist/`. Preview them with `bun run preview`.
 - **Deploy:** every push to `main` builds `web/` and publishes `web/dist/` to GitHub Pages via [`deploy.yml`](.github/workflows/deploy.yml).
 
-It loads `web/public/results.json` and charts it with [Plotly.js](https://plotly.com/javascript/) in six tabs: Overview (one line per kernel family), CPU & AMX, CPU threading, Precision, GPU, and Block size. Pickers narrow each tab by precision, matrix size, block size, or kernel, and a Relative toggle switches to speedup (over `naive-ijk` on CPU & AMX, over one thread on CPU threading). Every chart has Plotly's built-ins: drag to zoom and double-click to reset, click a legend entry to hide that series or double-click it to show only that one, hover for every series' value at that point, and download the chart as SVG from its toolbar. A hidden series stays hidden while you change pickers. GPU kernels are charted with their end-to-end timings, the same host-to-host scope as the CPU kernels; the GPU tab plots the time outside `gpu_ms` as copy overhead. Charts that span kernel families colour by family, and per-kernel charts show either host or GPU kernels, never both. Chart definitions live in `web/src/lib/charts/` as pure functions that return Plotly JSON, each with a `bun test` suite next to it.
+It loads `web/public/results.json` and `web/public/peaks.json` and charts them with [Plotly.js](https://plotly.com/javascript/) in six tabs: Overview (one line per kernel family), CPU & AMX, CPU threading, Precision, GPU, and Block size. The Overview opens with an optimization ladder: the fastest result of each technique from `naive-ijk` to the GPU, with the multiplier each step buys, at the largest N every rung measured. The Overview's family chart and the GPU tab's kernel chart draw the hardware peaks as dashed ceilings and give % of peak on hover; AMX and the integer precisions have none. The Precision tab adds an accuracy-vs-throughput scatter: each float kernel's mean relative error against its GOP/s at the selected size, leaving out exact results, which a log axis can't show. Pickers narrow each tab by precision, matrix size, block size, or kernel, and a Relative toggle switches to speedup (over `naive-ijk` on CPU & AMX, over one thread on CPU threading). Every chart has Plotly's built-ins: drag to zoom and double-click to reset, click a legend entry to hide that series or double-click it to show only that one, hover for every series' value at that point, and download the chart as SVG from its toolbar. A hidden series stays hidden while you change pickers. GPU kernels are charted with their end-to-end timings, the same host-to-host scope as the CPU kernels; the GPU tab plots the time outside `gpu_ms` as copy overhead. Charts that span kernel families colour by family, and per-kernel charts show either host or GPU kernels, never both. Chart definitions live in `web/src/lib/charts/` as pure functions that return Plotly JSON, each with a `bun test` suite next to it.
 
 ---
 
@@ -230,7 +232,7 @@ After `lefthook install`, each commit runs checks scoped to the files it touches
 | `benchmark/**/*.rs` | `cargo fmt` (fixes are re-staged), `cargo clippy -D warnings`, `cargo test` |
 | `web/**/*.{ts,tsx,js,jsx,json,svelte}` | `biome check --write` (fixes are re-staged) |
 | `web/**/*.{ts,tsx,svelte}` | `bun run typecheck` (svelte-check) |
-| `data/runs/**/*.csv` | `duckdb -bail < data/build.sql` |
+| `data/runs/**/*.csv`, `data/peaks.csv` | `duckdb -bail < data/build.sql` |
 
 ### Continuous Integration
 

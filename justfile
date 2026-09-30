@@ -4,7 +4,7 @@ default:
 bench *args='':
     cargo run --release --manifest-path benchmark/Cargo.toml -- {{args}}
 
-# Validates data/runs/**/*.csv and merges it into the JSON file the dashboard loads.
+# Validates data/runs/**/*.csv and data/peaks.csv and writes the JSON files the dashboard loads: results.json from the runs, peaks.json from the peaks.
 data:
     duckdb -bail < data/build.sql
 
