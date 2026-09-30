@@ -27,8 +27,9 @@ impl<T: Element> GemmKernel<T> for RayonPackedGemm {
 
         for pc in (0..n).step_by(self.block_size) {
             let kc = self.block_size.min(n - pc);
-            // ponytail: B is packed on the calling thread, an estimated ~5% of
-            // the run at n = 4096; parallelize it if a profile shows it.
+            // ponytail: B is packed on the calling thread, an estimated ~8% of an
+            // 8-thread run at n = 2048 and ~25% at n = 512 (fit from 4-thread
+            // scaling); pack its strips in parallel to win that back.
             pack_b(rhs.as_slice(), n, pc, kc, &mut packed_b);
             output
                 .as_mut_slice()

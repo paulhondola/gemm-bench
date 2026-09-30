@@ -53,7 +53,7 @@ for kk in steps of b:
 - **Runs via:** A Rayon parallel iterator over the 8-row strips, on a pool built before timing starts, with the `packed` micro-kernel on each core.
 - **Tunes:** Thread count and block size (the k-block depth).
 - **Precisions:** `f16`, `f32`, `f64`, `i32`, `i64`.
-- **Watch for:** B is packed on one thread between parallel rounds, a small serial share of each run. At small N there are few strips to share: N / 8, so 8 at N = 64.
+- **Watch for:** B is packed on one thread between parallel rounds: an estimated 8% of an 8-thread run at N = 2048 and about a quarter at N = 512, so its speedup over `packed` shrinks at small N. There are also few strips to share there: N / 8, so 8 at N = 64.
 - **Source:** [`benchmark/src/kernels/rayon/packed.rs`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/rayon/packed.rs)
 
 ## `static-ikj`
