@@ -53,8 +53,8 @@ pub(crate) struct Cli {
     #[arg(long)]
     repetitions: Option<usize>,
 
-    /// Tile edge length(s) for the tiled kernels, as a comma-delimited list.
-    /// Omit to sweep 16 through 256.
+    /// Tile edge length(s) for the tiled kernels and k-block depth for the
+    /// packed kernels, as a comma-delimited list. Omit to sweep 16 through 256.
     #[arg(long, value_delimiter = ',')]
     block_size: Vec<usize>,
 
