@@ -36,14 +36,15 @@ struct KernelInfo {
     precisions: &'static [Precision],
     /// Sweeps `--threads`; the others run on one caller thread.
     workers: bool,
-    /// Tiles by `--block-size`; the others record an empty block size.
+    /// Takes `--block-size` (a tile edge, or packed's k-block depth); the
+    /// others record an empty block size.
     blocks: bool,
     /// Gives every worker at least one row, so needs `threads <= n`.
     row_per_worker: bool,
 }
 
 impl KernelInfo {
-    /// A single-threaded, untiled CPU kernel at every precision; each row in
+    /// A single-threaded CPU kernel with no block size, at every precision; each row in
     /// `KernelChoice::info` overrides what differs.
     fn serial(label: &'static str) -> Self {
         Self {

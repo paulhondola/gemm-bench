@@ -1,4 +1,4 @@
-One core. These kernels do the same arithmetic in different orders, so they show what the order of memory accesses is worth on its own.
+One core. `naive-ijk`, `ikj` and `tiled` do the same arithmetic in different orders, so they show what the order of memory accesses is worth on its own; `packed` shows what register blocking and explicit SIMD add on top.
 
 ## `naive-ijk`
 

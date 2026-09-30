@@ -203,8 +203,8 @@ fn measure<T: Element>(
     rhs: &Matrix<T>,
     output: &mut Matrix<T>,
 ) -> Result<Samples, Box<dyn std::error::Error>> {
-    // `BenchmarkPlan::cells` gives every tiled kernel a block size.
-    let block = || block_size.expect("tiled kernels always get a block size");
+    // `BenchmarkPlan::cells` gives every blocked kernel a block size.
+    let block = || block_size.expect("blocked kernels always get a block size");
     let io = (lhs, rhs, output, repetitions);
     // Each arm builds its kernel before `sample` starts, so the time from here
     // to `sample`'s first line is that kernel's setup.
