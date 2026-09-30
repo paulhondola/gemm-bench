@@ -41,13 +41,28 @@ WHERE (backend = 'metal') <> (gpu_ms IS NOT NULL)
 HAVING count(*) > 0;
 
 -- Unlike the run files, peaks.csv is hand-curated: every value in it was typed
--- in by someone, so a bad one fails the build rather than becoming null. All
--- six columns are typed, so a renamed or missing column fails the read. The
+-- in by someone, so a bad one fails the build rather than becoming null. The
 -- peaks checks run before either COPY, so a bad peak writes neither file.
+--
+-- The file has one fixed shape, so nothing about it is sniffed: a sniffer
+-- matches column names case-insensitively (a GFLOPS header would reach the
+-- JSON as "GFLOPS"), and a row with a stray comma makes it give up on the
+-- whole file without naming the row. The header is checked exactly here, and
+-- the strict read below names the line of any row with the wrong field count.
+CREATE TEMP TABLE _peaks_header AS
+SELECT error('data/peaks.csv must start with the header device,backend,precision,cores,gflops,source')
+FROM read_text('data/peaks.csv')
+WHERE rtrim(ltrim(split_part(content, chr(10), 1), chr(65279)), chr(13))
+      <> 'device,backend,precision,cores,gflops,source'
+HAVING count(*) > 0;
+
 CREATE VIEW peaks AS
-SELECT * FROM read_csv('data/peaks.csv', header = true,
-    types = {'device': 'VARCHAR', 'backend': 'VARCHAR', 'precision': 'VARCHAR',
-             'cores': 'BIGINT', 'gflops': 'DOUBLE', 'source': 'VARCHAR'});
+SELECT * FROM read_csv('data/peaks.csv', auto_detect = false, header = true,
+    delim = ',', quote = '"', escape = '"',
+    -- cores is read as text: a BIGINT cast rounds, so a typo like 0.5 would
+    -- become a real 1-core ceiling. It is checked as a whole number below.
+    columns = {'device': 'VARCHAR', 'backend': 'VARCHAR', 'precision': 'VARCHAR',
+               'cores': 'VARCHAR', 'gflops': 'DOUBLE', 'source': 'VARCHAR'});
 
 -- Names a peaks row in an error message. coalesce keeps a NULL field from
 -- blanking the whole message, since || with NULL yields NULL.
@@ -56,18 +71,19 @@ CREATE MACRO peak_name(d, b, p, c) AS
               coalesce(CAST(c AS VARCHAR), 'NULL'));
 
 -- A ceiling without a cited source can't be checked, so a blank source counts
--- as missing (trim only strips spaces, hence the regex). The dashboard maps
+-- as missing. trim strips only spaces and \s only ASCII whitespace, so the
+-- regex also covers a pasted no-break or zero-width space. The dashboard maps
 -- families only to cpu and metal peaks, so any other backend would sit unused.
 -- isfinite is needed because DuckDB orders NaN above every number, so
 -- gflops <= 0 alone would let it through.
 CREATE TEMP TABLE _peaks_invalid AS
 SELECT error('data/peaks.csv rows need every value, a non-blank source, backend cpu or metal, '
-             || 'cores > 0 and a finite gflops > 0: '
+             || 'a whole number of cores >= 1 and a finite gflops > 0: '
              || string_agg(DISTINCT peak_name(device, backend, precision, cores), ', '))
 FROM peaks
 WHERE device IS NULL OR backend IS NULL OR precision IS NULL OR cores IS NULL
-   OR gflops IS NULL OR source IS NULL OR regexp_full_match(source, '\s*')
-   OR backend NOT IN ('cpu', 'metal') OR cores <= 0
+   OR gflops IS NULL OR source IS NULL OR regexp_full_match(source, '[\s\p{Z}\p{C}]*')
+   OR backend NOT IN ('cpu', 'metal') OR NOT regexp_full_match(cores, '[1-9][0-9]{0,5}')
    OR NOT isfinite(gflops) OR gflops <= 0
 HAVING count(*) > 0;
 
@@ -110,7 +126,7 @@ COPY (
 
 -- The checks above leave gflops finite, so it needs no null mapping.
 COPY (
-  SELECT device, backend, precision, cores, gflops, source
+  SELECT device, backend, precision, CAST(cores AS BIGINT) AS cores, gflops, source
   FROM peaks
-  ORDER BY device, backend, precision, cores
+  ORDER BY device, backend, precision, CAST(cores AS BIGINT)
 ) TO 'web/public/peaks.json' (FORMAT json, ARRAY true);

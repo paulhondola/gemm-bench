@@ -65,11 +65,11 @@ Memory bandwidth (200 GB/s) is not recorded: a roofline would not help here (sen
 
 Before either `COPY`, so a failed build writes neither JSON file:
 
-1. Read `data/peaks.csv` with pinned types, like the run files.
+1. Check the header is exactly `device,backend,precision,cores,gflops,source`, then read `data/peaks.csv` strictly: fixed dialect, no sniffing, so a row with the wrong field count fails naming its line. A sniffer matches column names case-insensitively and gives up on the whole file over one bad row.
 2. Fail the build, naming the offending rows, when any row:
-   - is missing a value, or has an empty or blank `source`
+   - is missing a value, or has an empty or blank `source` (Unicode spaces included)
    - has a `backend` other than `cpu` or `metal`
-   - has `cores ≤ 0`, or a non-finite or non-positive `gflops`
+   - has `cores` that is not a whole number ≥ 1 (read as text, since an integer cast would round `0.5` to a 1-core ceiling), or a non-finite or non-positive `gflops`
    - shares its `(device, backend, precision, cores)` with another row
    - matches no run row on `(device, backend, precision)`. This catches a typo in a device or precision name, which would otherwise draw no ceiling without any error.
 
