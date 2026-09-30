@@ -1,7 +1,8 @@
--- Validates every benchmark run and merges them into the JSON file the
--- dashboard loads. Run from the repo root: duckdb -bail < data/build.sql
+-- Validates every benchmark run and the hardware peaks, and writes the two
+-- JSON files the dashboard loads. Run from the repo root:
+-- duckdb -bail < data/build.sql
 -- -bail matters: without it DuckDB keeps executing after a failed check and
--- the COPY would still overwrite the JSON file.
+-- the COPYs would still overwrite the JSON files.
 
 CREATE VIEW runs AS
 SELECT * FROM read_csv('data/runs/**/*.csv', union_by_name = true, filename = true,
@@ -39,6 +40,56 @@ FROM runs
 WHERE (backend = 'metal') <> (gpu_ms IS NOT NULL)
 HAVING count(*) > 0;
 
+-- Unlike the run files, peaks.csv is hand-curated: every value in it was typed
+-- in by someone, so a bad one fails the build rather than becoming null. All
+-- six columns are typed, so a renamed or missing column fails the read. The
+-- peaks checks run before either COPY, so a bad peak writes neither file.
+CREATE VIEW peaks AS
+SELECT * FROM read_csv('data/peaks.csv', header = true,
+    types = {'device': 'VARCHAR', 'backend': 'VARCHAR', 'precision': 'VARCHAR',
+             'cores': 'BIGINT', 'gflops': 'DOUBLE', 'source': 'VARCHAR'});
+
+-- Names a peaks row in an error message. coalesce keeps a NULL field from
+-- blanking the whole message, since || with NULL yields NULL.
+CREATE MACRO peak_name(d, b, p, c) AS
+    concat_ws('/', coalesce(d, 'NULL'), coalesce(b, 'NULL'), coalesce(p, 'NULL'),
+              coalesce(CAST(c AS VARCHAR), 'NULL'));
+
+-- A ceiling without a cited source can't be checked, so a blank source counts
+-- as missing (trim only strips spaces, hence the regex). The dashboard maps
+-- families only to cpu and metal peaks, so any other backend would sit unused.
+-- isfinite is needed because DuckDB orders NaN above every number, so
+-- gflops <= 0 alone would let it through.
+CREATE TEMP TABLE _peaks_invalid AS
+SELECT error('data/peaks.csv rows need every value, a non-blank source, backend cpu or metal, '
+             || 'cores > 0 and a finite gflops > 0: '
+             || string_agg(DISTINCT peak_name(device, backend, precision, cores), ', '))
+FROM peaks
+WHERE device IS NULL OR backend IS NULL OR precision IS NULL OR cores IS NULL
+   OR gflops IS NULL OR source IS NULL OR regexp_full_match(source, '\s*')
+   OR backend NOT IN ('cpu', 'metal') OR cores <= 0
+   OR NOT isfinite(gflops) OR gflops <= 0
+HAVING count(*) > 0;
+
+-- The dashboard picks one row per core count, so two rows for the same
+-- ceiling would leave the one it draws up to file order.
+CREATE TEMP TABLE _peaks_duplicated AS
+SELECT error('data/peaks.csv lists a ceiling more than once: ' || string_agg(name, ', '))
+FROM (SELECT peak_name(device, backend, precision, cores) AS name
+      FROM peaks
+      GROUP BY device, backend, precision, cores
+      HAVING count(*) > 1)
+HAVING count(*) > 0;
+
+-- A peak is drawn against the runs it shares device, backend and precision
+-- with, so a typo in any of them would silently draw no ceiling.
+CREATE TEMP TABLE _peaks_unmatched AS
+SELECT error('data/peaks.csv rows match no run on device, backend and precision: '
+             || string_agg(DISTINCT peak_name(device, backend, precision, cores), ', '))
+FROM peaks
+ANTI JOIN (SELECT DISTINCT device, backend, precision FROM runs) USING (device, backend, precision)
+HAVING count(*) > 0;
+
 -- JSON has no NaN or Infinity: DuckDB writes them bare and JSON.parse rejects
 -- the whole file. They can't be rejected here instead, since the harness
 -- records an infinite mean_rel_error_f64 on purpose (a kernel that produced
@@ -56,3 +107,10 @@ COPY (
   FROM runs
   ORDER BY host, "timestamp", precision, kernel, n, threads, block_size, repetitions
 ) TO 'web/public/results.json' (FORMAT json, ARRAY true);
+
+-- The checks above leave gflops finite, so it needs no null mapping.
+COPY (
+  SELECT device, backend, precision, cores, gflops, source
+  FROM peaks
+  ORDER BY device, backend, precision, cores
+) TO 'web/public/peaks.json' (FORMAT json, ARRAY true);
