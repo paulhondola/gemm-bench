@@ -17,7 +17,7 @@ pub use accelerate::AccelerateBnnsGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
 pub use metal::{MpsGemm, Shader, ShaderGemm};
-pub use rayon::{RayonIkjGemm, RayonTiledGemm};
+pub use rayon::{RayonIkjGemm, RayonPackedGemm, RayonTiledGemm};
 pub use serial::{IkjGemm, NaiveGemm, PackedGemm, TiledGemm};
 pub use static_threads::{StaticIkjGemm, StaticTiledGemm};
 
@@ -35,8 +35,8 @@ pub trait GemmKernel<T: Element>: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::{
-        Element, GemmKernel, IkjGemm, NaiveGemm, PackedGemm, RayonIkjGemm, RayonTiledGemm,
-        StaticIkjGemm, StaticTiledGemm, TiledGemm,
+        Element, GemmKernel, IkjGemm, NaiveGemm, PackedGemm, RayonIkjGemm, RayonPackedGemm,
+        RayonTiledGemm, StaticIkjGemm, StaticTiledGemm, TiledGemm,
     };
     use crate::Matrix;
 
@@ -81,6 +81,7 @@ mod tests {
             Box::new(PackedGemm::new(3)),
             Box::new(RayonIkjGemm),
             Box::new(RayonTiledGemm::new(3)),
+            Box::new(RayonPackedGemm::new(3)),
         ];
         // Every static thread count up to `n`, including uneven row splits.
         for threads in 1..=n {
@@ -131,6 +132,15 @@ mod tests {
 
         let mut actual = Matrix::zeros(n, n);
         PackedGemm::new(16).compute(&lhs, &rhs, &mut actual);
+        assert_close(&actual, &expected);
+
+        // Three workers, so strips of one k-block run concurrently.
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(3)
+            .build()
+            .expect("rayon thread pool should build");
+        let mut actual = Matrix::zeros(n, n);
+        pool.install(|| RayonPackedGemm::new(16).compute(&lhs, &rhs, &mut actual));
         assert_close(&actual, &expected);
     }
 
