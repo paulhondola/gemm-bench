@@ -10,7 +10,8 @@ use gemm_bench::kernels::{
 use gemm_bench::{
     Element, GemmKernel, Matrix,
     kernels::{
-        IkjGemm, NaiveGemm, RayonIkjGemm, RayonTiledGemm, StaticIkjGemm, StaticTiledGemm, TiledGemm,
+        IkjGemm, NaiveGemm, PackedGemm, RayonIkjGemm, RayonPackedGemm, RayonTiledGemm,
+        StaticIkjGemm, StaticTiledGemm, TiledGemm,
     },
 };
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -212,9 +213,15 @@ fn measure<T: Element>(
         KernelChoice::Naive => sample(&NaiveGemm, setup_start, io),
         KernelChoice::Ikj => sample(&IkjGemm, setup_start, io),
         KernelChoice::Tiled => sample(&TiledGemm::new(block()), setup_start, io),
+        KernelChoice::Packed => sample(&PackedGemm::new(block()), setup_start, io),
         KernelChoice::RayonIkj => sample(&InPool::new(threads, RayonIkjGemm)?, setup_start, io),
         KernelChoice::RayonTiled => sample(
             &InPool::new(threads, RayonTiledGemm::new(block()))?,
+            setup_start,
+            io,
+        ),
+        KernelChoice::RayonPacked => sample(
+            &InPool::new(threads, RayonPackedGemm::new(block()))?,
             setup_start,
             io,
         ),

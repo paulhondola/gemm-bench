@@ -8,8 +8,10 @@ pub(crate) enum KernelChoice {
     Naive,
     Ikj,
     Tiled,
+    Packed,
     RayonIkj,
     RayonTiled,
+    RayonPacked,
     StaticIkj,
     StaticTiled,
     #[cfg(target_os = "macos")]
@@ -67,6 +69,11 @@ impl KernelChoice {
                 blocks: true,
                 ..serial("tiled")
             },
+            // `--block-size` is the k-block depth (KC) of each packed B panel.
+            Self::Packed => KernelInfo {
+                blocks: true,
+                ..serial("packed")
+            },
             Self::RayonIkj => KernelInfo {
                 workers: true,
                 ..serial("rayon-ikj")
@@ -75,6 +82,11 @@ impl KernelChoice {
                 workers: true,
                 blocks: true,
                 ..serial("rayon-tiled")
+            },
+            Self::RayonPacked => KernelInfo {
+                workers: true,
+                blocks: true,
+                ..serial("rayon-packed")
             },
             Self::StaticIkj => KernelInfo {
                 workers: true,
