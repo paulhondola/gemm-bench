@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readdirSync } from "node:fs";
 import type { Row } from "../db";
 import { pointsOf, row } from "../fixtures";
 import { gpuKernels } from "./gpu";
@@ -379,4 +380,37 @@ test("panel titles are unique across all tabs", () => {
 	// each other's Svelte keying and Plotly zoom/legend state.
 	const titles = TABS.flatMap((t) => t.panels.map((p) => p.title));
 	expect(new Set(titles).size).toBe(titles.length);
+});
+
+const panels = TABS.flatMap((t) => t.panels);
+
+const DOCS = new URL("../../docs/charts/", import.meta.url);
+
+/** A panel's doc file: its title in kebab case, "÷" read as "vs". */
+const docFile = (title: string) =>
+	`${title
+		.replace("÷", "vs")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "")}.md`;
+
+test("every panel shows the doc file named after its title", async () => {
+	for (const p of panels) {
+		expect(p.doc.trim()).not.toBe("");
+		expect(p.doc).toBe(await Bun.file(new URL(docFile(p.title), DOCS)).text());
+	}
+});
+
+test("every chart doc belongs to a panel", () => {
+	const files = readdirSync(DOCS).filter((f) => f.endsWith(".md"));
+	expect(files.sort()).toEqual(panels.map((p) => docFile(p.title)).sort());
+});
+
+test("every caption fits on one line", () => {
+	for (const p of panels) expect(p.note.length).toBeLessThanOrEqual(120);
+});
+
+test("no tab shadows the About tab", () => {
+	// App.svelte opens the About tab on store.tab === "about".
+	expect(TABS.map((t) => t.id)).not.toContain("about");
 });

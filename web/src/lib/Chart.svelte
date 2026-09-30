@@ -2,18 +2,24 @@
 import type { Config, PlotlyHTMLElement, Shape } from "plotly.js-dist-min";
 import Plotly from "plotly.js-dist-min";
 import { escapeLabels, type Figure, type Trace } from "./charts/types";
+import { renderMarkdown } from "./markdown";
 
 let {
 	spec,
 	title,
 	note = "",
+	doc,
 	empty = "No data for this selection.",
 }: {
 	spec: Figure | null;
 	title: string;
 	note?: string;
+	/** The chart's Markdown explanation, from web/src/docs/charts/. */
+	doc: string;
 	empty?: string;
 } = $props();
+
+const docHtml = $derived(renderMarkdown(doc));
 
 let host = $state<HTMLDivElement | null>(null);
 
@@ -101,6 +107,12 @@ $effect(() => {
 		<h2>{title}</h2>
 		{#if note}<p class="note">{note}</p>{/if}
 	</header>
+	<!-- Outside the {#if spec} below, so an empty selection still explains the
+	     chart. The HTML is the dashboard's own Markdown, never contributed data. -->
+	<details class="doc">
+		<summary>How to read this chart</summary>
+		<div class="prose">{@html docHtml}</div>
+	</details>
 	{#if spec}
 		<div class="plot" bind:this={host}></div>
 	{:else}
@@ -128,6 +140,24 @@ $effect(() => {
 		margin: 4px 0 0;
 		font-size: 13px;
 		color: #9aa1a8;
+	}
+	.doc summary {
+		cursor: pointer;
+		font-size: 13px;
+		color: #9aa1a8;
+	}
+	.prose {
+		max-width: 72ch;
+		margin-top: 8px;
+		font-size: 14px;
+		line-height: 1.6;
+	}
+	.prose :global(p) {
+		margin: 0 0 10px;
+	}
+	.prose :global(code) {
+		font-family: "IBM Plex Mono", monospace;
+		font-size: 13px;
 	}
 	.empty {
 		margin: 0;

@@ -1,0 +1,5 @@
+**What it shows.** Each kernel's fastest configuration at the selected matrix size, at each float precision: its throughput (up) against its error (right). Colour is the family and the marker shape is the precision: circle `f16`, square `f32`, diamond `f64`. Both axes are logarithmic.
+
+**How to read it.** Up and to the left is faster and more accurate. The error is the mean relative error of every output element against the same product computed in `f64` on the CPU from the same inputs, so it measures the kernel's arithmetic, not the rounding of its inputs. How a kernel adds up its products matters as much as the element type: `accelerate-bnns` at `f16` also sums in `f16`, so its error grows with N. Click a precision in the legend to hide just those points.
+
+**Caveats.** A result equal to the reference has an error of 0, which a log axis can't place, so it is left out: that covers every integer kernel, and the `f64` CPU kernels, which add in the reference's order. Non-finite errors are left out too. The precision pill is disabled on this tab.

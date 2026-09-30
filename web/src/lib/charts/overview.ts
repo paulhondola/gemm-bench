@@ -338,7 +338,7 @@ const RUNGS: { label: string; family: Family | null }[] = [
 ];
 
 /** 3 significant figures below 100, whole numbers with separators above. */
-const fmtGops = (v: number) =>
+export const fmtGops = (v: number) =>
 	v >= 100
 		? Math.round(v).toLocaleString("en-US")
 		: String(Number(v.toPrecision(3)));

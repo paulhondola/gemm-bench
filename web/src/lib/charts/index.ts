@@ -1,3 +1,16 @@
+import accuracyVsThroughputDoc from "../../docs/charts/accuracy-vs-throughput.md?raw";
+import copyOverheadDoc from "../../docs/charts/copy-overhead.md?raw";
+import fastestKernelPerSizeDoc from "../../docs/charts/fastest-kernel-per-size.md?raw";
+import gpuKernelsVsCpuDoc from "../../docs/charts/gpu-kernels-vs-cpu.md?raw";
+import gpuVsCpuAtEqualEffortDoc from "../../docs/charts/gpu-vs-cpu-at-equal-effort.md?raw";
+import optimizationLadderDoc from "../../docs/charts/optimization-ladder.md?raw";
+import parallelEfficiencyDoc from "../../docs/charts/parallel-efficiency.md?raw";
+import singleThreadedKernelsDoc from "../../docs/charts/single-threaded-kernels.md?raw";
+import throughputByFamilyDoc from "../../docs/charts/throughput-by-family.md?raw";
+import throughputByPrecisionDoc from "../../docs/charts/throughput-by-precision.md?raw";
+import throughputVsBlockSizeDoc from "../../docs/charts/throughput-vs-block-size.md?raw";
+import throughputVsMatrixSizeDoc from "../../docs/charts/throughput-vs-matrix-size.md?raw";
+import throughputVsThreadCountDoc from "../../docs/charts/throughput-vs-thread-count.md?raw";
 import type { Row } from "../db";
 import { blockSizeSweep } from "./blocksize";
 import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
@@ -16,7 +29,10 @@ export type Control = "precision" | "n" | "kernel" | "blockSize";
 
 export interface Panel {
 	title: string;
+	/** One line: what's plotted and the scale. The detail is in `doc`. */
 	note: string;
+	/** "How to read this chart": Markdown from web/src/docs/charts/. */
+	doc: string;
 	spec: ChartSpec;
 }
 
@@ -49,17 +65,20 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "Optimization ladder",
-				note: "Each rung is the fastest result of the next technique up, at the largest N every rung measured · log scale · × is the step over the rung above",
+				note: "Fastest result of each technique at the largest N every rung measured · log scale · × is the step over the rung above",
+				doc: optimizationLadderDoc,
 				spec: optimizationLadder,
 			},
 			{
 				title: "Throughput by family",
-				note: "Each family's best kernel, thread count and block size at every size · log–log · GPU timings are end-to-end (host copies included), like the CPU timings · dashed lines are hardware peaks (data/peaks.csv), and hover gives % of peak; AMX has no published peak and the integer precisions no sourced one, so they have none",
+				note: "Each family's best result at every size · log–log · dashed lines are hardware peaks",
+				doc: throughputByFamilyDoc,
 				spec: throughputByFamily,
 			},
 			{
 				title: "Fastest kernel per size",
-				note: "Computed over every kernel and coloured by the winner's family",
+				note: "The fastest kernel at each size, over every kernel, coloured by its family",
+				doc: fastestKernelPerSizeDoc,
 				spec: fastestPerSize,
 			},
 		],
@@ -72,11 +91,13 @@ export const TABS: Tab[] = [
 			{
 				title: "Throughput vs matrix size",
 				note: "Each kernel's best thread count, at the selected block size · log–log · band is ±1 stddev",
+				doc: throughputVsMatrixSizeDoc,
 				spec: throughputVsSize,
 			},
 			{
 				title: "Single-threaded kernels",
-				note: "Loop order and cache blocking at the selected block size, rescaled away from the parallel kernels",
+				note: "Loop order and cache blocking alone, at the selected block size, on their own scale",
+				doc: singleThreadedKernelsDoc,
 				spec: serialOnly,
 			},
 		],
@@ -88,12 +109,14 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "Throughput vs thread count",
-				note: "Linear axes · work-stealing vs fixed partitioning, at the selected block size",
+				note: "Work-stealing vs fixed partitioning at the selected size and block size · linear axes",
+				doc: throughputVsThreadCountDoc,
 				spec: throughputVsThreads,
 			},
 			{
 				title: "Parallel efficiency",
-				note: "Speedup as a share of ideal, for the selected kernel and block size — every size at once, so the N pill does not apply here",
+				note: "Speedup as a share of ideal for the selected kernel, at every size (the N pill doesn't apply)",
+				doc: parallelEfficiencyDoc,
 				spec: parallelEfficiency,
 			},
 		],
@@ -107,12 +130,14 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "Throughput by precision",
-				note: "Each family's best kernel, thread count and block size at the selected size · GPU timings are end-to-end",
+				note: "Each family's best result at the selected size · GPU timings are end-to-end",
+				doc: throughputByPrecisionDoc,
 				spec: throughputByPrecision,
 			},
 			{
 				title: "Accuracy vs throughput",
-				note: "Each kernel's fastest configuration at the selected size, float precisions only · error is the mean relative error against an f64 CPU reference · results equal to the reference (every integer kernel, and f64 CPU kernels, which add in the reference's order) and non-finite ones can't sit on a log axis, so they are left out",
+				note: "Each float kernel's fastest configuration at the selected size · log–log · exact results are left out",
+				doc: accuracyVsThroughputDoc,
 				spec: accuracyVsThroughput,
 			},
 		],
@@ -125,17 +150,20 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "GPU kernels vs CPU",
-				note: "GPU timings are end-to-end (host copies and command encoding included), like the CPU timings · references are each family's best kernel, thread count and block size · dashed lines are hardware peaks (data/peaks.csv), and hover gives % of peak; AMX has no published peak and the integer precisions no sourced one, so they have none",
+				note: "End-to-end GPU timings against the best threaded-CPU and AMX results · log–log · dashed lines are hardware peaks",
+				doc: gpuKernelsVsCpuDoc,
 				spec: gpuKernels,
 			},
 			{
 				title: "GPU ÷ CPU at equal effort",
-				note: "Hand-written shaders against the best hand-written parallel CPU kernel, MPS against the best AMX (Accelerate) kernel · above 1.0 the GPU wins",
+				note: "Shaders vs threaded CPU, MPS vs AMX, at each size · above 1.0 the GPU wins",
+				doc: gpuVsCpuAtEqualEffortDoc,
 				spec: gpuEqualEffort,
 			},
 			{
 				title: "Copy overhead",
-				note: "Share of end-to-end time spent copying inputs in, encoding, and copying the result out · copies grow as N², arithmetic as N³",
+				note: "Share of end-to-end GPU time spent copying and encoding · copies grow as N², arithmetic as N³",
+				doc: copyOverheadDoc,
 				spec: gpuCopyOverhead,
 			},
 		],
@@ -148,7 +176,8 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "Throughput vs block size",
-				note: "Kernels measured at only one block size (e.g. mps) have nothing to sweep and are omitted here. No column records which of the remaining kernels actually do cache blocking — for one that does not, the two points are independent repeat runs, and any gap between them is run-to-run noise, not a block-size effect. Read a large, consistent change as real and a small wobble as noise.",
+				note: "Each tiled kernel's best result at each block size, at the selected size · small wobbles are noise",
+				doc: throughputVsBlockSizeDoc,
 				spec: blockSizeSweep,
 			},
 		],
