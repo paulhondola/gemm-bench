@@ -13,33 +13,38 @@ exec 1>&2
 
 cd "$CLAUDE_PROJECT_DIR"
 
-JUST_VERSION=1.58.0
-DUCKDB_VERSION=1.5.5 # keep equal to .github/workflows/ci.yml
-LEFTHOOK_VERSION=2.1.15
+# Tag of a GitHub repo's latest release, read from the redirect of its
+# releases/latest/download URL (the GitHub API is not reachable from here).
+latest_tag() {
+  curl -fsS -o /dev/null -w '%{redirect_url}' "https://github.com/$1/releases/latest/download/x" | cut -d/ -f8
+}
 
 BIN="$HOME/.local/bin"
 mkdir -p "$BIN"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-if [[ "$("$BIN/just" --version 2>/dev/null)" != "just $JUST_VERSION" ]]; then
-  curl -fsSL "https://github.com/casey/just/releases/download/$JUST_VERSION/just-$JUST_VERSION-x86_64-unknown-linux-musl.tar.gz" |
+tag=$(latest_tag casey/just)
+if [[ "$("$BIN/just" --version 2>/dev/null)" != "just $tag" ]]; then
+  curl -fsSL "https://github.com/casey/just/releases/download/$tag/just-$tag-x86_64-unknown-linux-musl.tar.gz" |
     tar -xz -C "$BIN" just
 fi
 
-if [[ "$("$BIN/duckdb" --version 2>/dev/null)" != "v$DUCKDB_VERSION "* ]]; then
-  curl -fsSL -o "$TMP/duckdb.zip" "https://github.com/duckdb/duckdb/releases/download/v$DUCKDB_VERSION/duckdb_cli-linux-amd64.zip"
+tag=$(latest_tag duckdb/duckdb)
+if [[ "$("$BIN/duckdb" --version 2>/dev/null)" != "$tag "* ]]; then
+  curl -fsSL -o "$TMP/duckdb.zip" "https://github.com/duckdb/duckdb/releases/download/$tag/duckdb_cli-linux-amd64.zip"
   unzip -oq "$TMP/duckdb.zip" -d "$BIN"
 fi
 
-if [[ "$("$BIN/lefthook" version 2>/dev/null)" != "$LEFTHOOK_VERSION" ]]; then
-  curl -fsSL "https://github.com/evilmartians/lefthook/releases/download/v$LEFTHOOK_VERSION/lefthook_${LEFTHOOK_VERSION}_Linux_x86_64.gz" |
+tag=$(latest_tag evilmartians/lefthook)
+if [[ "v$("$BIN/lefthook" version 2>/dev/null)" != "$tag" ]]; then
+  curl -fsSL "https://github.com/evilmartians/lefthook/releases/download/$tag/lefthook_${tag#v}_Linux_x86_64.gz" |
     gunzip >"$BIN/lefthook"
   chmod +x "$BIN/lefthook"
 fi
 
-# The nightly toolchain and components rust-toolchain.toml pins, if the image lacks them.
-rustup toolchain install --no-update --no-self-update
+# The channel rust-toolchain.toml selects; installs it or updates it to the latest nightly.
+rustup update nightly
 cargo fetch --manifest-path benchmark/Cargo.toml
 
 (cd web && bun install --frozen-lockfile)
