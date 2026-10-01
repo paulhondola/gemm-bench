@@ -77,5 +77,5 @@ for kk in steps of b:                    # b = block size: the k-block depth
 - **Runs via:** Portable SIMD (`std::simd`) on one core: one 128-bit NEON register per vector, with fused multiply-add for floats.
 - **Tunes:** Block size, as the depth of each packed k-block.
 - **Precisions:** `f16`, `f32`, `f64`, `i32`, `i64`.
-- **Watch for:** `i64` gains little: NEON has no 64-bit integer multiply, so each lane multiplies in a scalar register. Floats round once per multiply-add instead of twice, so results differ slightly from `ikj`'s.
+- **Watch for:** `i64` gains little: NEON has no 64-bit integer multiply, so each lane multiplies in a scalar register. Float results differ slightly from `ikj`'s for two reasons: each multiply-add rounds once instead of twice, and each k-block's sums start from zero in registers and are added into C once, which regroups the summation. So the block size moves the error as well as the speed: in `f16` at N = 64 and 128, a 16-deep k-block measured a quarter to a third of the error of a full-depth one.
 - **Source:** [`benchmark/src/kernels/serial/packed.rs`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/serial/packed.rs), with the shared packing and micro-kernel in [`benchmark/src/kernels/packed.rs`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/packed.rs)

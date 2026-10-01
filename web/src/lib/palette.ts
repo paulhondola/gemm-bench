@@ -1,19 +1,26 @@
 import { BASELINE_KERNEL, type Family } from "./derive";
 
 /**
- * The nine validated categorical slots for the dark surface (#15181b).
- * Worst adjacent CVD ΔE 8.4, worst adjacent normal-vision ΔE 19.3, all nine
+ * The ten validated categorical slots for the dark surface (#15181b).
+ * Worst adjacent CVD ΔE 8.4, worst adjacent normal-vision ΔE 17.3, all ten
  * at or above 3:1 contrast. Do not substitute or re-step these values, and
  * never extend the list with a hue picked by eye: a further series folds into
  * a family view or reuses a slot in another colour group (see SLOT_OF). The
  * baseline kernel sits outside the slots in BASELINE_INK, which is what makes
- * room for ten kernels.
+ * room for eleven kernels.
  *
  * Slot 9 (accelerate-bnns) was searched over OKLCH, not generated: of every
  * in-band, in-gamut candidate it best clears the floors against ALL eight
  * slots and BASELINE_INK, not just its neighbour: CVD ΔE ≥ 10.2 (nearest:
  * magenta), normal-vision ΔE ≥ 16.2 (nearest: violet), contrast 3.02:1. Its
  * contrast margin is thin, so re-validate if the surface changes.
+ *
+ * Slot 10 (rayon-packed) was searched the same way, over every sRGB hex, with
+ * the same floors against ALL nine slots and BASELINE_INK. Only 414 hexes
+ * pass, all a saturated indigo on the gamut's blue edge; this one maximises
+ * the worst of its three margins: CVD ΔE ≥ 10.2 and normal-vision ΔE ≥ 15.3
+ * (both nearest: blue), contrast 3.06:1. Nothing is left to search: an
+ * eleventh slot has no candidate, so the next kernel folds or reuses a slot.
  */
 const SLOTS = [
 	"#3987e5", // 1 blue
@@ -25,6 +32,7 @@ const SLOTS = [
 	"#9085e9", // 7 violet
 	"#e66767", // 8 red
 	"#844da2", // 9 purple
+	"#4f44ff", // 10 indigo
 ] as const;
 
 export const MAX_SERIES = SLOTS.length;
@@ -35,7 +43,7 @@ export const REFERENCE_INK = "#5b636b";
 /**
  * Neutral ink for naive-ijk, the reference every "× vs naive-ijk" view divides
  * by. Lighter than every slot on purpose: mid grays collide with the aqua,
- * magenta and red slots under CVD. Validated pairwise against all eight: CVD
+ * magenta and red slots under CVD. Validated pairwise against all ten: CVD
  * ΔE ≥ 8 and normal-vision ΔE ≥ 15 each, ≥ 3:1 contrast.
  */
 export const BASELINE_INK = "#b4bac0";
@@ -68,9 +76,10 @@ type Group = "host" | "gpu";
 /**
  * Documented slots per group, arranged so the most-compared pairs land on
  * adjacent slots (adjacent pairs are the validated worst case). Host: the
- * original order, except that mps moved to the GPU group, which frees slot 8
- * (red) for the next host kernel. GPU: validated in legend order metal-naive,
- * metal-tiled, mps, then the AMX and parallel references (dark, #15181b):
+ * original order, except that mps moved to the GPU group and packed took its
+ * slot 8 (red); rayon-packed has slot 10, the last, validated against every
+ * slot. GPU: validated in legend order metal-naive, metal-tiled, mps, then
+ * the AMX and parallel references (dark, #15181b):
  * worst adjacent CVD ΔE 19.2, normal-vision 22.5 over all five; 19.5 / 22.5
  * for the three kernels alone; all ≥ 3:1. Maps, not object literals: kernel
  * names come from contributed CSVs, and "constructor" must not resolve.
@@ -84,7 +93,9 @@ const SLOT_OF: Record<Group, Map<string, number>> = {
 		["static-ikj", 4],
 		["rayon-tiled", 5],
 		["static-tiled", 6],
+		["packed", 7],
 		["accelerate-bnns", 8],
+		["rayon-packed", 9],
 	]),
 	gpu: new Map([
 		["metal-naive", 1],
