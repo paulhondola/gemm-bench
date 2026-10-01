@@ -12,7 +12,7 @@ use crate::kernel::{KernelChoice, Precision};
 use crate::plan::{BenchmarkPlan, Devices};
 
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
-const DEFAULT_BLOCK_SIZES: [usize; 5] = [16, 32, 64, 128, 256];
+const DEFAULT_BLOCK_SIZES: [usize; 7] = [16, 32, 64, 128, 256, 512, 1024];
 const DEFAULT_REPETITIONS: usize = 5;
 
 const AFTER_HELP: &str = "\
@@ -409,7 +409,7 @@ mod tests {
         assert!(plan.threads.contains(&1));
         assert_eq!(plan.kernels, KernelChoice::value_variants());
         assert_eq!(plan.precisions, Precision::value_variants());
-        assert_eq!(plan.block_sizes, [16, 32, 64, 128, 256]);
+        assert_eq!(plan.block_sizes, [16, 32, 64, 128, 256, 512, 1024]);
         assert_eq!(plan.repetitions, 5);
         assert!(!plan.no_progress);
         assert!(!plan.context.host.is_empty());
