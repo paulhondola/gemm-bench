@@ -13,9 +13,10 @@ const all = [
 	"accelerate-blas",
 	"accelerate-bnns",
 	"ikj",
-	"mps",
 	"naive-ijk",
+	"packed",
 	"rayon-ikj",
+	"rayon-packed",
 	"rayon-tiled",
 	"static-ikj",
 	"static-tiled",
@@ -30,6 +31,8 @@ test("known kernels take their documented slot", () => {
 	expect(p.get("ikj")).toBe("#d95926");
 	expect(p.get("tiled")).toBe("#199e70");
 	expect(p.get("accelerate-bnns")).toBe("#844da2");
+	expect(p.get("packed")).toBe("#e66767");
+	expect(p.get("rayon-packed")).toBe("#4f44ff");
 	expect(p.get("mps")).toBe("#e66767");
 	expect(p.get("metal-naive")).toBe("#d95926");
 	expect(p.get("metal-tiled")).toBe("#9085e9");
@@ -38,7 +41,7 @@ test("known kernels take their documented slot", () => {
 test("the naive-ijk baseline is neutral ink, outside the categorical slots", () => {
 	const p = paletteFor(all, none);
 	expect(p.get("naive-ijk")).toBe(BASELINE_INK);
-	// Ten kernels, ten distinct colours: the baseline frees a slot.
+	// Eleven kernels, eleven distinct colours: the baseline frees a slot.
 	expect(p.size).toBe(all.length);
 	expect(new Set(p.values()).size).toBe(all.length);
 });
@@ -52,12 +55,12 @@ test("GPU kernels reuse host slots but never collide within their group", () => 
 test("a survivor keeps its colour when another kernel is filtered out", () => {
 	const full = paletteFor(all, none);
 	const without = paletteFor(
-		all.filter((k) => k !== "accelerate-blas"),
+		all.filter((k) => k !== "packed"),
 		none,
 	);
-	expect(without.get("mps")).toBe(full.get("mps"));
+	expect(without.get("rayon-packed")).toBe(full.get("rayon-packed"));
 	expect(without.get("naive-ijk")).toBe(full.get("naive-ijk"));
-	expect(without.has("accelerate-blas")).toBe(false);
+	expect(without.has("packed")).toBe(false);
 });
 
 test("an unknown kernel takes a free slot, never an occupied one", () => {
@@ -81,11 +84,10 @@ test("an unknown GPU kernel skips the other families' ink", () => {
 });
 
 test("a group that runs out of slots caps rather than generating a hue", () => {
-	// mps moved to the GPU group, so the host group has one free slot (red).
-	const p = paletteFor([...all, "packed-simd", "packed-simd-2"], none);
-	expect(p.get("packed-simd")).toBe("#e66767");
-	expect(p.has("packed-simd-2")).toBe(false);
-	expect(p.size).toBe(MAX_SERIES + 2); // 9 host + mps + the baseline
+	// packed took the red slot mps left free, and rayon-packed the last one.
+	const p = paletteFor([...all, "packed-simd"], none);
+	expect(p.has("packed-simd")).toBe(false);
+	expect(p.size).toBe(MAX_SERIES + 1); // 10 host + the baseline
 });
 
 test("family ink is the all-pairs-validated set, in legend order", () => {

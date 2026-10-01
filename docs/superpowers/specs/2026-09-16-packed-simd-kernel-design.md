@@ -1,6 +1,6 @@
 # Packed Micro-Kernel GEMM with `std::simd`
 
-- **Status:** Proposed (stretch)
+- **Status:** Superseded by `2026-09-30-packed-simd-kernel-design.md`
 - **Roadmap item:** 5 of 5
 - **Depends on:** item 1 (verification). Item 4's block-size sweep should run first: if some block size already beats ikj, this item's motivation weakens.
 

@@ -8,8 +8,10 @@ pub(crate) enum KernelChoice {
     Naive,
     Ikj,
     Tiled,
+    Packed,
     RayonIkj,
     RayonTiled,
+    RayonPacked,
     StaticIkj,
     StaticTiled,
     #[cfg(target_os = "macos")]
@@ -34,14 +36,15 @@ struct KernelInfo {
     precisions: &'static [Precision],
     /// Sweeps `--threads`; the others run on one caller thread.
     workers: bool,
-    /// Tiles by `--block-size`; the others record an empty block size.
+    /// Takes `--block-size` (a tile edge, or packed's k-block depth); the
+    /// others record an empty block size.
     blocks: bool,
     /// Gives every worker at least one row, so needs `threads <= n`.
     row_per_worker: bool,
 }
 
 impl KernelInfo {
-    /// A single-threaded, untiled CPU kernel at every precision; each row in
+    /// A single-threaded CPU kernel with no block size, at every precision; each row in
     /// `KernelChoice::info` overrides what differs.
     fn serial(label: &'static str) -> Self {
         Self {
@@ -67,6 +70,11 @@ impl KernelChoice {
                 blocks: true,
                 ..serial("tiled")
             },
+            // `--block-size` is the k-block depth (KC) of each packed B panel.
+            Self::Packed => KernelInfo {
+                blocks: true,
+                ..serial("packed")
+            },
             Self::RayonIkj => KernelInfo {
                 workers: true,
                 ..serial("rayon-ikj")
@@ -75,6 +83,11 @@ impl KernelChoice {
                 workers: true,
                 blocks: true,
                 ..serial("rayon-tiled")
+            },
+            Self::RayonPacked => KernelInfo {
+                workers: true,
+                blocks: true,
+                ..serial("rayon-packed")
             },
             Self::StaticIkj => KernelInfo {
                 workers: true,

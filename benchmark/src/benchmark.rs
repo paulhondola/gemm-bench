@@ -10,7 +10,8 @@ use gemm_bench::kernels::{
 use gemm_bench::{
     Element, GemmKernel, Matrix,
     kernels::{
-        IkjGemm, NaiveGemm, RayonIkjGemm, RayonTiledGemm, StaticIkjGemm, StaticTiledGemm, TiledGemm,
+        IkjGemm, NaiveGemm, PackedGemm, RayonIkjGemm, RayonPackedGemm, RayonTiledGemm,
+        StaticIkjGemm, StaticTiledGemm, TiledGemm,
     },
 };
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -202,8 +203,8 @@ fn measure<T: Element>(
     rhs: &Matrix<T>,
     output: &mut Matrix<T>,
 ) -> Result<Samples, Box<dyn std::error::Error>> {
-    // `BenchmarkPlan::cells` gives every tiled kernel a block size.
-    let block = || block_size.expect("tiled kernels always get a block size");
+    // `BenchmarkPlan::cells` gives every blocked kernel a block size.
+    let block = || block_size.expect("blocked kernels always get a block size");
     let io = (lhs, rhs, output, repetitions);
     // Each arm builds its kernel before `sample` starts, so the time from here
     // to `sample`'s first line is that kernel's setup.
@@ -212,9 +213,15 @@ fn measure<T: Element>(
         KernelChoice::Naive => sample(&NaiveGemm, setup_start, io),
         KernelChoice::Ikj => sample(&IkjGemm, setup_start, io),
         KernelChoice::Tiled => sample(&TiledGemm::new(block()), setup_start, io),
+        KernelChoice::Packed => sample(&PackedGemm::new(block()), setup_start, io),
         KernelChoice::RayonIkj => sample(&InPool::new(threads, RayonIkjGemm)?, setup_start, io),
         KernelChoice::RayonTiled => sample(
             &InPool::new(threads, RayonTiledGemm::new(block()))?,
+            setup_start,
+            io,
+        ),
+        KernelChoice::RayonPacked => sample(
+            &InPool::new(threads, RayonPackedGemm::new(block()))?,
             setup_start,
             io,
         ),

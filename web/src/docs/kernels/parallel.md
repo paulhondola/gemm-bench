@@ -36,6 +36,26 @@ parallel for chunk in chunks:    # Rayon work stealing
 - **Precisions:** `f16`, `f32`, `f64`, `i32`, `i64`.
 - **Source:** [`benchmark/src/kernels/rayon/tiled.rs`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/rayon/tiled.rs)
 
+## `rayon-packed`
+
+`packed`, with its 8-row strips of C spread across threads by Rayon work stealing. Each k-block's B panel is packed once, on the calling thread, and shared read-only by every worker; each worker packs its own strips of A.
+
+```text
+C = 0
+for kk in steps of b:
+  pack B[kk..kk+b][*] into strips       # once, shared
+  parallel for each 8-row strip i:      # Rayon work stealing
+    pack A[i..i+8][kk..kk+b]
+    for each B strip j:
+      C[i..i+8][j] += micro-kernel(A strip, B strip)
+```
+
+- **Runs via:** A Rayon parallel iterator over the 8-row strips, on a pool built before timing starts, with the `packed` micro-kernel on each core.
+- **Tunes:** Thread count and block size (the k-block depth).
+- **Precisions:** `f16`, `f32`, `f64`, `i32`, `i64`.
+- **Watch for:** B is packed on one thread between parallel rounds: an estimated 8% of an 8-thread run at N = 2048 and about a quarter at N = 512, so its speedup over `packed` shrinks at small N. There are also few strips to share there: N / 8, so 8 at N = 64.
+- **Source:** [`benchmark/src/kernels/rayon/packed.rs`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/rayon/packed.rs)
+
 ## `static-ikj`
 
 Rows split into equal consecutive ranges up front, one per thread, like OpenMP's `schedule(static)`. Nothing is rebalanced, so there's no scheduling overhead, but the run lasts as long as its slowest thread.

@@ -5,6 +5,7 @@ pub mod accelerate;
 pub(crate) mod common;
 #[cfg(target_os = "macos")]
 pub mod metal;
+pub(crate) mod packed;
 pub mod rayon;
 pub mod serial;
 pub mod static_threads;
@@ -16,8 +17,8 @@ pub use accelerate::AccelerateBnnsGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
 pub use metal::{MpsGemm, Shader, ShaderGemm};
-pub use rayon::{RayonIkjGemm, RayonTiledGemm};
-pub use serial::{IkjGemm, NaiveGemm, TiledGemm};
+pub use rayon::{RayonIkjGemm, RayonPackedGemm, RayonTiledGemm};
+pub use serial::{IkjGemm, NaiveGemm, PackedGemm, TiledGemm};
 pub use static_threads::{StaticIkjGemm, StaticTiledGemm};
 
 use crate::{Element, Matrix};
@@ -34,8 +35,8 @@ pub trait GemmKernel<T: Element>: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::{
-        Element, GemmKernel, IkjGemm, NaiveGemm, RayonIkjGemm, RayonTiledGemm, StaticIkjGemm,
-        StaticTiledGemm, TiledGemm,
+        Element, GemmKernel, IkjGemm, NaiveGemm, PackedGemm, RayonIkjGemm, RayonPackedGemm,
+        RayonTiledGemm, StaticIkjGemm, StaticTiledGemm, TiledGemm,
     };
     use crate::Matrix;
 
@@ -77,8 +78,10 @@ mod tests {
         let mut kernels: Vec<Box<dyn GemmKernel<T>>> = vec![
             Box::new(IkjGemm),
             Box::new(TiledGemm::new(3)),
+            Box::new(PackedGemm::new(3)),
             Box::new(RayonIkjGemm),
             Box::new(RayonTiledGemm::new(3)),
+            Box::new(RayonPackedGemm::new(3)),
         ];
         // Every static thread count up to `n`, including uneven row splits.
         for threads in 1..=n {
@@ -115,6 +118,39 @@ mod tests {
         every_kernel_matches_naive::<f64>();
         every_kernel_matches_naive::<i32>();
         every_kernel_matches_naive::<i64>();
+    }
+
+    /// n = 37 with a 16-deep k-block splits every dimension into full and
+    /// partial packed blocks: rows 4×8 + 5; columns 3×12 + 1 (f32, i32),
+    /// 24 + 13 (f16), 6×6 + 1 (f64, i64); k 2×16 + 5. n = 7 alone never fills
+    /// a whole 8-row block.
+    fn packed_matches_naive<T: Element>() {
+        let n = 37;
+        let (lhs, rhs) = inputs::<T>(n);
+        let mut expected = Matrix::zeros(n, n);
+        NaiveGemm.compute(&lhs, &rhs, &mut expected);
+
+        let mut actual = Matrix::zeros(n, n);
+        PackedGemm::new(16).compute(&lhs, &rhs, &mut actual);
+        assert_close(&actual, &expected);
+
+        // Three workers, so strips of one k-block run concurrently.
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(3)
+            .build()
+            .expect("rayon thread pool should build");
+        let mut actual = Matrix::zeros(n, n);
+        pool.install(|| RayonPackedGemm::new(16).compute(&lhs, &rhs, &mut actual));
+        assert_close(&actual, &expected);
+    }
+
+    #[test]
+    fn packed_kernels_match_naive_across_full_and_partial_blocks() {
+        packed_matches_naive::<f16>();
+        packed_matches_naive::<f32>();
+        packed_matches_naive::<f64>();
+        packed_matches_naive::<i32>();
+        packed_matches_naive::<i64>();
     }
 
     #[cfg(target_os = "macos")]

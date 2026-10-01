@@ -96,7 +96,7 @@ export const TABS: Tab[] = [
 			},
 			{
 				title: "Single-threaded kernels",
-				note: "Loop order and cache blocking alone, at the selected block size, on their own scale",
+				note: "Loop order, cache blocking and register blocking on one core, at the selected block size, on their own scale",
 				doc: singleThreadedKernelsDoc,
 				spec: serialOnly,
 			},
@@ -176,7 +176,7 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "Throughput vs block size",
-				note: "Each tiled kernel's best result at each block size, at the selected size · small wobbles are noise",
+				note: "Each blocked kernel's best result at each block size, at the selected size · small wobbles are noise",
 				doc: throughputVsBlockSizeDoc,
 				spec: blockSizeSweep,
 			},
