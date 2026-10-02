@@ -435,6 +435,16 @@ mod tests {
             .expect("bump");
         let error = open_for_run(&newer, "2026-10-02T11:00:00Z").expect_err("a newer schema");
         assert!(error.contains("schema version 2"), "{error}");
+
+        let unstamped = temp_db("unstamped");
+        drop(open_for_run(&unstamped, "2026-10-02T10:00:00Z").expect("open"));
+        Connection::open(&unstamped)
+            .expect("reopen")
+            .execute_batch("PRAGMA application_id = 0")
+            .expect("clear the stamp");
+        let error = open_for_run(&unstamped, "2026-10-02T11:00:00Z")
+            .expect_err("version 1 without gemm-bench's application_id");
+        assert!(error.contains("not a gemm-bench database"), "{error}");
     }
 
     #[test]
