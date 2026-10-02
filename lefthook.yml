@@ -23,6 +23,9 @@ pre-commit:
       root: "web/"
       glob: "*.{ts,tsx,svelte}"
       run: bun run typecheck
+    peaks-test:
+      glob: "data/peaks.csv"
+      run: cd web && bun test src/lib/peaks.test.ts
     host-db-validate:
       glob: "data/db/*/*.sqlite"
       run: cargo run --quiet --manifest-path benchmark/Cargo.toml -- validate {staged_files}
