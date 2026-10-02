@@ -260,7 +260,40 @@ fn validate_values(
             return Err(format!("all {flag} values must be greater than zero"));
         }
     }
+    // A repeat would measure a cell twice, which `validate` rejects only
+    // after the run is in the database.
+    let repeats = [
+        ("--sizes", first_repeat(sizes).map(ToString::to_string)),
+        ("--threads", first_repeat(threads).map(ToString::to_string)),
+        (
+            "--kernel",
+            first_repeat(kernels).map(|k| k.label().to_owned()),
+        ),
+        (
+            "--precision",
+            first_repeat(precisions).map(|p| p.label().to_owned()),
+        ),
+        (
+            "--tile-size",
+            first_repeat(tile_sizes).map(ToString::to_string),
+        ),
+        (
+            "--depth-block",
+            first_repeat(depth_blocks).map(ToString::to_string),
+        ),
+    ];
+    if let Some((flag, Some(value))) = repeats.into_iter().find(|(_, value)| value.is_some()) {
+        return Err(format!("{flag} lists {value} twice"));
+    }
     Ok(())
+}
+
+/// The first value that appears earlier in `values` too.
+fn first_repeat<T: PartialEq>(values: &[T]) -> Option<&T> {
+    values
+        .iter()
+        .enumerate()
+        .find_map(|(i, value)| values[..i].contains(value).then_some(value))
 }
 
 /// A kernel named on the command line that can't run anywhere in the sweep is
@@ -777,6 +810,27 @@ mod tests {
             error.contains("--tile-size applies only to tiled"),
             "{error}"
         );
+    }
+
+    /// A repeated value would measure a cell twice, which `validate` rejects
+    /// only after the run is in the host DB.
+    #[test]
+    fn a_repeated_value_is_rejected_before_running() {
+        for (flag, values, repeated) in [
+            ("--sizes", "64,128,64", "64"),
+            ("--threads", "2,2", "2"),
+            ("--kernel", "ikj,ikj", "ikj"),
+            ("--precision", "f32,f32", "f32"),
+            ("--tile-size", "32,32", "32"),
+            ("--depth-block", "256,256", "256"),
+        ] {
+            let error =
+                plan_for("repeat", &[flag, values]).expect_err("a repeated value must be rejected");
+            assert!(
+                error.contains(&format!("{flag} lists {repeated} twice")),
+                "{error}"
+            );
+        }
     }
 
     #[test]
