@@ -1,7 +1,17 @@
 import { expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
-import type { Row } from "../db";
+import peaksCsv from "../../../../data/peaks.csv?raw";
+import { openDb, type Row, readMachine, readRows } from "../db";
+import {
+	defaultParallelKernel,
+	defaultPrecision,
+	defaultSize,
+	partitionPlottable,
+	pinKnobs,
+} from "../derive";
 import { pointsOf, row } from "../fixtures";
+import { parsePeaks } from "../peaks";
+import { type FixtureMeasurement, fixtureDb, SQL } from "../testdb";
 import { gpuKernels } from "./gpu";
 import { rowsForTab, TABS, visibleTabs } from "./index";
 import { type Filters, makeCtx } from "./types";
@@ -413,4 +423,89 @@ test("every caption fits on one line", () => {
 test("no tab shadows the About tab", () => {
 	// App.svelte opens the About tab on store.tab === "about".
 	expect(TABS.map((t) => t.id)).not.toContain("about");
+});
+
+test("a host DB read through the views draws every panel", () => {
+	// Every cell at both sizes, as a sweep records it.
+	const at = (m: Omit<FixtureMeasurement, "n">): FixtureMeasurement[] =>
+		[256, 512].map((n) => ({ ...m, n }));
+	const packed = (kc: number, gops: number) =>
+		at({
+			kernel: "packed",
+			gops,
+			params: [
+				["depth_block", kc, "swept"],
+				["depth_block_used", kc, "derived"],
+				["register_cols", 12, "derived"],
+				["register_rows", 8, "fixed"],
+				["register_col_vectors", 3, "fixed"],
+			],
+		});
+	const db = openDb(
+		SQL,
+		fixtureDb([
+			{
+				started_at: "2026-10-01T00:00:00Z",
+				tiers: [[0, "Performance", 8, 8]],
+				caches: [[0, 2, "unified", 12 << 20, 4, 2]],
+				measurements: [
+					...at({ kernel: "naive-ijk", gops: 1 }),
+					...at({ kernel: "ikj", gops: 10 }),
+					...at({ kernel: "ikj", precision: "f64", gops: 5 }),
+					...at({
+						kernel: "tiled",
+						gops: 12,
+						params: [["tile_size", 32, "swept"]],
+					}),
+					...at({
+						kernel: "tiled",
+						gops: 14,
+						params: [["tile_size", 64, "swept"]],
+					}),
+					...packed(256, 40),
+					...packed(512, 45),
+					...at({ kernel: "rayon-ikj", gops: 10 }),
+					...at({ kernel: "rayon-ikj", threads: 8, gops: 60 }),
+					...at({ kernel: "accelerate-blas", backend: "matrix", gops: 600 }),
+					...at({ kernel: "mps", backend: "metal", gops: 900 }),
+					...at({
+						kernel: "mps",
+						backend: "metal",
+						precision: "f16",
+						gops: 1500,
+					}),
+				],
+			},
+			{
+				started_at: "2026-10-02T00:00:00Z",
+				tiers: [[0, "Performance", 8, 8]],
+				measurements: at({ kernel: "ikj", gops: 11 }),
+			},
+		]),
+	);
+	// The app's own path: state.svelte.ts, then App.svelte.
+	const { rows } = partitionPlottable(readRows(db));
+	expect(readMachine(db)?.tiers).toHaveLength(1);
+	db.close();
+	const precision = defaultPrecision(rows);
+	const n = defaultSize(rows, precision);
+	const f: Filters = {
+		precision,
+		n,
+		kernel: defaultParallelKernel(rows, precision),
+		knobs: pinKnobs(rows, precision, n, {}),
+		relative: false,
+	};
+	const ctx = makeCtx(rows, parsePeaks(peaksCsv));
+
+	const blank = TABS.flatMap((tab) => {
+		const scoped = rowsForTab(tab, rows, f.precision, f.knobs, ctx);
+		return tab.panels
+			.filter((p) => !p.spec(scoped, f, ctx)?.data.some((t) => t.x?.length))
+			.map((p) => p.title);
+	});
+	expect(blank).toEqual([]);
+	expect(visibleTabs(rows, f, ctx).map((t) => t.id)).toEqual(
+		TABS.map((t) => t.id),
+	);
 });
