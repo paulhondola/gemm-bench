@@ -224,11 +224,22 @@ test("each family's ceiling carries its own label and figure", () => {
 		gflops: 777,
 		label: "CPU peak (8 P)",
 	});
-	expect(ceilingOf(rows, "gpu", ctx)).toEqual({
+	expect(
+		ceilingOf(
+			[row({ kernel: "k", n: 64, gops: 1, gpu_cores: 16 })],
+			"gpu",
+			ctx,
+		),
+	).toEqual({
 		family: "gpu",
 		gflops: 5308,
 		label: "GPU peak",
 	});
+});
+
+test("a 14-core GPU gets no ceiling from the 16-core row", () => {
+	const rows = [row({ kernel: "k", n: 64, gops: 1, gpu_cores: 14 })];
+	expect(ceilingOf(rows, "gpu", ctx)).toBeUndefined();
 });
 
 test("AMX, an empty peak list and no rows have no ceiling", () => {

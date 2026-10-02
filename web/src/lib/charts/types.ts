@@ -148,7 +148,9 @@ export function ceilingOf(
 	if (devices.size !== 1 || precisions.size !== 1) return undefined;
 	const [device] = devices;
 	const [precision] = precisions;
-	const peak = familyPeak(ctx.peaks, family, device, precision);
+	const cores = new Set(rows.map((r) => r.gpu_cores));
+	const gpuCores = cores.size === 1 ? [...cores][0] : null;
+	const peak = familyPeak(ctx.peaks, family, device, precision, gpuCores);
 	if (!peak) return undefined;
 	return {
 		family,

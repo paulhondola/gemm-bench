@@ -60,10 +60,13 @@ export function engineRows(
 			...peaks.map((p) => p.device),
 		]),
 	].sort();
-	return devices.flatMap((device) =>
-		FAMILY_ORDER.flatMap((f) =>
+	return devices.flatMap((device) => {
+		const gpuCores =
+			rows.find((r) => r.device === device && r.gpu_cores !== null)
+				?.gpu_cores ?? null;
+		return FAMILY_ORDER.flatMap((f) =>
 			FLOATS.flatMap((precision) => {
-				const peak = familyPeak(peaks, f, device, precision);
+				const peak = familyPeak(peaks, f, device, precision, gpuCores);
 				const top = best.get(key(device, f, precision));
 				if (!peak && !top) return [];
 				return [
@@ -77,6 +80,6 @@ export function engineRows(
 					},
 				];
 			}),
-		),
-	);
+		);
+	});
 }

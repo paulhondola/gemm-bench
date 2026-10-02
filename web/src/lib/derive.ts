@@ -255,13 +255,15 @@ export function bestPerFamily(rows: Row[], family: Map<string, Family>): Row[] {
  * 1-core figure up would overstate the 8-core ceiling. So serial reads the
  * 1-core row and parallel the widest cpu row. A cpu with only a 1-core row
  * gives parallel nothing, since that row is the serial ceiling. Apple
- * publishes no matrix-unit peak, so matrix never has one.
+ * publishes no matrix-unit peak, so matrix never has one. A GPU ceiling must
+ * also match the run's GPU core count.
  */
 export function familyPeak(
 	peaks: Peak[],
 	family: Family,
 	device: string,
 	precision: string,
+	gpuCores: number | null = null,
 ): Peak | undefined {
 	const own = peaks.filter(
 		(p) => p.device === device && p.precision === precision,
@@ -281,7 +283,11 @@ export function familyPeak(
 			return cpu && cpu.cores > 1 ? cpu : undefined;
 		}
 		case "gpu":
-			return widest("metal");
+			// The 14- and 16-core M1 Pro GPUs report the same name, so only the
+			// run's core count picks the right ceiling; without one, none.
+			return gpuCores == null
+				? undefined
+				: own.find((p) => p.backend === "metal" && p.cores === gpuCores);
 		case "matrix":
 			return undefined;
 	}

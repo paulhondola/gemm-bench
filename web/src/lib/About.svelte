@@ -1,10 +1,11 @@
 <script lang="ts">
 import about from "../docs/about.md?raw";
 import hardware from "../docs/hardware.md?raw";
-import type { Peak, Row } from "./db";
+import type { Machine, Peak, Row } from "./db";
 import type { Family } from "./derive";
 import { KERNEL_DOCS } from "./docs";
 import HardwareTable from "./HardwareTable.svelte";
+import MachineTable from "./MachineTable.svelte";
 import { renderMarkdown } from "./markdown";
 import { FAMILY_INK } from "./palette";
 
@@ -12,7 +13,13 @@ const {
 	rows,
 	peaks,
 	family,
-}: { rows: Row[]; peaks: Peak[]; family: Map<string, Family> } = $props();
+	machine,
+}: {
+	rows: Row[];
+	peaks: Peak[];
+	family: Map<string, Family>;
+	machine: Machine | undefined;
+} = $props();
 
 // Each file's "## `<kernel>`" renders as an h4, under the page's h2 and the
 // family's h3.
@@ -29,6 +36,7 @@ const families = KERNEL_DOCS.map((g) => ({
 	<section class="panel">
 		<h2>Hardware tested</h2>
 		<div class="prose">{@html renderMarkdown(hardware, 2)}</div>
+		{#if machine}<MachineTable {machine} />{/if}
 		<HardwareTable {rows} {peaks} {family} />
 	</section>
 

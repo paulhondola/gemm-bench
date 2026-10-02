@@ -18,6 +18,7 @@ import {
 	pinKnobs,
 	sizesFor,
 } from "./lib/derive";
+import { machineLabel } from "./lib/machine";
 import PickerGroup from "./lib/PickerGroup.svelte";
 import { boot, store } from "./lib/state.svelte";
 
@@ -80,6 +81,11 @@ function pickSize(s: number) {
 	store.knobs = pinKnobs(store.rows, store.precision, s, store.knobs);
 }
 
+/** Loads another host as a fresh page: no picker state carries over from the last one. */
+function selectHost(id: string) {
+	location.search = new URLSearchParams({ host: id }).toString();
+}
+
 function selectTab(id: string) {
 	store.tab = id;
 	// Projection state is per-chart, not persisted across tab switches.
@@ -96,6 +102,17 @@ function selectTab(id: string) {
 				{store.dropped} row{store.dropped === 1 ? "" : "s"} discarded as unusable
 				(non-finite or non-positive values)
 			</p>
+		{/if}
+		{#if store.hosts.length > 0}
+			<div class="host">
+				<label>
+					Host
+					<select value={store.host?.id} onchange={(e) => selectHost(e.currentTarget.value)}>
+						{#each store.hosts as h (h.id)}<option value={h.id}>{h.id}</option>{/each}
+					</select>
+				</label>
+				{#if store.machine}<span class="muted">{machineLabel(store.machine)}</span>{/if}
+			</div>
 		{/if}
 	</header>
 
@@ -125,7 +142,11 @@ function selectTab(id: string) {
 		</nav>
 
 		{#if about}
-			<About rows={store.rows} peaks={store.peaks} family={ctx.family} />
+			<About
+				rows={store.rows}
+				peaks={store.peaks}
+				family={ctx.family}
+				machine={store.machine} />
 		{:else}
 			<div class="controls">
 				{#if tab.controls.includes("precision") || tab.inertPrecision}
@@ -241,6 +262,18 @@ function selectTab(id: string) {
 	}
 	.error {
 		color: #e66767;
+	}
+	.host {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 10px;
+		font-size: 13px;
+		color: #9aa1a8;
+	}
+	.host select {
+		margin-left: 6px;
+		font: inherit;
 	}
 	nav {
 		display: flex;

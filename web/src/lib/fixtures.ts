@@ -21,7 +21,7 @@ export function row(fields: Partial<Row>): Row {
 		stddev_ms: Number.NaN,
 		gpu_ms: null,
 		setup_ms: Number.NaN,
-		gpu_cores: null,
+		gpu_cores: fields.backend === "metal" ? 16 : null,
 		started_at: "2026-10-01T00:00:00Z",
 		commit_id: "test",
 		repetitions: 5,
