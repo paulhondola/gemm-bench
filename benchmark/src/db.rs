@@ -55,6 +55,15 @@ pub(crate) fn open_for_run(path: &Path, started_at: &str) -> Result<Connection, 
     let shown = path.display();
     let mut db =
         Connection::open(path).map_err(|error| format!("cannot open '{shown}': {error}"))?;
+    // SQLite opens a write-protected file read-only instead of failing.
+    let readonly = db
+        .is_readonly(rusqlite::MAIN_DB)
+        .map_err(|error| format!("cannot open '{shown}': {error}"))?;
+    if readonly {
+        return Err(format!(
+            "'{shown}' is read-only, so a run cannot be added to it"
+        ));
+    }
     let not_sqlite =
         |error: rusqlite::Error| format!("'{shown}' is not an SQLite database: {error}");
     db.pragma_update(None, "foreign_keys", true)
@@ -443,5 +452,19 @@ mod tests {
         let error = open_for_run(&blocker.join("run.sqlite"), "2026-10-02T10:00:00Z")
             .expect_err("a file cannot be a parent directory");
         assert!(error.contains("output directory"), "{error}");
+    }
+
+    /// SQLite quietly opens a write-protected file read-only; the run would
+    /// only fail once the sweep was over.
+    #[cfg(unix)]
+    #[test]
+    fn a_write_protected_db_is_refused_before_running() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = temp_db("read-only");
+        drop(open_for_run(&path, "2026-10-02T10:00:00Z").expect("open"));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).expect("chmod");
+        let error = open_for_run(&path, "2026-10-02T11:00:00Z").expect_err("a read-only DB");
+        assert!(error.contains("read-only"), "{error}");
     }
 }
