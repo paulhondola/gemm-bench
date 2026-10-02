@@ -449,7 +449,9 @@ mod tests {
     };
     use crate::{
         cli::Cli,
+        db,
         kernel::{KernelChoice, Precision},
+        validate,
     };
 
     fn ms(values: &[u64]) -> Vec<Duration> {
@@ -616,13 +618,16 @@ mod tests {
         assert!(ikj.params.is_empty());
     }
 
-    /// One real run of `kernel` at n = 8, planned through the CLI as `main` does.
+    /// One real run of `kernel` at n = 8, planned, written and validated as
+    /// `main` and CI do: this machine's real capture, through `write_run`
+    /// and `validate` (on CI, the Linux capture path).
     fn run_one(kernel: &str) -> Vec<BenchmarkRecord> {
-        let output = std::env::temp_dir().join(format!(
-            "gemm-bench-run-test-{}-{kernel}.sqlite",
+        let root = std::env::temp_dir().join(format!(
+            "gemm-bench-run-test-{}-{kernel}",
             std::process::id()
         ));
-        let plan = Cli::try_parse_from([
+        let output = root.join("data/db/test/run.sqlite");
+        let mut plan = Cli::try_parse_from([
             "gemm-bench",
             "--output",
             output.to_str().expect("temp paths are UTF-8"),
@@ -642,7 +647,17 @@ mod tests {
         .into_plan()
         .expect("the plan should be valid");
         let records = run(&plan).expect("the run should succeed");
-        let _ = std::fs::remove_file(output);
+        db::write_run(
+            &mut plan.db,
+            &plan.context,
+            plan.repetitions,
+            &plan.machine,
+            &records,
+        )
+        .expect("the run should be written");
+        let verdict = validate::validate(&output);
+        let _ = std::fs::remove_dir_all(root);
+        verdict.expect("the written DB should pass validate");
         records
     }
 
