@@ -1,6 +1,4 @@
 use std::{
-    fs::File,
-    io::{Seek, SeekFrom},
     sync::mpsc::{self, RecvTimeoutError, Sender},
     thread::{self, JoinHandle},
     time::Duration,
@@ -144,22 +142,6 @@ pub(crate) fn print_results_table(records: &[BenchmarkRecord]) {
     println!("{}", render_results_table(records));
 }
 
-/// Writes into the output file that `Cli::into_plan` opened before the sweep.
-/// Truncation happens only now, so a failed run leaves earlier results intact.
-pub(crate) fn write_records(
-    mut csv_file: File,
-    records: &[BenchmarkRecord],
-) -> Result<(), Box<dyn std::error::Error>> {
-    csv_file.set_len(0)?;
-    csv_file.seek(SeekFrom::Start(0))?;
-    let mut writer = csv::Writer::from_writer(csv_file);
-    for record in records {
-        writer.serialize(record)?;
-    }
-    writer.flush()?;
-    Ok(())
-}
-
 /// Presentation-only view: benchmark files retain the full precision values
 /// in `BenchmarkRecord`, while the terminal stays compact and easy to scan.
 #[derive(Tabled)]
@@ -216,7 +198,6 @@ mod tests {
         BenchmarkRecord {
             kernel: "rayon-ikj".to_owned(),
             backend: "cpu",
-            device: "Test CPU".to_owned(),
             precision: "f32",
             n: 256,
             threads: 4,
@@ -227,12 +208,7 @@ mod tests {
             stddev_ms: 0.25,
             gpu_ms: None,
             setup_ms: 0.05,
-            block_size: None,
             params: Vec::new(),
-            repetitions: 5,
-            host: "test-host".to_owned(),
-            commit: "abc1234".to_owned(),
-            timestamp: "2026-09-17T12:15:00Z".to_owned(),
         }
     }
 
@@ -300,39 +276,5 @@ mod tests {
     fn template_compilation() {
         let res = ProgressStyle::default_bar().template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} {msg} ({eta})");
         assert!(res.is_ok(), "template error: {:?}", res.err());
-    }
-
-    #[test]
-    fn write_records_outputs_csv_in_schema_order() {
-        let csv_path =
-            std::env::temp_dir().join(format!("gemm-bench-report-test-{}.csv", std::process::id()));
-        let csv_file = std::fs::File::create(&csv_path).expect("create csv file");
-        let tiled = BenchmarkRecord {
-            kernel: "tiled".to_owned(),
-            block_size: Some(64),
-            ..record()
-        };
-        let mps = BenchmarkRecord {
-            kernel: "mps".to_owned(),
-            backend: "metal",
-            device: "Test GPU".to_owned(),
-            threads: 1,
-            gpu_ms: Some(10.5),
-            ..record()
-        };
-
-        super::write_records(csv_file, &[record(), tiled, mps]).expect("write records");
-
-        let csv_content = std::fs::read_to_string(&csv_path).expect("read csv");
-        // Kernels that don't tile leave block_size empty, and kernels off Metal
-        // leave gpu_ms empty; the others record them.
-        assert_eq!(
-            csv_content,
-            "kernel,backend,device,precision,n,threads,gops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,gpu_ms,setup_ms,block_size,repetitions,host,commit,timestamp\n\
-             rayon-ikj,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,,0.05,,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
-             tiled,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,,0.05,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
-             mps,metal,Test GPU,f32,256,1,2.5,0.001234,12.34567,12.0,0.25,10.5,0.05,,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
-        );
-        let _ = std::fs::remove_file(csv_path);
     }
 }

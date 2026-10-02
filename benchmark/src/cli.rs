@@ -1,15 +1,12 @@
-use std::{
-    ffi::OsStr,
-    fs::{self, File, OpenOptions},
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, ValueEnum};
 
 use crate::config::ConfigFile;
 use crate::context;
 use crate::kernel::{KernelChoice, Knob, Precision};
-use crate::plan::{BenchmarkPlan, Devices};
+use crate::plan::BenchmarkPlan;
+use crate::{db, host, machine::Machine};
 
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 const DEFAULT_REPETITIONS: usize = 5;
@@ -62,8 +59,7 @@ pub(crate) struct Cli {
     #[arg(long, value_delimiter = ',', visible_alias = "kc")]
     depth_block: Vec<usize>,
 
-    /// Output CSV file. Defaults to a new file per run,
-    /// data/runs/<host>/<timestamp>.csv; missing parent directories are created.
+    /// Output database. Defaults to data/db/<login>/<machine>.sqlite for the host id in .host (set once with just init); runs are added to an existing file.
     #[arg(long)]
     output: Option<PathBuf>,
 
@@ -165,11 +161,12 @@ impl Cli {
         #[cfg(target_os = "macos")]
         skipped.extend(bnns_skip);
         let context = context::capture();
-        let devices = Devices::lookup(&kernels);
-        let output_path = self
-            .output
-            .unwrap_or_else(|| default_output_path(&context.host, &context.file_stamp));
-        let output = open_output(&output_path)?;
+        let machine = Machine::capture();
+        let output_path = match self.output {
+            Some(path) => path,
+            None => host::db_path(&host::read_host_file(Path::new(host::HOST_FILE))?),
+        };
+        let db = db::open_for_run(&output_path, &context.timestamp)?;
 
         Ok(BenchmarkPlan {
             sizes,
@@ -180,8 +177,8 @@ impl Cli {
             tile_sizes,
             depth_blocks,
             context,
-            devices,
-            output,
+            machine,
+            db,
             output_path,
             no_progress: self.no_progress,
             skipped,
@@ -357,66 +354,6 @@ fn skip_notices(
     notices
 }
 
-/// Each run gets its own file, so reruns and other machines add data instead
-/// of replacing it. Relative to the working directory: `just bench` runs from the repo root.
-// ponytail: two runs on the same host within the same UTC second collide and
-// the second silently truncates the first; add sub-second or random suffix
-// if that ever bites.
-fn default_output_path(host: &str, file_stamp: &str) -> PathBuf {
-    Path::new("data/runs")
-        .join(host)
-        .join(format!("{file_stamp}.csv"))
-}
-
-/// `--output` names the CSV file itself.
-fn validate_output_path(path: &Path) -> Result<(), String> {
-    if path.file_name().is_none() {
-        return Err("--output must name a .csv file (e.g. 'results.csv')".into());
-    }
-    if path.is_dir() {
-        return Err(format!(
-            "output path '{}' is an existing directory; --output must name a .csv file (e.g. '{}')",
-            path.display(),
-            path.join("results.csv").display()
-        ));
-    }
-    let is_csv = path
-        .extension()
-        .and_then(OsStr::to_str)
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("csv"));
-    if !is_csv {
-        return Err(format!(
-            "--output must be a .csv file path (got '{}')",
-            path.display()
-        ));
-    }
-    Ok(())
-}
-
-/// Creates missing parent directories and opens the output file before any
-/// benchmark runs, so an unwritable path fails immediately instead of after
-/// the sweep. The file is not truncated here: existing results keep their
-/// contents until new records are written.
-fn open_output(path: &Path) -> Result<File, String> {
-    validate_output_path(path)?;
-
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "cannot create output directory '{}': {error}",
-                parent.display()
-            )
-        })?;
-    }
-
-    OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(path)
-        .map_err(|error| format!("cannot open output file '{}': {error}", path.display()))
-}
-
 fn default_thread_counts() -> Vec<usize> {
     let max = std::thread::available_parallelism()
         .map(|parallelism| parallelism.get())
@@ -437,16 +374,19 @@ mod tests {
 
     use clap::{Parser, ValueEnum};
 
+    use super::Cli;
     #[cfg(target_os = "macos")]
     use super::drop_unavailable_bnns;
-    use super::{Cli, default_output_path, open_output, validate_output_path};
     use crate::kernel::{KernelChoice, Precision};
     use crate::plan::BenchmarkPlan;
 
-    /// A per-process `.csv` path under the system temp directory, so tests never
+    /// A per-process `.sqlite` path under the system temp directory, so tests never
     /// write into the repository and parallel test runs do not collide.
     fn temp_output(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("gemm-bench-test-{}-{name}.csv", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "gemm-bench-test-{}-{name}.sqlite",
+            std::process::id()
+        ))
     }
 
     #[test]
@@ -461,7 +401,6 @@ mod tests {
         assert_eq!(plan.depth_blocks, [64, 128, 256, 512, 1024]);
         assert_eq!(plan.repetitions, 5);
         assert!(!plan.no_progress);
-        assert!(!plan.context.host.is_empty());
     }
 
     #[test]
@@ -571,75 +510,25 @@ mod tests {
     }
 
     #[test]
-    fn default_output_is_a_new_file_per_run_under_the_host() {
-        assert_eq!(
-            default_output_path("Pauls-MacBook-Pro", "20260917T121500Z"),
-            PathBuf::from("data/runs/Pauls-MacBook-Pro/20260917T121500Z.csv")
-        );
-    }
-
-    #[test]
-    fn output_accepts_csv_in_any_case() {
-        validate_output_path(PathBuf::from("results.csv").as_path()).expect("lowercase csv");
-        validate_output_path(PathBuf::from("data/results.CSV").as_path()).expect("uppercase CSV");
-    }
-
-    #[test]
-    fn output_without_a_csv_extension_is_rejected() {
-        for path in ["results", "data/f16.json", ""] {
-            let error = validate_output_path(PathBuf::from(path).as_path())
-                .expect_err("non-csv output must be rejected");
-            assert!(error.contains(".csv"), "{path}: {error}");
-        }
-    }
-
-    #[test]
-    fn output_as_existing_directory_is_rejected() {
-        let dir = temp_output("existing_dir");
-        fs::create_dir_all(&dir).expect("create test dir");
-
-        let error = validate_output_path(&dir).expect_err("existing directory must be rejected");
-        assert!(error.contains("is an existing directory"));
-
-        fs::remove_dir_all(dir).expect("remove test dir");
-    }
-
-    #[test]
     fn missing_output_directories_are_created_before_running() {
         let root =
             std::env::temp_dir().join(format!("gemm-bench-test-{}-nested", std::process::id()));
-        let output = root.join("a/b/results.csv");
+        let output = root.join("a/b/results.sqlite");
 
-        drop(open_output(&output).expect("missing parent directories should be created"));
+        let plan = Cli::try_parse_from([
+            OsString::from("gemm-bench"),
+            "--output".into(),
+            output.clone().into(),
+            "--sizes".into(),
+            "8".into(),
+        ])
+        .expect("arguments should parse")
+        .into_plan()
+        .expect("missing parent directories should be created");
 
+        drop(plan);
         assert!(output.is_file());
         fs::remove_dir_all(root).expect("remove test directories");
-    }
-
-    #[test]
-    fn unusable_output_paths_are_rejected_before_running() {
-        let blocker = temp_output("blocker");
-        fs::write(&blocker, b"").expect("create a regular file");
-
-        let error = open_output(&blocker.join("results.csv"))
-            .expect_err("a regular file cannot be a parent directory");
-
-        assert!(error.contains("output directory"));
-        fs::remove_file(blocker).expect("remove test file");
-    }
-
-    #[test]
-    fn existing_output_is_not_truncated_until_records_are_written() {
-        let output = temp_output("existing");
-        fs::write(&output, b"previous csv").expect("seed existing csv");
-
-        drop(open_output(&output).expect("existing output should open"));
-
-        assert_eq!(
-            fs::read(&output).expect("read existing output"),
-            b"previous csv"
-        );
-        let _ = fs::remove_file(output);
     }
 
     #[test]
@@ -676,8 +565,8 @@ mod tests {
         let plan = plan_for("mps", &["--kernel", "mps"]).expect("mps plan should be valid");
 
         assert_eq!(plan.kernels, [KernelChoice::Mps]);
-        assert_ne!(
-            plan.devices.metal, "unknown",
+        assert!(
+            plan.machine.gpu.is_some(),
             "a Mac with Metal must name its GPU"
         );
         assert_eq!(plan.total_configurations(), 14); // 7 default sizes * mps's 2 precisions (f16, f32)
@@ -696,13 +585,9 @@ mod tests {
             plan.kernels,
             [KernelChoice::MetalNaive, KernelChoice::MetalTiled]
         );
-        assert_ne!(
-            plan.devices.metal, "unknown",
+        assert!(
+            plan.machine.gpu.is_some(),
             "a Mac with Metal must name its GPU"
-        );
-        assert_eq!(
-            plan.devices.of(KernelChoice::MetalTiled),
-            plan.devices.metal
         );
         // 1 size * 2 kernels * (f16, f32, i32, i64); f64 is skipped.
         assert_eq!(plan.total_configurations(), 8);

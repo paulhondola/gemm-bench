@@ -11,25 +11,19 @@ pub(crate) const UNKNOWN: &str = "unknown";
 /// Provenance shared by every record of one run.
 #[derive(Debug)]
 pub(crate) struct RunContext {
-    pub(crate) host: String,
     pub(crate) commit: String,
     pub(crate) timestamp: String,
-    pub(crate) file_stamp: String,
 }
 
-/// Looks up the host and commit and reads the clock. Failed lookups become
-/// `unknown` so a missing `git` or `hostname` never aborts a benchmark.
+/// Looks up the commit and reads the clock.
 pub(crate) fn capture() -> RunContext {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());
     RunContext {
-        host: command_output("hostname", &[])
-            .map_or_else(|| UNKNOWN.to_owned(), |raw| short_host(&raw)),
         commit: command_output("git", &["describe", "--always", "--dirty"])
             .unwrap_or_else(|| UNKNOWN.to_owned()),
         timestamp: iso_timestamp(secs),
-        file_stamp: file_stamp(secs),
     }
 }
 
@@ -41,22 +35,9 @@ pub(crate) fn command_output(program: &str, args: &[&str]) -> Option<String> {
     (output.status.success() && !text.is_empty()).then(|| text.to_owned())
 }
 
-/// `Pauls-MacBook-Pro.local` → `Pauls-MacBook-Pro`: the domain adds nothing
-/// to results and would differ between networks.
-fn short_host(raw: &str) -> String {
-    raw.split('.').next().unwrap_or(raw).to_owned()
-}
-
 fn iso_timestamp(secs: u64) -> String {
     let [year, month, day, hour, minute, second] = utc_fields(secs);
     format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
-}
-
-/// The same instant as `iso_timestamp`, without separators, for filenames:
-/// colons are invalid on Windows, and this still sorts chronologically.
-fn file_stamp(secs: u64) -> String {
-    let [year, month, day, hour, minute, second] = utc_fields(secs);
-    format!("{year:04}{month:02}{day:02}T{hour:02}{minute:02}{second:02}Z")
 }
 
 /// Splits Unix seconds into UTC `[year, month, day, hour, minute, second]`,
@@ -111,10 +92,7 @@ fn parse_lscpu_model(lscpu: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        capture, cpu_name, file_stamp, iso_timestamp, parse_cpu_model, parse_lscpu_model,
-        short_host,
-    };
+    use super::{capture, cpu_name, iso_timestamp, parse_cpu_model, parse_lscpu_model};
 
     #[test]
     fn iso_timestamp_formats_utc_calendar_dates() {
@@ -124,26 +102,11 @@ mod tests {
     }
 
     #[test]
-    fn file_stamp_is_a_compact_sortable_utc_instant() {
-        assert_eq!(file_stamp(0), "19700101T000000Z");
-        assert_eq!(file_stamp(1_709_210_096), "20240229T123456Z");
-        assert_eq!(file_stamp(2_208_988_800), "20400101T000000Z");
-    }
-
-    #[test]
-    fn short_host_drops_the_domain() {
-        assert_eq!(short_host("Pauls-MacBook-Pro.local"), "Pauls-MacBook-Pro");
-        assert_eq!(short_host("build-box"), "build-box");
-    }
-
-    #[test]
     fn capture_fills_every_field() {
         let context = capture();
-        assert!(!context.host.is_empty());
         assert!(!context.commit.is_empty());
         assert_eq!(context.timestamp.len(), "2026-09-17T12:15:00Z".len());
         assert!(context.timestamp.ends_with('Z'));
-        assert_eq!(context.file_stamp.len(), "20260917T121500Z".len());
     }
 
     #[test]

@@ -4,16 +4,9 @@ mod benchmark;
 mod cli;
 mod config;
 mod context;
-#[allow(
-    dead_code,
-    reason = "the SQLite writer (Task 6) uses it; delete this attribute then"
-)]
+mod db;
 mod host;
 mod kernel;
-#[allow(
-    dead_code,
-    reason = "the SQLite writer (Task 6) records it; delete this attribute then"
-)]
 mod machine;
 mod plan;
 mod report;
@@ -28,16 +21,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Cli::command().print_help()?;
         return Ok(());
     }
-    let plan = cli.into_plan()?;
+    let mut plan = cli.into_plan()?;
     for notice in &plan.skipped {
         eprintln!("{notice}");
     }
     let records = benchmark::run(&plan)?;
 
     report::print_results_table(&records);
-    report::write_records(plan.output, &records)?;
+    db::write_run(
+        &mut plan.db,
+        &plan.context,
+        plan.repetitions,
+        &plan.machine,
+        &records,
+    )?;
     eprintln!(
-        "Wrote {} records to {}",
+        "Wrote {} measurements to {}",
         records.len(),
         plan.output_path.display()
     );

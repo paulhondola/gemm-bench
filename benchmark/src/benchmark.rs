@@ -15,7 +15,6 @@ use gemm_bench::{
     },
 };
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use serde::Serialize;
 
 use crate::{
     kernel::{KernelChoice, Precision},
@@ -23,13 +22,11 @@ use crate::{
     report::BenchmarkProgress,
 };
 
-/// One measured benchmark configuration, shared by terminal and file reporters.
-/// Field order is the CSV column order.
-#[derive(Debug, Serialize)]
+/// One measured configuration, shared by the terminal table and the DB writer.
+#[derive(Debug)]
 pub(crate) struct BenchmarkRecord {
     pub(crate) kernel: String,
     pub(crate) backend: &'static str,
-    pub(crate) device: String,
     pub(crate) precision: &'static str,
     pub(crate) n: usize,
     pub(crate) threads: usize,
@@ -39,20 +36,12 @@ pub(crate) struct BenchmarkRecord {
     pub(crate) min_ms: f64,
     pub(crate) stddev_ms: f64,
     /// Median GPU execution (`commit` → `waitUntilCompleted`) inside the
-    /// round trip that `median_ms` times. Empty in the CSV off Metal.
+    /// round trip that `median_ms` times. `None` off Metal.
     pub(crate) gpu_ms: Option<f64>,
     /// One-time cost of building the kernel for this configuration, one sample.
     pub(crate) setup_ms: f64,
-    /// Empty in the CSV for kernels that don't tile.
-    pub(crate) block_size: Option<usize>,
-    /// The knob values the kernel ran with; the terminal table shows the
-    /// swept one. Not a CSV column: the DB writer (Task 6) stores them.
-    #[serde(skip)]
+    /// The knob values the kernel ran with: the terminal table shows the swept one, the DB writer stores them all.
     pub(crate) params: Vec<Param>,
-    pub(crate) repetitions: usize,
-    pub(crate) host: String,
-    pub(crate) commit: String,
-    pub(crate) timestamp: String,
 }
 
 pub(crate) fn run(
@@ -141,7 +130,6 @@ fn run_precision<T: Element>(
                 records.push(BenchmarkRecord {
                     kernel: kernel.label().to_owned(),
                     backend: kernel.backend(),
-                    device: plan.devices.of(kernel).to_owned(),
                     precision: precision.label(),
                     n,
                     threads: thread_count,
@@ -152,12 +140,7 @@ fn run_precision<T: Element>(
                     stddev_ms: stats.stddev_ms,
                     gpu_ms,
                     setup_ms: samples.setup.as_secs_f64() * 1_000.0,
-                    block_size: knob,
                     params: samples.params,
-                    repetitions: plan.repetitions,
-                    host: plan.context.host.clone(),
-                    commit: plan.context.commit.clone(),
-                    timestamp: plan.context.timestamp.clone(),
                 });
             }
         }
@@ -626,7 +609,7 @@ mod tests {
     /// One real run of `kernel` at n = 8, planned through the CLI as `main` does.
     fn run_one(kernel: &str) -> Vec<BenchmarkRecord> {
         let output = std::env::temp_dir().join(format!(
-            "gemm-bench-run-test-{}-{kernel}.csv",
+            "gemm-bench-run-test-{}-{kernel}.sqlite",
             std::process::id()
         ));
         let plan = Cli::try_parse_from([

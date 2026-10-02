@@ -1,7 +1,10 @@
-use std::{fs::File, path::PathBuf};
+use std::path::PathBuf;
 
-use crate::context::{self, RunContext};
+use rusqlite::Connection;
+
+use crate::context::RunContext;
 use crate::kernel::{KernelChoice, Knob, Precision};
+use crate::machine::Machine;
 
 /// Fully resolved configuration used by the benchmark runner.
 #[derive(Debug)]
@@ -14,8 +17,10 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) tile_sizes: Vec<usize>,
     pub(crate) depth_blocks: Vec<usize>,
     pub(crate) context: RunContext,
-    pub(crate) devices: Devices,
-    pub(crate) output: File,
+    /// The machine as it is now, recorded with the run.
+    pub(crate) machine: Machine,
+    /// Opened and checked before any kernel runs; the run is written into it.
+    pub(crate) db: Connection,
     pub(crate) output_path: PathBuf,
     pub(crate) no_progress: bool,
     /// One line per group of skipped cells, printed before the run.
@@ -73,61 +78,5 @@ impl BenchmarkPlan {
             }
         }
         total
-    }
-}
-
-/// Device names, looked up once per backend before any kernel runs.
-#[derive(Debug)]
-pub(crate) struct Devices {
-    pub(crate) cpu: String,
-    #[cfg(target_os = "macos")]
-    pub(crate) metal: String,
-}
-
-impl Devices {
-    // Off macOS only the CPU is looked up, leaving `kernels` unread.
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-    pub(crate) fn lookup(kernels: &[KernelChoice]) -> Self {
-        Self {
-            cpu: context::cpu_name(),
-            #[cfg(target_os = "macos")]
-            metal: kernels
-                .iter()
-                .any(|kernel| kernel.backend() == "metal")
-                .then(gemm_bench::kernels::metal::default_device_name)
-                .flatten()
-                .unwrap_or_else(|| context::UNKNOWN.to_owned()),
-        }
-    }
-
-    /// The device `kernel` runs on.
-    // Off macOS every kernel is a CPU kernel, leaving `kernel` unread.
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-    pub(crate) fn of(&self, kernel: KernelChoice) -> &str {
-        #[cfg(target_os = "macos")]
-        if kernel.backend() == "metal" {
-            return &self.metal;
-        }
-        &self.cpu
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Devices;
-    use crate::kernel::KernelChoice;
-
-    #[test]
-    fn kernels_report_the_device_of_their_backend() {
-        let devices = Devices {
-            cpu: "Test CPU".to_owned(),
-            #[cfg(target_os = "macos")]
-            metal: "Test GPU".to_owned(),
-        };
-        assert_eq!(devices.of(KernelChoice::RayonTiled), "Test CPU");
-        #[cfg(target_os = "macos")]
-        assert_eq!(devices.of(KernelChoice::Mps), "Test GPU");
-        #[cfg(target_os = "macos")]
-        assert_eq!(devices.of(KernelChoice::MetalNaive), "Test GPU");
     }
 }
