@@ -1,6 +1,11 @@
 /target
 /.host
 
+# SQLite's journals: only the .sqlite file is committed
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
 # MacOS
 .DS_Store
 Icon?
