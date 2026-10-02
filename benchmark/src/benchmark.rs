@@ -101,18 +101,18 @@ fn run_precision<T: Element>(
         let tolerance = tolerance::<T>(n);
 
         for kernel in plan.kernels.iter().copied() {
-            for (thread_count, block_size) in plan.cells(kernel, precision, n) {
+            for (thread_count, knob) in plan.cells(kernel, precision, n) {
                 progress.set_target(
                     kernel.label(),
                     n,
                     precision.label(),
                     thread_count,
-                    block_size,
+                    kernel.knob().zip(knob),
                 );
                 let samples = measure(
                     kernel,
                     thread_count,
-                    block_size,
+                    knob,
                     plan.repetitions,
                     &lhs,
                     &rhs,
@@ -123,10 +123,12 @@ fn run_precision<T: Element>(
                 // Checked after timing, against the last timed run's output.
                 let error = max_relative_error(&output, &reference);
                 if error > tolerance {
-                    let block =
-                        block_size.map_or_else(String::new, |b| format!(", block size {b}"));
+                    let knob_text = kernel
+                        .knob()
+                        .zip(knob)
+                        .map_or_else(String::new, |(k, v)| format!(", {} {v}", k.name()));
                     return Err(format!(
-                        "{} produced wrong output at n={n}, precision {}, threads {thread_count}{block}: \
+                        "{} produced wrong output at n={n}, precision {}, threads {thread_count}{knob_text}: \
                          max relative error {error:e} exceeds tolerance {tolerance:e}",
                         kernel.label(),
                         precision.label(),
@@ -150,7 +152,7 @@ fn run_precision<T: Element>(
                     stddev_ms: stats.stddev_ms,
                     gpu_ms,
                     setup_ms: samples.setup.as_secs_f64() * 1_000.0,
-                    block_size,
+                    block_size: knob,
                     params: samples.params,
                     repetitions: plan.repetitions,
                     host: plan.context.host.clone(),
@@ -206,14 +208,14 @@ fn on_gpu(built: Duration, samples: GpuSamples, params: Vec<Param>) -> Samples {
 fn measure<T: Element>(
     choice: KernelChoice,
     threads: usize,
-    block_size: Option<usize>,
+    knob_value: Option<usize>,
     repetitions: usize,
     lhs: &Matrix<T>,
     rhs: &Matrix<T>,
     output: &mut Matrix<T>,
 ) -> Result<Samples, Box<dyn std::error::Error>> {
-    // `BenchmarkPlan::cells` gives every blocked kernel a block size.
-    let block = || block_size.expect("blocked kernels always get a block size");
+    // `BenchmarkPlan::cells` gives every kernel with a knob a value.
+    let knob = || knob_value.expect("kernels with a knob always get a value");
     let io = (lhs, rhs, output, repetitions);
     // Each arm builds its kernel before `sample` starts, so the time from here
     // to `sample`'s first line is that kernel's setup.
@@ -221,22 +223,22 @@ fn measure<T: Element>(
     Ok(match choice {
         KernelChoice::Naive => sample(&NaiveGemm, setup_start, io),
         KernelChoice::Ikj => sample(&IkjGemm, setup_start, io),
-        KernelChoice::Tiled => sample(&TiledGemm::new(block()), setup_start, io),
-        KernelChoice::Packed => sample(&PackedGemm::new(block()), setup_start, io),
+        KernelChoice::Tiled => sample(&TiledGemm::new(knob()), setup_start, io),
+        KernelChoice::Packed => sample(&PackedGemm::new(knob()), setup_start, io),
         KernelChoice::RayonIkj => sample(&InPool::new(threads, RayonIkjGemm)?, setup_start, io),
         KernelChoice::RayonTiled => sample(
-            &InPool::new(threads, RayonTiledGemm::new(block()))?,
+            &InPool::new(threads, RayonTiledGemm::new(knob()))?,
             setup_start,
             io,
         ),
         KernelChoice::RayonPacked => sample(
-            &InPool::new(threads, RayonPackedGemm::new(block()))?,
+            &InPool::new(threads, RayonPackedGemm::new(knob()))?,
             setup_start,
             io,
         ),
         KernelChoice::StaticIkj => sample(&StaticIkjGemm::new(threads)?, setup_start, io),
         KernelChoice::StaticTiled => {
-            sample(&StaticTiledGemm::new(threads, block())?, setup_start, io)
+            sample(&StaticTiledGemm::new(threads, knob())?, setup_start, io)
         }
         #[cfg(target_os = "macos")]
         KernelChoice::AccelerateBlas => sample(&AccelerateBlasGemm, setup_start, io),

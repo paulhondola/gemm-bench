@@ -13,7 +13,7 @@ use tabled::{
     settings::{Alignment, Style, object::Columns},
 };
 
-use crate::benchmark::BenchmarkRecord;
+use crate::{benchmark::BenchmarkRecord, kernel::Knob};
 
 /// Interactive progress tracker wrapping `indicatif::ProgressBar`.
 pub(crate) struct BenchmarkProgress {
@@ -50,11 +50,13 @@ impl BenchmarkProgress {
         n: usize,
         precision: &str,
         threads: usize,
-        block_size: Option<usize>,
+        knob: Option<(Knob, usize)>,
     ) {
-        let block = block_size.map_or_else(String::new, |b| format!(" b={b}"));
+        let knob = knob.map_or_else(String::new, |(knob, value)| {
+            format!(" {}={value}", knob.short())
+        });
         self.bar.set_message(format!(
-            "{kernel:<11} n={n:<4} {precision:<3} t={threads}{block}"
+            "{kernel:<11} n={n:<4} {precision:<3} t={threads}{knob}"
         ));
     }
 
@@ -207,6 +209,7 @@ mod tests {
 
     use super::render_results_table;
     use crate::benchmark::BenchmarkRecord;
+    use crate::kernel::Knob;
     use indicatif::{ProgressBar, ProgressStyle};
 
     fn record() -> BenchmarkRecord {
@@ -288,7 +291,7 @@ mod tests {
     fn progress_bar_lifecycle_disabled() {
         let mut progress = super::BenchmarkProgress::new(5, true);
         progress.set_target("naive", 64, "f32", 1, None);
-        progress.set_target("tiled", 64, "f32", 1, Some(64));
+        progress.set_target("tiled", 64, "f32", 1, Some((Knob::TileSize, 64)));
         progress.step();
         progress.finish();
     }

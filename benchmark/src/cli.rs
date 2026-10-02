@@ -8,18 +8,17 @@ use clap::{Parser, ValueEnum};
 
 use crate::config::ConfigFile;
 use crate::context;
-use crate::kernel::{KernelChoice, Precision};
+use crate::kernel::{KernelChoice, Knob, Precision};
 use crate::plan::{BenchmarkPlan, Devices};
 
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
-const DEFAULT_BLOCK_SIZES: [usize; 7] = [16, 32, 64, 128, 256, 512, 1024];
 const DEFAULT_REPETITIONS: usize = 5;
 
 const AFTER_HELP: &str = "\
 Every omitted dimension (--sizes, --threads, --kernel, --precision,
---block-size) sweeps all of its values. With none given, load a preset with
---config or pass --sweep to run everything (hours); otherwise this help is
-shown.
+--tile-size, --depth-block) sweeps all of its values. With none given, load a
+preset with --config or pass --sweep to run everything (hours); otherwise this
+help is shown.
 
 Examples:
   gemm-bench --sizes 256,512 --kernel ikj,rayon-ikj --precision f32
@@ -27,7 +26,7 @@ Examples:
   gemm-bench --config configs/default.toml --sizes 1024
   gemm-bench --sweep
 
-Presets in configs/: default, quick, precisions, block-sizes.";
+Presets in configs/: default, quick, precisions, knobs.";
 
 #[derive(Debug, Parser)]
 #[command(about = "Benchmark safe, row-major GEMM kernels", after_help = AFTER_HELP)]
@@ -53,10 +52,15 @@ pub(crate) struct Cli {
     #[arg(long)]
     repetitions: Option<usize>,
 
-    /// Tile edge length(s) for the tiled kernels and k-block depth for the
-    /// packed kernels, as a comma-delimited list. Omit to sweep 16 through 256.
-    #[arg(long, value_delimiter = ',')]
-    block_size: Vec<usize>,
+    /// Tile edge(s) for tiled, static-tiled and rayon-tiled, comma-delimited.
+    /// Omit to sweep 16 through 256.
+    #[arg(long, value_delimiter = ',', visible_alias = "tile")]
+    tile_size: Vec<usize>,
+
+    /// Depth of each packed k-block (BLIS's KC) for packed and rayon-packed,
+    /// comma-delimited. Omit to sweep 64 through 1024.
+    #[arg(long, value_delimiter = ',', visible_alias = "kc")]
+    depth_block: Vec<usize>,
 
     /// Output CSV file. Defaults to a new file per run,
     /// data/runs/<host>/<timestamp>.csv; missing parent directories are created.
@@ -86,7 +90,8 @@ impl Cli {
             && self.threads.is_empty()
             && self.kernel.is_empty()
             && self.precision.is_empty()
-            && self.block_size.is_empty()
+            && self.tile_size.is_empty()
+            && self.depth_block.is_empty()
     }
 
     pub(crate) fn into_plan(self) -> Result<BenchmarkPlan, String> {
@@ -101,6 +106,19 @@ impl Cli {
             .precisions()
             .map_err(|error| annotate_config_error(&self.config, error))?;
         let explicit_kernels = !self.kernel.is_empty() || file_kernels.is_some();
+        let explicit_knobs: Vec<Knob> = [
+            (
+                Knob::TileSize,
+                !self.tile_size.is_empty() || file.tile_size.is_some(),
+            ),
+            (
+                Knob::DepthBlock,
+                !self.depth_block.is_empty() || file.depth_block.is_some(),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(knob, explicit)| explicit.then_some(knob))
+        .collect();
 
         let sizes = pick(self.sizes, file.sizes, || DEFAULT_SIZES.to_vec());
         let threads = pick(self.threads, file.threads, default_thread_counts);
@@ -112,8 +130,11 @@ impl Cli {
         let mut kernels = pick(self.kernel, file_kernels, || {
             KernelChoice::value_variants().to_vec()
         });
-        let block_sizes = pick(self.block_size, file.block_size, || {
-            DEFAULT_BLOCK_SIZES.to_vec()
+        let tile_sizes = pick(self.tile_size, file.tile_size, || {
+            Knob::TileSize.defaults().to_vec()
+        });
+        let depth_blocks = pick(self.depth_block, file.depth_block, || {
+            Knob::DepthBlock.defaults().to_vec()
         });
         let repetitions = self
             .repetitions
@@ -127,7 +148,8 @@ impl Cli {
             &threads,
             &kernels,
             &precisions,
-            &block_sizes,
+            &tile_sizes,
+            &depth_blocks,
             repetitions,
         )?;
         if explicit_kernels {
@@ -137,6 +159,7 @@ impl Cli {
         let bnns_skip = drop_unavailable_bnns(&mut kernels, explicit_kernels, || {
             gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_some()
         })?;
+        reject_unused_knobs(&kernels, &explicit_knobs)?;
         #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
         let mut skipped = skip_notices(&kernels, &precisions, &threads, &sizes);
         #[cfg(target_os = "macos")]
@@ -154,7 +177,8 @@ impl Cli {
             kernels,
             precisions,
             repetitions,
-            block_sizes,
+            tile_sizes,
+            depth_blocks,
             context,
             devices,
             output,
@@ -191,7 +215,8 @@ fn validate_values(
     threads: &[usize],
     kernels: &[KernelChoice],
     precisions: &[Precision],
-    block_sizes: &[usize],
+    tile_sizes: &[usize],
+    depth_blocks: &[usize],
     repetitions: usize,
 ) -> Result<(), String> {
     if repetitions == 0 {
@@ -202,7 +227,8 @@ fn validate_values(
         ("--threads", threads.len()),
         ("--kernel", kernels.len()),
         ("--precision", precisions.len()),
-        ("--block-size", block_sizes.len()),
+        ("--tile-size", tile_sizes.len()),
+        ("--depth-block", depth_blocks.len()),
     ];
     if let Some((flag, _)) = counts.iter().find(|(_, count)| *count == 0) {
         return Err(format!("{flag} needs at least one value"));
@@ -210,7 +236,8 @@ fn validate_values(
     for (flag, values) in [
         ("--sizes", sizes),
         ("--threads", threads),
-        ("--block-size", block_sizes),
+        ("--tile-size", tile_sizes),
+        ("--depth-block", depth_blocks),
     ] {
         if values.contains(&0) {
             return Err(format!("all {flag} values must be greater than zero"));
@@ -245,6 +272,27 @@ fn reject_idle_kernels(
                 kernel.label()
             ));
         }
+    }
+    Ok(())
+}
+
+/// A knob given explicitly (flag or config key) that no selected kernel
+/// sweeps would be silently ignored, so it is a mistake worth stopping for.
+fn reject_unused_knobs(kernels: &[KernelChoice], explicit: &[Knob]) -> Result<(), String> {
+    for &knob in explicit {
+        if kernels.iter().any(|kernel| kernel.knob() == Some(knob)) {
+            continue;
+        }
+        let users: Vec<&str> = KernelChoice::value_variants()
+            .iter()
+            .filter(|kernel| kernel.knob() == Some(knob))
+            .map(|kernel| kernel.label())
+            .collect();
+        return Err(format!(
+            "{} applies only to {}, and none of them is selected",
+            knob.flag(),
+            users.join(", ")
+        ));
     }
     Ok(())
 }
@@ -409,7 +457,8 @@ mod tests {
         assert!(plan.threads.contains(&1));
         assert_eq!(plan.kernels, KernelChoice::value_variants());
         assert_eq!(plan.precisions, Precision::value_variants());
-        assert_eq!(plan.block_sizes, [16, 32, 64, 128, 256, 512, 1024]);
+        assert_eq!(plan.tile_sizes, [16, 32, 64, 128, 256]);
+        assert_eq!(plan.depth_blocks, [64, 128, 256, 512, 1024]);
         assert_eq!(plan.repetitions, 5);
         assert!(!plan.no_progress);
         assert!(!plan.context.host.is_empty());
@@ -426,7 +475,8 @@ mod tests {
         assert!(unpinned(&["--no-progress", "--repetitions", "3"]));
         assert!(!unpinned(&["--sweep"]));
         assert!(!unpinned(&["--sizes", "64"]));
-        assert!(!unpinned(&["--block-size", "32"]));
+        assert!(!unpinned(&["--tile-size", "32"]));
+        assert!(!unpinned(&["--kc", "256"]));
     }
 
     #[test]
@@ -756,42 +806,47 @@ mod tests {
     }
 
     #[test]
-    fn block_size_flag_accepts_a_comma_delimited_sweep() {
-        let plan =
-            plan_for("block-sizes", &["--block-size", "32,64,128"]).expect("plan should be valid");
-
-        assert_eq!(plan.block_sizes, [32, 64, 128]);
+    fn knob_flags_and_their_aliases_accept_comma_delimited_sweeps() {
+        let plan = plan_for("knobs", &["--tile", "32,64", "--depth-block", "128,512"])
+            .expect("plan should be valid");
+        assert_eq!(plan.tile_sizes, [32, 64]);
+        assert_eq!(plan.depth_blocks, [128, 512]);
+        let plan = plan_for("kc-alias", &["--kc", "256"]).expect("plan should be valid");
+        assert_eq!(plan.depth_blocks, [256]);
     }
 
     #[test]
-    fn zero_in_the_block_size_list_is_rejected() {
-        let error = plan_for("zero-block", &["--block-size", "32,0"])
-            .expect_err("a zero block size must be rejected");
-
-        assert!(error.contains("--block-size"), "{error}");
+    fn zero_in_a_knob_list_is_rejected() {
+        for flag in ["--tile-size", "--depth-block"] {
+            let error = plan_for("zero-knob", &[flag, "32,0"])
+                .expect_err("a zero knob value must be rejected");
+            assert!(error.contains(flag), "{error}");
+        }
     }
 
     #[test]
-    fn block_sizes_multiply_only_the_tiled_kernels() {
+    fn each_knob_multiplies_only_the_kernels_that_sweep_it() {
         let plan = plan_for(
-            "block-count",
+            "knob-count",
             &[
                 "--sizes",
                 "64",
                 "--precision",
                 "f32",
                 "--kernel",
-                "ikj,tiled,rayon-tiled",
+                "ikj,tiled,rayon-tiled,packed",
                 "--threads",
                 "1,2",
-                "--block-size",
+                "--tile-size",
                 "32,64,128",
+                "--depth-block",
+                "256",
             ],
         )
         .expect("plan should be valid");
 
-        // ikj 1 + tiled 3 blocks + rayon-tiled 2 threads x 3 blocks = 10
-        assert_eq!(plan.total_configurations(), 10);
+        // ikj 1 + tiled 3 + rayon-tiled 2 threads x 3 tiles + packed 1 = 11
+        assert_eq!(plan.total_configurations(), 11);
         assert_eq!(
             plan.cells(KernelChoice::Ikj, Precision::F32, 64),
             [(1, None)]
@@ -800,6 +855,28 @@ mod tests {
             plan.cells(KernelChoice::Tiled, Precision::F32, 64),
             [(1, Some(32)), (1, Some(64)), (1, Some(128))]
         );
+        assert_eq!(
+            plan.cells(KernelChoice::Packed, Precision::F32, 64),
+            [(1, Some(256))]
+        );
+    }
+
+    #[test]
+    fn a_knob_no_selected_kernel_sweeps_is_rejected() {
+        let error = plan_for(
+            "unused-knob",
+            &["--kernel", "ikj,packed", "--tile-size", "32"],
+        )
+        .expect_err("a knob no selected kernel uses must be rejected");
+        assert!(
+            error.contains("--tile-size applies only to tiled"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn the_block_size_flag_is_gone() {
+        assert!(Cli::try_parse_from(["gemm-bench", "--block-size", "64"]).is_err());
     }
 
     fn temp_config(name: &str, body: &str) -> PathBuf {
@@ -842,15 +919,15 @@ mod tests {
         plan
     }
 
-    const PRESET: &str = "sizes = [64]\nkernel = [\"ikj\"]\nprecision = [\"f32\"]\nblock-size = [32]\nrepetitions = 2\n";
+    const PRESET: &str = "sizes = [64]\nkernel = [\"tiled\"]\nprecision = [\"f32\"]\ntile-size = [32]\nrepetitions = 2\n";
 
     #[test]
     fn config_keys_fill_the_dimensions_flags_omit() {
         let plan = plan_with_config("fill", PRESET, &[]).expect("config plan should be valid");
         assert_eq!(plan.sizes, [64]);
-        assert_eq!(plan.kernels, [KernelChoice::Ikj]);
+        assert_eq!(plan.kernels, [KernelChoice::Tiled]);
         assert_eq!(plan.precisions, [Precision::F32]);
-        assert_eq!(plan.block_sizes, [32]);
+        assert_eq!(plan.tile_sizes, [32]);
         assert_eq!(plan.repetitions, 2);
         assert!(
             plan.threads.contains(&1),
@@ -863,8 +940,15 @@ mod tests {
         let plan = plan_with_config("override", PRESET, &["--sizes", "128,256"])
             .expect("config plan should be valid");
         assert_eq!(plan.sizes, [128, 256]);
-        assert_eq!(plan.kernels, [KernelChoice::Ikj]);
+        assert_eq!(plan.kernels, [KernelChoice::Tiled]);
         assert_eq!(plan.repetitions, 2);
+    }
+
+    #[test]
+    fn config_knob_keys_accept_the_blis_alias() {
+        let plan = plan_with_config("kc-key", "kernel = [\"packed\"]\nkc = [512]\n", &[])
+            .expect("config plan should be valid");
+        assert_eq!(plan.depth_blocks, [512]);
     }
 
     #[test]

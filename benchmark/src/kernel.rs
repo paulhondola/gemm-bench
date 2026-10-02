@@ -26,6 +26,51 @@ pub(crate) enum KernelChoice {
     MetalTiled,
 }
 
+/// A knob swept from the command line besides `--threads`: one flag, one
+/// default range, recorded under one `params.name`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Knob {
+    /// Edge of the square cache tile of the tiled kernels.
+    TileSize,
+    /// Depth of each packed k-block of the packed kernels (BLIS's KC).
+    DepthBlock,
+}
+
+impl Knob {
+    /// The `params.name` it is recorded under.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::TileSize => "tile_size",
+            Self::DepthBlock => "depth_block",
+        }
+    }
+
+    /// Its CLI flag: the name in kebab case.
+    pub(crate) fn flag(self) -> &'static str {
+        match self {
+            Self::TileSize => "--tile-size",
+            Self::DepthBlock => "--depth-block",
+        }
+    }
+
+    /// The progress bar's short form: BLIS's name where there is one.
+    pub(crate) fn short(self) -> &'static str {
+        match self {
+            Self::TileSize => "tile",
+            Self::DepthBlock => "kc",
+        }
+    }
+
+    /// Swept when its flag is omitted. Tile 1024 hits the power-of-two
+    /// aliasing cliff, and KC 16 and 32 measured 25–60% slower than KC 256.
+    pub(crate) fn defaults(self) -> &'static [usize] {
+        match self {
+            Self::TileSize => &[16, 32, 64, 128, 256],
+            Self::DepthBlock => &[64, 128, 256, 512, 1024],
+        }
+    }
+}
+
 /// Everything the harness needs to know about a kernel, in one row.
 struct KernelInfo {
     /// The `kernel` column in the CSV.
@@ -35,15 +80,15 @@ struct KernelInfo {
     precisions: &'static [Precision],
     /// Sweeps `--threads`; the others run on one caller thread.
     workers: bool,
-    /// Takes `--block-size` (a tile edge, or packed's k-block depth); the
-    /// others record an empty block size.
-    blocks: bool,
+    /// The knob swept besides threads.
+    // ponytail: one per kernel; sweep a cartesian product once a kernel needs two.
+    knob: Option<Knob>,
     /// Gives every worker at least one row, so needs `threads <= n`.
     row_per_worker: bool,
 }
 
 impl KernelInfo {
-    /// A single-threaded CPU kernel with no block size, at every precision; each row in
+    /// A single-threaded CPU kernel with no knob, at every precision; each row in
     /// `KernelChoice::info` overrides what differs.
     fn serial(label: &'static str) -> Self {
         Self {
@@ -51,7 +96,7 @@ impl KernelInfo {
             backend: "cpu",
             precisions: Precision::value_variants(),
             workers: false,
-            blocks: false,
+            knob: None,
             row_per_worker: false,
         }
     }
@@ -66,12 +111,11 @@ impl KernelChoice {
             Self::Naive => serial("naive-ijk"),
             Self::Ikj => serial("ikj"),
             Self::Tiled => KernelInfo {
-                blocks: true,
+                knob: Some(Knob::TileSize),
                 ..serial("tiled")
             },
-            // `--block-size` is the k-block depth (KC) of each packed B panel.
             Self::Packed => KernelInfo {
-                blocks: true,
+                knob: Some(Knob::DepthBlock),
                 ..serial("packed")
             },
             Self::RayonIkj => KernelInfo {
@@ -80,12 +124,12 @@ impl KernelChoice {
             },
             Self::RayonTiled => KernelInfo {
                 workers: true,
-                blocks: true,
+                knob: Some(Knob::TileSize),
                 ..serial("rayon-tiled")
             },
             Self::RayonPacked => KernelInfo {
                 workers: true,
-                blocks: true,
+                knob: Some(Knob::DepthBlock),
                 ..serial("rayon-packed")
             },
             Self::StaticIkj => KernelInfo {
@@ -95,7 +139,7 @@ impl KernelChoice {
             },
             Self::StaticTiled => KernelInfo {
                 workers: true,
-                blocks: true,
+                knob: Some(Knob::TileSize),
                 row_per_worker: true,
                 ..serial("static-tiled")
             },
@@ -146,8 +190,9 @@ impl KernelChoice {
         self.info().workers
     }
 
-    pub(crate) fn uses_blocks(self) -> bool {
-        self.info().blocks
+    /// The knob this kernel sweeps besides threads, if any.
+    pub(crate) fn knob(self) -> Option<Knob> {
+        self.info().knob
     }
 
     /// Whether the kernel can run `threads` workers on `n` rows.
@@ -210,6 +255,21 @@ mod tests {
                 continue;
             }
             assert_eq!(kernel.backend(), "cpu", "{}", kernel.label());
+        }
+    }
+
+    #[test]
+    fn tiled_kernels_sweep_the_tile_and_packed_kernels_the_depth_block() {
+        use super::Knob;
+        for &kernel in KernelChoice::value_variants() {
+            let expected = match kernel {
+                KernelChoice::Tiled | KernelChoice::RayonTiled | KernelChoice::StaticTiled => {
+                    Some(Knob::TileSize)
+                }
+                KernelChoice::Packed | KernelChoice::RayonPacked => Some(Knob::DepthBlock),
+                _ => None,
+            };
+            assert_eq!(kernel.knob(), expected, "{}", kernel.label());
         }
     }
 }

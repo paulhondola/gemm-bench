@@ -1,7 +1,7 @@
 use std::{fs::File, path::PathBuf};
 
 use crate::context::{self, RunContext};
-use crate::kernel::{KernelChoice, Precision};
+use crate::kernel::{KernelChoice, Knob, Precision};
 
 /// Fully resolved configuration used by the benchmark runner.
 #[derive(Debug)]
@@ -11,7 +11,8 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) kernels: Vec<KernelChoice>,
     pub(crate) precisions: Vec<Precision>,
     pub(crate) repetitions: usize,
-    pub(crate) block_sizes: Vec<usize>,
+    pub(crate) tile_sizes: Vec<usize>,
+    pub(crate) depth_blocks: Vec<usize>,
     pub(crate) context: RunContext,
     pub(crate) devices: Devices,
     pub(crate) output: File,
@@ -22,7 +23,15 @@ pub(crate) struct BenchmarkPlan {
 }
 
 impl BenchmarkPlan {
-    /// The (threads, block size) cells measured for one kernel at one
+    /// The values swept for `knob`.
+    pub(crate) fn knob_values(&self, knob: Knob) -> &[usize] {
+        match knob {
+            Knob::TileSize => &self.tile_sizes,
+            Knob::DepthBlock => &self.depth_blocks,
+        }
+    }
+
+    /// The (threads, knob value) cells measured for one kernel at one
     /// precision and size; empty when the kernel can't run there. The single
     /// source for the sweep loop and the configuration count.
     pub(crate) fn cells(
@@ -43,14 +52,13 @@ impl BenchmarkPlan {
         } else {
             vec![1]
         };
-        let blocks: Vec<Option<usize>> = if kernel.uses_blocks() {
-            self.block_sizes.iter().copied().map(Some).collect()
-        } else {
-            vec![None]
+        let knobs: Vec<Option<usize>> = match kernel.knob() {
+            Some(knob) => self.knob_values(knob).iter().copied().map(Some).collect(),
+            None => vec![None],
         };
         threads
             .iter()
-            .flat_map(|&t| blocks.iter().map(move |&b| (t, b)))
+            .flat_map(|&t| knobs.iter().map(move |&k| (t, k)))
             .collect()
     }
 

@@ -1,5 +1,6 @@
 # Seconds-long sanity check across every kernel and thread count.
 sizes = [64, 256]
 precision = ["f32"]
-block-size = [64]
+tile-size = [64]
+depth-block = [256]
 repetitions = 3
