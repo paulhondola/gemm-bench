@@ -1,5 +1,6 @@
 /target
 *.duckdb
+/.host
 
 # MacOS
 .DS_Store

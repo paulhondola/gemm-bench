@@ -4,6 +4,10 @@ default:
 bench *args='':
     cargo run --release --manifest-path benchmark/Cargo.toml -- {{args}}
 
+# Names this machine for `just bench`, once: <github-login>/<machine>, e.g. octocat/m1pro.
+init id:
+    printf '%s\n' '{{id}}' > .host
+
 # Validates data/runs/**/*.csv and data/peaks.csv and writes the JSON files the dashboard loads: results.json from the runs, peaks.json from the peaks.
 data:
     duckdb -bail < data/build.sql

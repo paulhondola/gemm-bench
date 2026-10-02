@@ -4,6 +4,11 @@ mod benchmark;
 mod cli;
 mod config;
 mod context;
+#[allow(
+    dead_code,
+    reason = "the SQLite writer (Task 6) uses it; delete this attribute then"
+)]
+mod host;
 mod kernel;
 #[allow(
     dead_code,
