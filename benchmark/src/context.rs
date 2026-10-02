@@ -72,22 +72,29 @@ pub(crate) fn cpu_name() -> String {
     name.unwrap_or_else(|| UNKNOWN.to_owned())
 }
 
-/// The first `model name` line of `/proc/cpuinfo`. ARM kernels often omit it.
+/// The first `model name` line of `/proc/cpuinfo`, unless blank. ARM kernels
+/// often omit it.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn parse_cpu_model(cpuinfo: &str) -> Option<String> {
-    cpuinfo.lines().find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        (key.trim() == "model name").then(|| value.trim().to_owned())
-    })
+    cpuinfo
+        .lines()
+        .find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key.trim() == "model name").then(|| value.trim().to_owned())
+        })
+        .filter(|name| !name.is_empty())
 }
 
-/// lscpu's `Model name`, e.g. `Neoverse-V1` on an ARM server.
+/// lscpu's `Model name`, e.g. `Neoverse-V1` on an ARM server, unless blank.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn parse_lscpu_model(lscpu: &str) -> Option<String> {
-    lscpu.lines().find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        (key.trim() == "Model name").then(|| value.trim().to_owned())
-    })
+    lscpu
+        .lines()
+        .find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key.trim() == "Model name").then(|| value.trim().to_owned())
+        })
+        .filter(|name| !name.is_empty())
 }
 
 #[cfg(test)]
@@ -122,6 +129,13 @@ mod tests {
     fn parse_cpu_model_is_none_when_arm_cpuinfo_lacks_a_model_name() {
         let cpuinfo = "processor\t: 0\nBogoMIPS\t: 48.00\nCPU implementer\t: 0x41\n";
         assert_eq!(parse_cpu_model(cpuinfo), None);
+    }
+
+    /// An empty name would fail runs.cpu's CHECK only once the sweep is over.
+    #[test]
+    fn a_blank_model_name_counts_as_missing() {
+        assert_eq!(parse_cpu_model("model name\t: \nprocessor\t: 0\n"), None);
+        assert_eq!(parse_lscpu_model("Model name:   \t\n"), None);
     }
 
     #[test]
