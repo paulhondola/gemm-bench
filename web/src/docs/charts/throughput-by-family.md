@@ -1,4 +1,4 @@
-**What it shows.** One line per kernel family — single-threaded CPU (`serial`), multi-threaded CPU (`parallel`), `matrix` and `gpu` — at every matrix size, at the selected precision. Each point is the family's best result at that size: whichever kernel, thread count and block size was fastest. Both axes are logarithmic.
+**What it shows.** One line per kernel family — single-threaded CPU (`serial`), multi-threaded CPU (`parallel`), `matrix` and `gpu` — at every matrix size, at the selected precision. Each point is the family's best result at that size: whichever kernel, thread count, tile size and depth block was fastest. Both axes are logarithmic.
 
 **How to read it.** The dashed lines are the hardware's theoretical peaks, from `data/peaks.csv`, in each family's colour: one performance core for `serial`, all the performance cores for `parallel`, and the whole GPU for `gpu`. Hover a point for the kernel and thread count behind it and its % of peak. The gap between a line and its ceiling is the performance left on the table.
 

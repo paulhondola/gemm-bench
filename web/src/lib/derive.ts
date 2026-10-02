@@ -74,9 +74,6 @@ export function kernels(rows: Row[]): string[] {
 
 const ascending = (a: number, b: number) => a - b;
 
-/** Rows from kernels that don't tile carry no block size (null). */
-const hasBlockSize = (r: Row) => r.block_size != null;
-
 export function sizesFor(rows: Row[], precision: string): number[] {
 	return [
 		...new Set(
@@ -89,59 +86,83 @@ export function allSizes(rows: Row[]): number[] {
 	return [...new Set(rows.map((r) => Number(r.n)))].sort(ascending);
 }
 
-/** Every distinct block size present, sorted. */
-export function blockSizes(rows: Row[]): number[] {
+/** Display names of the swept knobs; an unknown knob shows its params.name. */
+export const KNOB_LABEL: Record<string, string> = {
+	tile_size: "Tile size",
+	depth_block: "Depth block",
+};
+
+export const knobLabel = (name: string): string => KNOB_LABEL[name] ?? name;
+
+/** Every swept knob in the rows, once each, sorted: one pill group per knob. */
+export function knobNames(rows: Row[]): string[] {
+	return [...new Set(rows.flatMap((r) => Object.keys(r.swept)))].sort();
+}
+
+/** One knob's values, once each, sorted. */
+export function knobValues(rows: Row[], name: string): number[] {
 	return [
-		...new Set(rows.filter(hasBlockSize).map((r) => Number(r.block_size))),
+		...new Set(rows.flatMap((r) => (name in r.swept ? [r.swept[name]] : []))),
 	].sort(ascending);
 }
 
-/** Block sizes available for a given precision and size, for the disabled-pill reason text. */
-export function blockSizesFor(
+/** One knob's values at a precision and size: the pills selectable there. */
+export function knobValuesFor(
 	rows: Row[],
+	name: string,
 	precision: string,
 	n: number,
 ): number[] {
-	return [
-		...new Set(
-			rows
-				.filter(
-					(r) =>
-						hasBlockSize(r) && r.precision === precision && Number(r.n) === n,
-				)
-				.map((r) => Number(r.block_size)),
-		),
-	].sort(ascending);
+	return knobValues(
+		rows.filter((r) => r.precision === precision && r.n === n),
+		name,
+	);
 }
 
 /**
- * The block size to fall back to when the current selection is invalid for
- * this specific (precision, n) — the smallest one actually available there.
- * It must stay valid as precision/n change, so it reads the exact
- * combination the fallback needs to hold for.
+ * Every knob's pin, kept valid at (precision, n): a pin still measured there
+ * stays, any other falls back to the smallest value there, and a knob with
+ * no values there has no pin.
  */
-export function defaultBlockSizeFor(
+export function pinKnobs(
 	rows: Row[],
 	precision: string,
 	n: number,
-): number {
-	return blockSizesFor(rows, precision, n)[0] ?? 0;
+	current: Record<string, number>,
+): Record<string, number> {
+	const pins: Record<string, number> = {};
+	for (const name of knobNames(rows)) {
+		const values = knobValuesFor(rows, name, precision, n);
+		if (values.length === 0) continue;
+		pins[name] = values.includes(current[name]) ? current[name] : values[0];
+	}
+	return pins;
 }
 
-/** Kernels present at exactly one distinct block_size across the whole
- * dataset: the dimension does not vary for them, so a block-size selection
- * must not filter them away. */
-export function singleBlockSizeKernels(rows: Row[]): Set<string> {
-	const byKernel = new Map<string, Set<number>>();
+/**
+ * Per knob, the kernels measured at only one value of it in the whole
+ * dataset: the knob doesn't vary for them, so a pin must not filter them away.
+ */
+export function singleValueKernels(rows: Row[]): Map<string, Set<string>> {
+	const seen = new Map<string, Map<string, Set<number>>>();
 	for (const r of rows) {
-		if (!hasBlockSize(r)) continue;
-		const kernel = String(r.kernel);
-		const sizes = byKernel.get(kernel) ?? new Set<number>();
-		sizes.add(Number(r.block_size));
-		byKernel.set(kernel, sizes);
+		for (const [name, value] of Object.entries(r.swept)) {
+			const byKernel = seen.get(name) ?? new Map<string, Set<number>>();
+			const values = byKernel.get(r.kernel) ?? new Set<number>();
+			values.add(value);
+			byKernel.set(r.kernel, values);
+			seen.set(name, byKernel);
+		}
 	}
-	return new Set(
-		[...byKernel].filter(([, sizes]) => sizes.size === 1).map(([k]) => k),
+	return new Map(
+		[...seen].map(([name, byKernel]) => [
+			name,
+			new Set(
+				[...byKernel]
+					.filter(([, values]) => values.size === 1)
+					.map(([kernel]) => kernel),
+			),
+		]),
 	);
 }
 
@@ -200,7 +221,7 @@ export function familyOf(row: Row, family: Map<string, Family>): Family {
 
 /**
  * One row per (family, precision, n): the family's best row, whatever kernel,
- * thread count or block size produced it. The whole winning row is kept so a
+ * thread count or knob value produced it. The whole winning row is kept so a
  * family chart can name the kernel behind each point. Precision is part of
  * the key because the Precision tab passes every precision at once. A strict
  * `>` keeps the first row on a tie, so the result is stable.

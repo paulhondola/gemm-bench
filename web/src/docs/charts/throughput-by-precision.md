@@ -1,4 +1,4 @@
-**What it shows.** One group of bars per element type — 16-, 32- and 64-bit floats (`f16`, `f32`, `f64`) and 32- and 64-bit integers (`i32`, `i64`) — at the selected matrix size, fastest group first. Within a group, each bar is a family's best result: whichever kernel, thread count and block size was fastest.
+**What it shows.** One group of bars per element type — 16-, 32- and 64-bit floats (`f16`, `f32`, `f64`) and 32- and 64-bit integers (`i32`, `i64`) — at the selected matrix size, fastest group first. Within a group, each bar is a family's best result: whichever kernel, thread count, tile size and depth block was fastest.
 
 **How to read it.** Narrower types fit more values into each SIMD register and move fewer bytes, so they can run faster, but only where the hardware has fast arithmetic for them. A missing bar means the family has no kernel for that type: the GPU kernels have no `f64`, and the matrix-unit kernels no integers.
 

@@ -27,7 +27,6 @@ export function row(fields: Partial<Row>): Row {
 		repetitions: 5,
 		params: {},
 		swept: {},
-		block_size: null,
 		...fields,
 	};
 }

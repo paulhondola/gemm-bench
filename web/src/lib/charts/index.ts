@@ -8,12 +8,13 @@ import parallelEfficiencyDoc from "../../docs/charts/parallel-efficiency.md?raw"
 import singleThreadedKernelsDoc from "../../docs/charts/single-threaded-kernels.md?raw";
 import throughputByFamilyDoc from "../../docs/charts/throughput-by-family.md?raw";
 import throughputByPrecisionDoc from "../../docs/charts/throughput-by-precision.md?raw";
-import throughputVsBlockSizeDoc from "../../docs/charts/throughput-vs-block-size.md?raw";
+import throughputVsDepthBlockDoc from "../../docs/charts/throughput-vs-depth-block.md?raw";
 import throughputVsMatrixSizeDoc from "../../docs/charts/throughput-vs-matrix-size.md?raw";
 import throughputVsThreadCountDoc from "../../docs/charts/throughput-vs-thread-count.md?raw";
+import throughputVsTileSizeDoc from "../../docs/charts/throughput-vs-tile-size.md?raw";
 import type { Row } from "../db";
-import { blockSizeSweep } from "./blocksize";
 import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
+import { knobSweep } from "./knobs";
 import {
 	fastestPerSize,
 	optimizationLadder,
@@ -25,7 +26,7 @@ import { accuracyVsThroughput, throughputByPrecision } from "./precision";
 import { parallelEfficiency, throughputVsThreads } from "./threading";
 import type { ChartSpec, Ctx, Filters } from "./types";
 
-export type Control = "precision" | "n" | "kernel" | "blockSize";
+export type Control = "precision" | "n" | "kernel" | "knobs";
 
 export interface Panel {
 	title: string;
@@ -44,16 +45,15 @@ export interface Tab {
 	/** The precision pills render disabled: precision is this tab's x-axis. */
 	inertPrecision?: boolean;
 	/**
-	 * Block size is not a dimension of this tab: no pills, and rowsForTab does
-	 * not scope by it. Either block size is the x-axis (the Block size tab) or
-	 * the tab shows each family's best configuration (Overview, Precision,
-	 * GPU), the same way bestPerKernel takes the best thread count. A kernel
-	 * measured at only one block size is exempted from scoping automatically,
-	 * via `ctx.singleBlockSize` in `rowsForTab`. That's a property of the data,
-	 * not something a tab should assert about itself, so it is never a reason
-	 * to set this flag.
+	 * Knobs (tile size, depth block) are not a dimension of this tab: no
+	 * pills, and rowsForTab doesn't scope by them. Either a knob is the x-axis
+	 * (Tuning knobs) or the tab shows each family's best configuration
+	 * (Overview, Precision, GPU), the way bestPerKernel takes the best thread
+	 * count. A kernel measured at one value of a knob is exempted from scoping
+	 * automatically via `ctx.singleKnob`; that is a property of the data, so it
+	 * is never a reason to set this flag.
 	 */
-	inertBlockSize?: boolean;
+	inertKnobs?: boolean;
 }
 
 export const TABS: Tab[] = [
@@ -61,7 +61,7 @@ export const TABS: Tab[] = [
 		id: "overview",
 		label: "Overview",
 		controls: ["precision"],
-		inertBlockSize: true,
+		inertKnobs: true,
 		panels: [
 			{
 				title: "Optimization ladder",
@@ -86,17 +86,17 @@ export const TABS: Tab[] = [
 	{
 		id: "cpu",
 		label: "CPU & matrix",
-		controls: ["precision", "blockSize"],
+		controls: ["precision", "knobs"],
 		panels: [
 			{
 				title: "Throughput vs matrix size",
-				note: "Each kernel's best thread count, at the selected block size · log–log · band is ±1 stddev",
+				note: "Each kernel's best thread count, at the selected tile size and depth block · log–log · band is ±1 stddev",
 				doc: throughputVsMatrixSizeDoc,
 				spec: throughputVsSize,
 			},
 			{
 				title: "Single-threaded kernels",
-				note: "Loop order, cache blocking and register blocking on one core, at the selected block size, on their own scale",
+				note: "Loop order, cache blocking and register blocking on one core, at the selected knobs, on their own scale",
 				doc: singleThreadedKernelsDoc,
 				spec: serialOnly,
 			},
@@ -105,11 +105,11 @@ export const TABS: Tab[] = [
 	{
 		id: "threads",
 		label: "CPU threading",
-		controls: ["precision", "n", "kernel", "blockSize"],
+		controls: ["precision", "n", "kernel", "knobs"],
 		panels: [
 			{
 				title: "Throughput vs thread count",
-				note: "Work-stealing vs fixed partitioning at the selected size and block size · linear axes",
+				note: "Work-stealing vs fixed partitioning at the selected size and knobs · linear axes",
 				doc: throughputVsThreadCountDoc,
 				spec: throughputVsThreads,
 			},
@@ -126,7 +126,7 @@ export const TABS: Tab[] = [
 		label: "Precision",
 		controls: ["n"],
 		inertPrecision: true,
-		inertBlockSize: true,
+		inertKnobs: true,
 		panels: [
 			{
 				title: "Throughput by precision",
@@ -146,7 +146,7 @@ export const TABS: Tab[] = [
 		id: "gpu",
 		label: "GPU",
 		controls: ["precision"],
-		inertBlockSize: true,
+		inertKnobs: true,
 		panels: [
 			{
 				title: "GPU kernels vs CPU",
@@ -169,16 +169,22 @@ export const TABS: Tab[] = [
 		],
 	},
 	{
-		id: "blocksize",
-		label: "Block size",
+		id: "knobs",
+		label: "Tuning knobs",
 		controls: ["precision", "n"],
-		inertBlockSize: true,
+		inertKnobs: true,
 		panels: [
 			{
-				title: "Throughput vs block size",
-				note: "Each blocked kernel's best result at each block size, at the selected size · small wobbles are noise",
-				doc: throughputVsBlockSizeDoc,
-				spec: blockSizeSweep,
+				title: "Throughput vs tile size",
+				note: "Each tiled kernel's best result at each tile edge, at the selected size · small wobbles are noise",
+				doc: throughputVsTileSizeDoc,
+				spec: knobSweep("tile_size"),
+			},
+			{
+				title: "Throughput vs depth block",
+				note: "Each packed kernel's best result at each k-block depth (KC), at the selected size · small wobbles are noise",
+				doc: throughputVsDepthBlockDoc,
+				spec: knobSweep("depth_block"),
 			},
 		],
 	},
@@ -186,30 +192,28 @@ export const TABS: Tab[] = [
 
 /**
  * The rows a tab actually renders. A tab with inertPrecision needs every
- * precision (precision is its x-axis); a tab with inertBlockSize needs every
- * block size (block size is its x-axis, or it shows each family's best
- * configuration). Every other tab is scoped to both selected values, except
- * for a kernel with only one distinct block size in the whole dataset: the
- * dimension doesn't vary for it, so a block-size selection must not filter it
- * away, whichever tab it appears on. A row with no block size (a kernel that
- * doesn't tile) is never filtered by a block-size selection either. This is
- * the single place scoping happens: visibility and rendering must agree, or a
- * tab can appear and then render nothing.
+ * precision (precision is its x-axis); a tab with inertKnobs needs every knob
+ * value. Every other tab is scoped to the selected precision and to each
+ * knob's pin, except a kernel measured at only one value of a knob, which
+ * that knob's pin never filters away. A row with no knobs is never filtered
+ * by a pin. This is the single place scoping happens: visibility and
+ * rendering must agree, or a tab can appear and then render nothing.
  */
 export function rowsForTab(
 	tab: Tab,
 	rows: Row[],
 	precision: string,
-	blockSize: number,
+	knobs: Record<string, number>,
 	ctx: Ctx,
 ): Row[] {
 	return rows.filter(
 		(r) =>
 			(tab.inertPrecision || r.precision === precision) &&
-			(tab.inertBlockSize ||
-				r.block_size == null ||
-				ctx.singleBlockSize.has(String(r.kernel)) ||
-				Number(r.block_size) === blockSize),
+			(tab.inertKnobs ||
+				Object.entries(r.swept).every(
+					([name, value]) =>
+						ctx.singleKnob.get(name)?.has(r.kernel) || knobs[name] === value,
+				)),
 	);
 }
 
@@ -218,8 +222,7 @@ export function visibleTabs(rows: Row[], f: Filters, ctx: Ctx): Tab[] {
 	return TABS.filter((t) =>
 		t.panels.some(
 			(p) =>
-				p.spec(rowsForTab(t, rows, f.precision, f.blockSize, ctx), f, ctx) !==
-				null,
+				p.spec(rowsForTab(t, rows, f.precision, f.knobs, ctx), f, ctx) !== null,
 		),
 	);
 }

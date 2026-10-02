@@ -80,7 +80,7 @@ test("integer precisions are left out", () => {
 test("a tie keeps the first row", () => {
 	const rows = [
 		row({ kernel: "ikj", n: 512, gops: 20 }),
-		row({ kernel: "tiled", n: 512, gops: 20, block_size: 64 }),
+		row({ kernel: "tiled", n: 512, gops: 20, swept: { tile_size: 64 } }),
 	];
 	expect(only(rows, "serial")[0].best?.kernel).toBe("ikj");
 });

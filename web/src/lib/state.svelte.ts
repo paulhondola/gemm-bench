@@ -8,11 +8,11 @@ import {
 	readRows,
 } from "./db";
 import {
-	defaultBlockSizeFor,
 	defaultParallelKernel,
 	defaultPrecision,
 	defaultSize,
 	partitionPlottable,
+	pinKnobs,
 } from "./derive";
 import { HOSTS } from "./hostlist";
 import { type Host, pickHost } from "./hosts";
@@ -30,7 +30,7 @@ export const store = $state({
 	precision: "",
 	n: 0,
 	kernel: "",
-	blockSize: 0,
+	knobs: {} as Record<string, number>,
 	relative: false,
 	tab: "overview",
 	dropped: 0,
@@ -57,7 +57,7 @@ export async function boot(): Promise<void> {
 			store.precision = defaultPrecision(rows);
 			store.n = defaultSize(rows, store.precision);
 			store.kernel = defaultParallelKernel(rows, store.precision);
-			store.blockSize = defaultBlockSizeFor(rows, store.precision, store.n);
+			store.knobs = pinKnobs(rows, store.precision, store.n, {});
 		}
 		store.loaded = true;
 	} catch (e) {

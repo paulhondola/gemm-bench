@@ -8,7 +8,7 @@ const f: Filters = {
 	precision: "f32",
 	n: 512,
 	kernel: "mps",
-	blockSize: 32,
+	knobs: {},
 	relative: false,
 };
 

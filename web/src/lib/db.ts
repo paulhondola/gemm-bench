@@ -29,8 +29,6 @@ export interface Row {
 	params: Record<string, number>;
 	/** The swept params alone: with kernel, precision, n and threads, the cell. */
 	swept: Record<string, number>;
-	/** Transitional: the one swept value, for the block-size views until they read `swept`. */
-	block_size: number | null;
 }
 
 /** A hardware ceiling: one row of data/peaks.csv. */
@@ -119,7 +117,7 @@ export function openDb(SQL: SqlJsStatic, bytes: Uint8Array): Database {
 	}
 }
 
-type LatestRow = Omit<Row, "params" | "swept" | "block_size"> & {
+type LatestRow = Omit<Row, "params" | "swept"> & {
 	params: string;
 	swept_params: string;
 };
@@ -132,16 +130,11 @@ export function readRows(db: Database): Row[] {
 		        median_ms, min_ms, stddev_ms, gpu_ms, setup_ms, gpu_cores, started_at,
 		        commit_id, repetitions, params, swept_params
 		 FROM latest ORDER BY kernel, precision, n, threads, swept_params`,
-	).map(({ params, swept_params, ...measurement }) => {
-		const swept: Record<string, number> = JSON.parse(swept_params);
-		const values = Object.values(swept);
-		return {
-			...measurement,
-			params: JSON.parse(params),
-			swept,
-			block_size: values.length === 1 ? values[0] : null,
-		};
-	});
+	).map(({ params, swept_params, ...measurement }) => ({
+		...measurement,
+		params: JSON.parse(params),
+		swept: JSON.parse(swept_params),
+	}));
 }
 
 /** The machine as the host's latest run recorded it; undefined with no runs. */

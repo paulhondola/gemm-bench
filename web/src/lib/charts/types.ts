@@ -11,7 +11,7 @@ import {
 	families,
 	familyPeak,
 	kernels,
-	singleBlockSizeKernels,
+	singleValueKernels,
 } from "../derive";
 import { FAMILY_INK, paletteFor } from "../palette";
 
@@ -31,7 +31,8 @@ export interface Filters {
 	precision: string;
 	n: number;
 	kernel: string;
-	blockSize: number;
+	/** The pinned value of each swept knob, by params.name. */
+	knobs: Record<string, number>;
 	/** true renders the chart's relative projection (speedup / ratio). */
 	relative: boolean;
 }
@@ -39,9 +40,9 @@ export interface Filters {
 export interface Ctx {
 	palette: Map<string, string>;
 	family: Map<string, Family>;
-	/** Kernels measured at exactly one block size: the dimension does not vary
-	 *  for them, so a block-size selection must not filter them away. */
-	singleBlockSize: Set<string>;
+	/** Per knob, the kernels measured at only one value of it: the knob does
+	 *  not vary for them, so a pin must not filter them away. */
+	singleKnob: Map<string, Set<string>>;
 	/** Hardware ceilings from data/peaks.csv. Empty draws no ceiling anywhere. */
 	peaks: Peak[];
 }
@@ -52,7 +53,7 @@ export function makeCtx(allRows: Row[], peaks: Peak[] = []): Ctx {
 	return {
 		palette: paletteFor(kernels(allRows), family),
 		family,
-		singleBlockSize: singleBlockSizeKernels(allRows),
+		singleKnob: singleValueKernels(allRows),
 		peaks,
 	};
 }

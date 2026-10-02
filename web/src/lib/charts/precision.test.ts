@@ -9,7 +9,7 @@ const f: Filters = {
 	precision: "f32",
 	n: 64,
 	kernel: "ikj",
-	blockSize: 32,
+	knobs: {},
 	relative: false,
 };
 

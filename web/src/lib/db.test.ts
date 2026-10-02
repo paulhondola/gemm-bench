@@ -63,7 +63,6 @@ test("swept params tell cells apart; other params ride along", () => {
 	const [ikj, packed256] = rows;
 	expect(ikj.params).toEqual({});
 	expect(ikj.swept).toEqual({});
-	expect(ikj.block_size).toBeNull();
 	expect(packed256.swept).toEqual({ depth_block: 256 });
 	expect(packed256.params).toEqual({
 		depth_block: 256,
@@ -72,7 +71,6 @@ test("swept params tell cells apart; other params ride along", () => {
 		register_cols: 12,
 		register_rows: 8,
 	});
-	expect(packed256.block_size).toBe(256);
 });
 
 test("the device is the run's GPU for Metal rows and its CPU otherwise", () => {
