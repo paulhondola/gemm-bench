@@ -85,7 +85,7 @@ export const TABS: Tab[] = [
 	},
 	{
 		id: "cpu",
-		label: "CPU & AMX",
+		label: "CPU & matrix",
 		controls: ["precision", "blockSize"],
 		panels: [
 			{
@@ -150,13 +150,13 @@ export const TABS: Tab[] = [
 		panels: [
 			{
 				title: "GPU kernels vs CPU",
-				note: "End-to-end GPU timings against the best threaded-CPU and AMX results · log–log · dashed lines are hardware peaks",
+				note: "End-to-end GPU timings against the best threaded-CPU and matrix-unit results · log–log · dashed lines are hardware peaks",
 				doc: gpuKernelsVsCpuDoc,
 				spec: gpuKernels,
 			},
 			{
 				title: "GPU ÷ CPU at equal effort",
-				note: "Shaders vs threaded CPU, MPS vs AMX, at each size · above 1.0 the GPU wins",
+				note: "Shaders vs threaded CPU, MPS vs the matrix unit, at each size · above 1.0 the GPU wins",
 				doc: gpuVsCpuAtEqualEffortDoc,
 				spec: gpuEqualEffort,
 			},

@@ -1,5 +1,5 @@
-**What it shows.** Each GPU kernel's throughput at every matrix size, at the selected precision, next to two reference lines: the best multi-threaded CPU result (`parallel CPU`) and the best AMX result at each size, whatever kernel, thread count and block size produced them. Both axes are logarithmic.
+**What it shows.** Each GPU kernel's throughput at every matrix size, at the selected precision, next to two reference lines: the best multi-threaded CPU result (`parallel CPU`) and the best matrix-unit result (`matrix`) at each size, whatever kernel, thread count and block size produced them. Both axes are logarithmic.
 
 **How to read it.** GPU timings are end-to-end — copying the matrices into the GPU's buffers, encoding the work, running it, and copying the result back — the same host-to-host scope as the CPU timings. So where a GPU line rises above a reference line is where handing the work to the GPU starts to pay. The dashed lines are theoretical peaks from `data/peaks.csv`. Hover a point for its % of peak, and on a reference line for the kernel and thread count behind it.
 
-**Caveats.** AMX has no published peak and the integer precisions no sourced one, so they get no ceiling. The GPU peak belongs to every GPU line, so it stays when you hide one of them; the parallel CPU peak hides with its line.
+**Caveats.** The matrix unit has no published peak and the integer precisions no sourced one, so they get no ceiling. The GPU peak belongs to every GPU line, so it stays when you hide one of them; the parallel CPU peak hides with its line.

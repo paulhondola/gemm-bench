@@ -56,7 +56,7 @@ test("a row at a different size does not leak into the pinned size", () => {
 
 test("the i32 group has a GPU bar and no AMX bar", () => {
 	const mixed: Row[] = [
-		row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "amx" }),
+		row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "matrix" }),
 		row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 27 }),
 		row({
 			kernel: "rayon-ikj",
@@ -80,7 +80,7 @@ test("the i32 group has a GPU bar and no AMX bar", () => {
 			.map((b) => b.series)
 			.sort();
 	expect(at("i32")).toEqual(["gpu", "parallel"]);
-	expect(at("f32")).toEqual(["amx", "parallel"]);
+	expect(at("f32")).toEqual(["matrix", "parallel"]);
 });
 
 /** The accuracy chart's trace for one (family, precision). */
@@ -112,7 +112,7 @@ const accuracyRows: Row[] = [
 		precision: "f64",
 		n: 64,
 		gops: 400,
-		backend: "amx",
+		backend: "matrix",
 		mean_rel_error_f64: 3.4e-18,
 	}),
 	row({
@@ -148,7 +148,7 @@ test("one trace per family and precision, in family then float-precision order",
 		uidOf("serial f16"),
 		uidOf("serial f32"),
 		uidOf("parallel f32"),
-		uidOf("amx f64"),
+		uidOf("matrix f64"),
 		uidOf("gpu f16"),
 		uidOf("gpu f32"),
 	]);
@@ -162,7 +162,7 @@ test("each trace is named for its precision and grouped under its family", () =>
 		["serial", "serial", "f16"],
 		["serial", "serial", "f32"],
 		["parallel", "parallel", "f32"],
-		["amx", "amx", "f64"],
+		["matrix", "matrix", "f64"],
 		["gpu", "gpu", "f16"],
 		["gpu", "gpu", "f32"],
 	]);

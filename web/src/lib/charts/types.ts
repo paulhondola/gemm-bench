@@ -126,8 +126,8 @@ const CEILING_LABEL: Record<Family, (cores: number) => string> = {
 	serial: () => "1-core peak",
 	parallel: (cores) => `CPU peak (${cores} P)`,
 	gpu: () => "GPU peak",
-	// familyPeak lists no AMX peak, so this is unreachable until it does.
-	amx: () => "AMX peak",
+	// familyPeak lists no matrix-unit peak, so this is unreachable until it does.
+	matrix: () => "Matrix peak",
 };
 
 /**

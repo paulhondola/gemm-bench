@@ -61,9 +61,9 @@ test("a metal kernel stays gpu even with only single-thread rows", () => {
 test("an amx kernel is its own family, not serial, despite threads=1", () => {
 	expect(
 		families([
-			row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "amx" }),
+			row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "matrix" }),
 		]).get("accelerate-blas"),
-	).toBe("amx");
+	).toBe("matrix");
 });
 
 test("sizesFor narrows to the precision; allSizes does not", () => {
@@ -320,7 +320,7 @@ test("familyPeak: gpu takes the metal row, never a cpu one", () => {
 });
 
 test("familyPeak: amx has no peak, even with cpu and metal rows present", () => {
-	expect(familyPeak(M1_PEAKS, "amx", "Apple M1 Pro", "f32")).toBeUndefined();
+	expect(familyPeak(M1_PEAKS, "matrix", "Apple M1 Pro", "f32")).toBeUndefined();
 });
 
 test("familyPeak: another device gets nothing", () => {

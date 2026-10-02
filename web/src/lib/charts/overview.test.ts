@@ -137,8 +137,8 @@ const acrossFamilies: Row[] = [
 	row({ kernel: "ikj", n: 512, gops: 27 }),
 	row({ kernel: "rayon-ikj", n: 256, threads: 4, gops: 151 }),
 	row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 174 }),
-	row({ kernel: "accelerate-blas", n: 256, gops: 906, backend: "amx" }),
-	row({ kernel: "accelerate-blas", n: 512, gops: 1968, backend: "amx" }),
+	row({ kernel: "accelerate-blas", n: 256, gops: 906, backend: "matrix" }),
+	row({ kernel: "accelerate-blas", n: 512, gops: 1968, backend: "matrix" }),
 	row({ kernel: "metal-tiled", n: 256, gops: 97, backend: "metal" }),
 	row({ kernel: "metal-tiled", n: 512, gops: 268, backend: "metal" }),
 	row({ kernel: "mps", n: 512, gops: 699, backend: "metal" }),
@@ -147,7 +147,7 @@ const acrossFamilies: Row[] = [
 test("the family chart draws one line per family, in legend order and family ink", () => {
 	const spec = throughputByFamily(acrossFamilies, f, makeCtx(acrossFamilies));
 	expect(legendOf(spec)).toEqual({
-		names: ["serial", "parallel", "amx", "gpu"],
+		names: ["serial", "parallel", "matrix", "gpu"],
 		colors: ["#844da2", "#008300", "#3987e5", "#e66767"],
 	});
 });
@@ -225,7 +225,7 @@ test("hover gives each point's share of its own family's ceiling", () => {
 
 test("AMX points carry no percentage", () => {
 	const spec = throughputByFamily(acrossFamilies, f, withPeaks);
-	expect(pointsOf(spec, "amx").map((p) => p.custom[2])).toEqual(["", ""]);
+	expect(pointsOf(spec, "matrix").map((p) => p.custom[2])).toEqual(["", ""]);
 });
 
 test("a family whose rows span two devices loses its ceiling, and only that family", () => {
@@ -249,7 +249,7 @@ test("fastest-per-size cells are filled by family, so every winner has a colour"
 	const spec = fastestPerSize(withUnknown, f, makeCtx(withUnknown));
 	// packed-simd (serial) wins 256, accelerate-blas (amx) wins 512.
 	expect(legendOf(spec)).toEqual({
-		names: ["serial", "amx"],
+		names: ["serial", "matrix"],
 		colors: ["#844da2", "#3987e5"],
 	});
 	expect(pointsOf(spec, "serial")).toEqual([
@@ -302,8 +302,8 @@ const rungs: Row[] = [
 	row({ kernel: "rayon-ikj", n: 256, threads: 8, gops: 100 }),
 	row({ kernel: "rayon-ikj", n: 512, threads: 4, gops: 150 }),
 	row({ kernel: "rayon-ikj", n: 512, threads: 8, gops: 300 }),
-	row({ kernel: "accelerate-blas", n: 256, gops: 1000, backend: "amx" }),
-	row({ kernel: "accelerate-blas", n: 512, gops: 2000, backend: "amx" }),
+	row({ kernel: "accelerate-blas", n: 256, gops: 1000, backend: "matrix" }),
+	row({ kernel: "accelerate-blas", n: 512, gops: 2000, backend: "matrix" }),
 	row({ kernel: "mps", n: 256, gops: 400, backend: "metal" }),
 	row({ kernel: "mps", n: 512, gops: 1000, backend: "metal" }),
 ];
@@ -320,7 +320,7 @@ test("the ladder is one horizontal bar trace, rungs in effort order rather than 
 	expect(bar?.orientation).toBe("h");
 	expect(bar?.name).toBe("ladder");
 	expect(bar?.uid).toBe("ladder");
-	expect(bar?.y).toEqual(["naive-ijk", "serial", "parallel", "amx", "gpu"]);
+	expect(bar?.y).toEqual(["naive-ijk", "serial", "parallel", "matrix", "gpu"]);
 	// The GPU rung is slower than AMX and stays below it.
 	expect(bar?.x).toEqual([2, 40, 300, 2000, 1000]);
 });
@@ -380,7 +380,12 @@ test("the ladder rounds like the headline: 3 figures below 100, thousands separa
 		row({ kernel: "naive-ijk", n: 4096, gops: 0.5241 }),
 		row({ kernel: "ikj", n: 4096, gops: 25.68 }),
 		row({ kernel: "rayon-ikj", n: 4096, threads: 8, gops: 162.4 }),
-		row({ kernel: "accelerate-bnns", n: 4096, gops: 2289.3, backend: "amx" }),
+		row({
+			kernel: "accelerate-bnns",
+			n: 4096,
+			gops: 2289.3,
+			backend: "matrix",
+		}),
 		row({ kernel: "mps", n: 4096, gops: 3436.2, backend: "metal" }),
 	];
 	expect(barOf(headline)?.text).toEqual([
@@ -400,7 +405,7 @@ test("naive-ijk gets the baseline ink, every other rung its family's", () => {
 		BASELINE_INK,
 		FAMILY_INK.serial,
 		FAMILY_INK.parallel,
-		FAMILY_INK.amx,
+		FAMILY_INK.matrix,
 		FAMILY_INK.gpu,
 	]);
 	expect(barOf(rungs)?.textposition).toBe("outside");
@@ -412,15 +417,20 @@ test("naive-ijk is the first rung, never the serial one", () => {
 	expect(labelsOf(onlyNaiveIsSerial)).toEqual([
 		"naive-ijk",
 		"parallel",
-		"amx",
+		"matrix",
 		"gpu",
 	]);
 });
 
 test("a rung with no rows is left out: f64 has no GPU, i32 no AMX", () => {
 	const noGpu = rungs.filter((r) => r.backend !== "metal");
-	expect(labelsOf(noGpu)).toEqual(["naive-ijk", "serial", "parallel", "amx"]);
-	const noAmx = rungs.filter((r) => r.backend !== "amx");
+	expect(labelsOf(noGpu)).toEqual([
+		"naive-ijk",
+		"serial",
+		"parallel",
+		"matrix",
+	]);
+	const noAmx = rungs.filter((r) => r.backend !== "matrix");
 	expect(labelsOf(noAmx)).toEqual(["naive-ijk", "serial", "parallel", "gpu"]);
 	// The multiplier is over the rung that is actually above, not the missing one.
 	expect(barOf(noAmx)?.text?.[3]).toBe("mps · 1,000 GOP/s · ×3.3");
@@ -436,7 +446,7 @@ test("the ladder is a log GOP/s axis over a reversed category axis in rung order
 	expect(layout?.yaxis).toMatchObject({
 		type: "category",
 		categoryorder: "array",
-		categoryarray: ["naive-ijk", "serial", "parallel", "amx", "gpu"],
+		categoryarray: ["naive-ijk", "serial", "parallel", "matrix", "gpu"],
 		autorange: "reversed",
 		fixedrange: true,
 	});

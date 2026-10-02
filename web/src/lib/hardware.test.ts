@@ -40,10 +40,10 @@ test("parallel pairs the widest peak with its best row, E-cores and all", () => 
 
 test("AMX has no peak but still reports its best result", () => {
 	const rows = [
-		row({ kernel: "accelerate-blas", backend: "amx", n: 1024, gops: 1500 }),
+		row({ kernel: "accelerate-blas", backend: "matrix", n: 1024, gops: 1500 }),
 	];
-	const [amx] = only(rows, "amx");
-	expect(amx.engine).toBe("AMX");
+	const [amx] = only(rows, "matrix");
+	expect(amx.engine).toBe("Matrix unit");
 	expect(amx.peak).toBeUndefined();
 	expect(amx.best?.gops).toBe(1500);
 });

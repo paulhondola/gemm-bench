@@ -1,4 +1,4 @@
-A matrix unit beside the CPU cores. Apple doesn't document its instructions, so the supported way to use it is through Apple's Accelerate library, which also decides how many threads to use.
+A matrix unit beside the CPU cores. Apple doesn't document its instructions, so the supported way to use it is through Apple's Accelerate library, which also decides how many threads to use. On M1–M3 this is Apple's AMX; from M4 on, Accelerate drives the same kind of unit as Arm SME, so the dashboard calls the family `matrix`.
 
 ## `accelerate-blas`
 

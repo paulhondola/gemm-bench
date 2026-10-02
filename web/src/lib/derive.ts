@@ -41,7 +41,7 @@ export function formatParams(params: Record<string, number>): string {
 		.join(" ");
 }
 
-export type Family = "serial" | "parallel" | "amx" | "gpu";
+export type Family = "serial" | "parallel" | "matrix" | "gpu";
 
 /**
  * Kernel family, read off the rows rather than the kernel's name. A prefix
@@ -54,11 +54,11 @@ export function families(rows: Row[]): Map<string, Family> {
 		const kernel = String(r.kernel);
 		// Vendor backends manage their own threading and record threads=1,
 		// so their family comes from the backend, not the thread count.
-		if (r.backend === "metal" || r.backend === "amx") {
-			out.set(kernel, r.backend === "metal" ? "gpu" : "amx");
+		if (r.backend === "metal" || r.backend === "matrix") {
+			out.set(kernel, r.backend === "metal" ? "gpu" : "matrix");
 			continue;
 		}
-		if (out.get(kernel) === "gpu" || out.get(kernel) === "amx") continue;
+		if (out.get(kernel) === "gpu" || out.get(kernel) === "matrix") continue;
 		if (Number(r.threads) > 1 || out.get(kernel) === "parallel") {
 			out.set(kernel, "parallel");
 		} else if (!out.has(kernel)) {
@@ -224,7 +224,7 @@ export function bestPerFamily(rows: Row[], family: Map<string, Family>): Row[] {
  * 1-core figure up would overstate the 8-core ceiling. So serial reads the
  * 1-core row and parallel the widest cpu row. A cpu with only a 1-core row
  * gives parallel nothing, since that row is the serial ceiling. Apple
- * publishes no AMX peak, so amx never has one.
+ * publishes no matrix-unit peak, so matrix never has one.
  */
 export function familyPeak(
 	peaks: Peak[],
@@ -251,7 +251,7 @@ export function familyPeak(
 		}
 		case "gpu":
 			return widest("metal");
-		case "amx":
+		case "matrix":
 			return undefined;
 	}
 }

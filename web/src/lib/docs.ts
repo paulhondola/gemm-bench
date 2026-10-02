@@ -1,5 +1,5 @@
-import amx from "../docs/kernels/amx.md?raw";
 import gpu from "../docs/kernels/gpu.md?raw";
+import matrix from "../docs/kernels/matrix.md?raw";
 import parallel from "../docs/kernels/parallel.md?raw";
 import serial from "../docs/kernels/serial.md?raw";
 import type { Family } from "./derive";
@@ -24,6 +24,6 @@ export interface FamilyDoc {
 export const KERNEL_DOCS: FamilyDoc[] = [
 	{ family: "serial", title: "Single-threaded CPU", doc: serial },
 	{ family: "parallel", title: "Multi-threaded CPU", doc: parallel },
-	{ family: "amx", title: "Apple's matrix coprocessor", doc: amx },
+	{ family: "matrix", title: "Matrix unit (Apple AMX, Arm SME)", doc: matrix },
 	{ family: "gpu", title: "Apple GPU (Metal)", doc: gpu },
 ];

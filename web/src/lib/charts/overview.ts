@@ -333,7 +333,7 @@ const RUNGS: { label: string; family: Family | null }[] = [
 	{ label: BASELINE_KERNEL, family: null },
 	{ label: "serial", family: "serial" },
 	{ label: "parallel", family: "parallel" },
-	{ label: "amx", family: "amx" },
+	{ label: "matrix", family: "matrix" },
 	{ label: "gpu", family: "gpu" },
 ];
 

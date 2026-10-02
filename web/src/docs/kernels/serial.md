@@ -2,7 +2,7 @@ One core. `naive-ijk`, `ikj` and `tiled` do the same arithmetic in different ord
 
 ## `naive-ijk`
 
-The textbook triple loop: each output value is a row of A times a column of B. Walking down a column of B jumps a whole row ahead in memory at every step, so almost every read misses the cache. It's the baseline the optimization ladder and the CPU & AMX speedups start from.
+The textbook triple loop: each output value is a row of A times a column of B. Walking down a column of B jumps a whole row ahead in memory at every step, so almost every read misses the cache. It's the baseline the optimization ladder and the CPU & matrix speedups start from.
 
 ```text
 for i in 0..N:

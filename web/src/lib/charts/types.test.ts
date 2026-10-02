@@ -233,7 +233,7 @@ test("each family's ceiling carries its own label and figure", () => {
 
 test("AMX, an empty peak list and no rows have no ceiling", () => {
 	const rows = [row({ kernel: "k", n: 64, gops: 1 })];
-	expect(ceilingOf(rows, "amx", ctx)).toBeUndefined();
+	expect(ceilingOf(rows, "matrix", ctx)).toBeUndefined();
 	expect(ceilingOf(rows, "serial", makeCtx([]))).toBeUndefined();
 	expect(ceilingOf([], "serial", ctx)).toBeUndefined();
 });
