@@ -17,7 +17,7 @@ Run the preset named in `$ARGUMENTS` from the repo root. Any extra flags after t
 
 Rules:
 
-- **Output goes to committed data.** By default a run writes `data/runs/<host>/<timestamp>.csv`. Say so before running, and if the user wants a throwaway run, add `--output /tmp/<preset>.csv`.
+- **Output goes to committed data.** By default a run is added to `data/db/<login>/<machine>.sqlite` (named by `.host`, set once with `just init`). Say so before running, and if the user wants a throwaway run, add `--output /tmp/<preset>.sqlite`.
 - **Threads:** `parallel-scaling` lists thread counts up to 10. Tell the user to adjust `--threads` to the machine's core count (`sysctl -n hw.ncpu`). `static-*` kernels error if `--threads` exceeds the smallest `--sizes`.
 - Never widen a preset to the default full sweep (`naive-ijk` at N=4096 takes minutes) unless the user asks.
 - If the preset name is missing or unknown, list the presets above and stop.
