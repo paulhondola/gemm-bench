@@ -1,4 +1,12 @@
-import { loadPeaks, loadRows, type Peak, type Row } from "./db";
+import peaksCsv from "../../../data/peaks.csv?raw";
+import {
+	type Machine,
+	openDb,
+	type Peak,
+	type Row,
+	readMachine,
+	readRows,
+} from "./db";
 import {
 	defaultBlockSizeFor,
 	defaultParallelKernel,
@@ -6,10 +14,17 @@ import {
 	defaultSize,
 	partitionPlottable,
 } from "./derive";
+import { HOSTS } from "./hostlist";
+import { type Host, pickHost } from "./hosts";
+import { parsePeaks } from "./peaks";
+import { loadSql } from "./sqlite";
 
 export const store = $state({
 	rows: [] as Row[],
 	peaks: [] as Peak[],
+	hosts: HOSTS as Host[],
+	host: undefined as Host | undefined,
+	machine: undefined as Machine | undefined,
 	error: "",
 	loaded: false,
 	precision: "",
@@ -21,24 +36,31 @@ export const store = $state({
 	dropped: 0,
 });
 
-/** Both files are fetched at boot; every derivation downstream is synchronous. */
+/**
+ * Fetches the selected host's database (`?host=`, else the first) and reads
+ * it once; every derivation downstream is synchronous.
+ */
 export async function boot(): Promise<void> {
+	const host = pickHost(HOSTS, location.search);
+	store.host = host;
 	try {
-		// Together, so a missing peaks.json is an error like a missing
-		// results.json: `just data` always writes both.
-		const [all, peaks] = await Promise.all([loadRows(), loadPeaks()]);
-		// One row per measurement: Metal rows carry end-to-end timings, with
-		// the GPU-only median as gpu_ms.
-		const { rows, dropped } = partitionPlottable(all);
-		store.rows = rows;
-		store.peaks = peaks;
-		store.dropped = dropped;
-		store.precision = defaultPrecision(rows);
-		store.n = defaultSize(rows, store.precision);
-		store.kernel = defaultParallelKernel(rows, store.precision);
-		store.blockSize = defaultBlockSizeFor(rows, store.precision, store.n);
+		store.peaks = parsePeaks(peaksCsv);
+		if (host) {
+			const [SQL, response] = await Promise.all([loadSql(), fetch(host.url)]);
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+			const db = openDb(SQL, new Uint8Array(await response.arrayBuffer()));
+			const { rows, dropped } = partitionPlottable(readRows(db));
+			store.machine = readMachine(db);
+			db.close();
+			store.rows = rows;
+			store.dropped = dropped;
+			store.precision = defaultPrecision(rows);
+			store.n = defaultSize(rows, store.precision);
+			store.kernel = defaultParallelKernel(rows, store.precision);
+			store.blockSize = defaultBlockSizeFor(rows, store.precision, store.n);
+		}
 		store.loaded = true;
 	} catch (e) {
-		store.error = String(e);
+		store.error = host ? `${host.id}: ${e}` : String(e);
 	}
 }

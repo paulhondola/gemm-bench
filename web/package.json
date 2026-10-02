@@ -19,6 +19,7 @@
 		"@tsconfig/svelte": "^5.0.8",
 		"@types/bun": "^1.4.2",
 		"@types/node": "^24.13.3",
+		"@types/sql.js": "^1.4.11",
 		"svelte": "^5.57.0",
 		"svelte-check": "^4.7.6",
 		"typescript": "~6.0.2",
@@ -26,6 +27,7 @@
 	},
 	"dependencies": {
 		"marked": "^18.0.14",
-		"plotly.js-dist-min": "4.1.1"
+		"plotly.js-dist-min": "4.1.1",
+		"sql.js": "1.14.2"
 	}
 }

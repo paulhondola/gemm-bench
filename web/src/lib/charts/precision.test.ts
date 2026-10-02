@@ -208,7 +208,7 @@ test("exact, non-finite and integer rows are left out", () => {
 			gops: 50,
 			mean_rel_error_f64: 0,
 		}),
-		// build.sql writes a non-finite error as null.
+		// SQLite stores a NaN error as NULL.
 		row({ kernel: "tiled", n: 64, gops: 20, mean_rel_error_f64: null }),
 		// Integers are exact in practice; the precision filter, not the error
 		// filter, is what keeps this one out.
@@ -234,6 +234,20 @@ test("exact, non-finite and integer rows are left out", () => {
 	]);
 	// A precision left with no point gets no empty legend entry.
 	expect(accuracyTrace(spec, "parallel", "f64")).toBeUndefined();
+});
+
+test("an infinite error (a kernel that produced NaN) is left out of the accuracy chart", () => {
+	const rows = [
+		row({ kernel: "ikj", n: 512, gops: 20, mean_rel_error_f64: 1e-6 }),
+		row({
+			kernel: "tiled",
+			n: 512,
+			gops: 25,
+			mean_rel_error_f64: Number.POSITIVE_INFINITY,
+		}),
+	];
+	const spec = accuracyVsThroughput(rows, { ...f, n: 512 }, makeCtx(rows));
+	expect(plotted(spec).every((p) => Number.isFinite(Number(p.x)))).toBe(true);
 });
 
 test("f.n pins the size", () => {

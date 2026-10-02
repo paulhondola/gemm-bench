@@ -6,6 +6,10 @@ export default defineConfig({
 	// GitHub Pages serves this project site under /gemm-bench/, not the domain root.
 	base: "/gemm-bench/",
 	plugins: [svelte()],
+	server: {
+		// data/db/**/*.sqlite and data/peaks.csv live outside web/.
+		fs: { allow: [".."] },
+	},
 	build: {
 		// Plotly's bundle is ~5 MB minified. The size is accepted, so don't
 		// warn about it on every build.

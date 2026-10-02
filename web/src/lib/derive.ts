@@ -6,12 +6,10 @@ export function precisions(rows: Row[]): string[] {
 }
 
 /**
- * Contributor CSVs are untrusted: build.sql only rejects NULLs, so zero and
- * negative values reach results.json, and NaN and Infinity reach it as null
- * (JSON has neither). A single non-positive n or gops poisons a log scale's
- * whole domain, blanking every series on the chart rather than just the bad
- * row — so unusable rows are dropped at the door. Number(null) is 0, so only
- * a real number counts.
+ * Host databases are contributed, and the schema allows +Inf (a kernel whose
+ * timing rounded to zero). A single non-finite or non-positive n or gops
+ * poisons a log scale's whole domain, blanking every series on the chart
+ * rather than just the bad row, so unusable rows are dropped at the door.
  */
 export function isPlottable(row: Row): boolean {
 	const finite = (v: unknown): v is number =>
@@ -34,6 +32,13 @@ export function partitionPlottable(rows: Row[]): {
 } {
 	const usable = rows.filter(isPlottable);
 	return { rows: usable, dropped: rows.length - usable.length };
+}
+
+/** A row's params for the data view: `depth_block=256 register_cols=12`. */
+export function formatParams(params: Record<string, number>): string {
+	return Object.entries(params)
+		.map(([name, value]) => `${name}=${value}`)
+		.join(" ");
 }
 
 export type Family = "serial" | "parallel" | "amx" | "gpu";

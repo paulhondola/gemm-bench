@@ -3,6 +3,7 @@ import About from "./lib/About.svelte";
 import Chart from "./lib/Chart.svelte";
 import { rowsForTab, visibleTabs } from "./lib/charts/index";
 import { makeCtx } from "./lib/charts/types";
+import type { Row } from "./lib/db";
 import {
 	allSizes,
 	blockSizes,
@@ -11,6 +12,7 @@ import {
 	defaultParallelKernel,
 	defaultSize,
 	families,
+	formatParams,
 	kernels,
 	sizesFor,
 } from "./lib/derive";
@@ -34,6 +36,9 @@ const tab = $derived(tabs.find((t) => t.id === store.tab) ?? tabs[0]);
 const scoped = $derived(
 	tab ? rowsForTab(tab, store.rows, store.precision, store.blockSize, ctx) : [],
 );
+const columns = $derived(
+	scoped.length ? (Object.keys(scoped[0]) as (keyof Row)[]) : [],
+);
 const available = $derived(sizesFor(store.rows, store.precision));
 const availableBlockSizes = $derived(
 	blockSizesFor(store.rows, store.precision, store.n),
@@ -44,6 +49,14 @@ const availableBlockSizes = $derived(
 const parallelKernelList = $derived(
 	kernels(scoped).filter((k) => ctx.family.get(k) === "parallel"),
 );
+
+/** One data-view cell: params as name=value pairs, floats to 3 places. */
+function cell(value: Row[keyof Row]): string {
+	if (value !== null && typeof value === "object") return formatParams(value);
+	if (typeof value === "number" && !Number.isInteger(value))
+		return value.toFixed(3);
+	return String(value ?? "");
+}
 
 function pickPrecision(p: string) {
 	store.precision = p;
@@ -101,8 +114,13 @@ function selectTab(id: string) {
 		<p class="error">{store.error}</p>
 	{:else if !store.loaded}
 		<p class="muted">Loading results…</p>
+	{:else if !store.host}
+		<p class="muted">
+			No host databases yet. Run <code>just init &lt;github-login&gt;/&lt;machine&gt;</code> once,
+			then <code>just bench</code>.
+		</p>
 	{:else if !tab}
-		<p class="muted">No results yet. Run <code>just bench</code> and <code>just data</code>.</p>
+		<p class="muted">{store.host.id} has no measurements to chart yet.</p>
 	{:else}
 		<nav>
 			{#each tabs as t}
@@ -190,19 +208,13 @@ function selectTab(id: string) {
 					<table>
 						<thead>
 							<tr>
-								{#each scoped.length ? Object.keys(scoped[0]) : [] as c}<th>{c}</th>{/each}
+								{#each columns as c}<th>{c}</th>{/each}
 							</tr>
 						</thead>
 						<tbody>
 							{#each scoped as row}
 								<tr>
-									{#each Object.keys(scoped[0]) as c}
-										<td>
-											{typeof row[c] === "number" && !Number.isInteger(row[c])
-												? (row[c] as number).toFixed(3)
-												: row[c]}
-										</td>
-									{/each}
+									{#each columns as c}<td>{cell(row[c])}</td>{/each}
 								</tr>
 							{/each}
 						</tbody>

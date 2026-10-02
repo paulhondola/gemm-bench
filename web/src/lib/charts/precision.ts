@@ -99,7 +99,10 @@ export const accuracyVsThroughput: ChartSpec = (rows, f, ctx) => {
 			(r) => Number(r.n) === f.n && FLOAT_SYMBOL.has(String(r.precision)),
 		),
 	).filter(
-		(r) => typeof r.mean_rel_error_f64 === "number" && r.mean_rel_error_f64 > 0,
+		(r) =>
+			r.mean_rel_error_f64 !== null &&
+			Number.isFinite(r.mean_rel_error_f64) &&
+			r.mean_rel_error_f64 > 0,
 	);
 	if (points.length === 0) return null;
 
