@@ -22,7 +22,7 @@ const devices = $derived.by(() => {
 </script>
 
 <!-- Every string here is interpolated as text: device and kernel names come
-     from contributed CSVs, and peaks' sources are data too. -->
+     from host databases, and peaks' sources are data too. -->
 {#each devices as d (d.device)}
 	{#if devices.length > 1}<h3>{d.device}</h3>{/if}
 	<div class="scroll">

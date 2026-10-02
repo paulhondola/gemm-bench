@@ -24,8 +24,8 @@ import {
  * the matrix unit), hand-written against hand-written (the shaders against the parallel
  * CPU kernels). Nothing in the data marks mps as a vendor library, since all
  * three GPU kernels are backend "metal", so like BASELINE_KERNEL this is keyed
- * by name. A Map, not an object literal: kernel names come from contributed
- * CSVs, and "constructor" must not resolve to a prototype member.
+ * by name. A Map, not an object literal: kernel names come from host
+ * databases, and "constructor" must not resolve to a prototype member.
  */
 export const COUNTERPART = new Map<string, Family>([["mps", "matrix"]]);
 const counterpartOf = (kernel: string): Family =>

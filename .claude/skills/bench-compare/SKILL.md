@@ -9,7 +9,7 @@ Compare two runs with the `sqlite3` CLI. `$ARGUMENTS` is one host database (comp
 Cells match on `(kernel, precision, n, threads, swept params)`. `median_ms` and `stddev_ms` are per-cell, so noise is `stddev_ms / median_ms`.
 
 ```sh
-sqlite3 -markdown BEFORE "
+sqlite3 -readonly -markdown BEFORE "
 ATTACH 'AFTER' AS b;   -- for one database, use AFTER = BEFORE and pick the runs below
 WITH cell AS (
   SELECT r.started_at, m.kernel, m.precision, m.n, m.threads, m.gops, m.median_ms, m.stddev_ms,

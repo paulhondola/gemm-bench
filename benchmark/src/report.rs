@@ -142,8 +142,8 @@ pub(crate) fn print_results_table(records: &[BenchmarkRecord]) {
     println!("{}", render_results_table(records));
 }
 
-/// Presentation-only view: benchmark files retain the full precision values
-/// in `BenchmarkRecord`, while the terminal stays compact and easy to scan.
+/// Presentation-only view: the database keeps the full-precision values of
+/// `BenchmarkRecord`, while the terminal stays compact and easy to scan.
 #[derive(Tabled)]
 struct TerminalBenchmarkRecord<'a> {
     kernel: &'a str,

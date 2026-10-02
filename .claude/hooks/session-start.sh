@@ -21,8 +21,6 @@ latest_tag() {
 
 BIN="$HOME/.local/bin"
 mkdir -p "$BIN"
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
 
 tag=$(latest_tag casey/just)
 if [[ "$("$BIN/just" --version 2>/dev/null)" != "just $tag" ]]; then

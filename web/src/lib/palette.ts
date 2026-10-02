@@ -82,7 +82,7 @@ type Group = "host" | "gpu";
  * the AMX and parallel references (dark, #15181b):
  * worst adjacent CVD ΔE 19.2, normal-vision 22.5 over all five; 19.5 / 22.5
  * for the three kernels alone; all ≥ 3:1. Maps, not object literals: kernel
- * names come from contributed CSVs, and "constructor" must not resolve.
+ * names come from host databases, and "constructor" must not resolve.
  */
 const SLOT_OF: Record<Group, Map<string, number>> = {
 	host: new Map([

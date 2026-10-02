@@ -89,9 +89,10 @@ const FLOAT_SYMBOL = new Map<string, "circle" | "square" | "diamond">([
  *
  * A log error axis can't place a result that equals the reference (error 0:
  * every integer kernel, and every f64 CPU kernel, which adds in the
- * reference's order) or a non-finite one (null), so those are left out. The
- * panel note says so. The precision pill group is inert here, as on the panel
- * above; `f.n` pins the size.
+ * reference's order) or a non-finite one (NULL, a NaN error, or +Inf, where
+ * the kernel produced NaN), so those are left out. The panel note says so.
+ * The precision pill group is inert here, as on the panel above; `f.n` pins
+ * the size.
  */
 export const accuracyVsThroughput: ChartSpec = (rows, f, ctx) => {
 	const points = bestPerKernel(
