@@ -34,6 +34,7 @@ CREATE TABLE core_tiers (
 ) STRICT, WITHOUT ROWID;
 
 -- One row per distinct cache configuration. tier NULL = shared across tiers.
+-- shared_by: logical CPUs per instance
 CREATE TABLE caches (
   run_id     INTEGER NOT NULL REFERENCES runs ON DELETE CASCADE,
   tier       INTEGER,
@@ -41,12 +42,13 @@ CREATE TABLE caches (
   kind       TEXT    NOT NULL CHECK (kind IN ('data', 'instruction', 'unified')),
   size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
   line_bytes INTEGER CHECK (line_bytes > 0),
-  shared_by  INTEGER NOT NULL CHECK (shared_by > 0),   -- logical CPUs per instance
+  shared_by  INTEGER NOT NULL CHECK (shared_by > 0),
   instances  INTEGER NOT NULL CHECK (instances > 0),
   FOREIGN KEY (run_id, tier) REFERENCES core_tiers ON DELETE CASCADE
 ) STRICT;
 CREATE UNIQUE INDEX caches_unique ON caches (run_id, coalesce(tier, -1), level, kind, size_bytes, shared_by);
 
+-- mean_rel_error_f64: NULL = NaN, +Inf = kernel produced NaN
 CREATE TABLE measurements (
   measurement_id     INTEGER PRIMARY KEY,
   run_id             INTEGER NOT NULL REFERENCES runs ON DELETE CASCADE,
@@ -56,7 +58,7 @@ CREATE TABLE measurements (
   n                  INTEGER NOT NULL CHECK (n > 0),
   threads            INTEGER NOT NULL CHECK (threads > 0),
   gops               REAL    NOT NULL CHECK (gops > 0),
-  mean_rel_error_f64 REAL    CHECK (mean_rel_error_f64 >= 0),  -- NULL = NaN, +Inf = kernel produced NaN
+  mean_rel_error_f64 REAL    CHECK (mean_rel_error_f64 >= 0),
   median_ms          REAL    NOT NULL CHECK (median_ms >= 0),
   min_ms             REAL    NOT NULL CHECK (min_ms >= 0 AND min_ms <= median_ms),
   stddev_ms          REAL    NOT NULL CHECK (stddev_ms >= 0),

@@ -323,6 +323,16 @@ mod tests {
         assert_eq!(pragma("application_id"), APPLICATION_ID);
         assert_eq!(pragma("user_version"), SCHEMA_VERSION);
         assert_eq!(count(&db, "runs"), 0);
+        // SQLite stores a CREATE's text, comments included, and validate
+        // compares it byte for byte: a comment there could never be edited.
+        let commented: i64 = db
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE sql LIKE '%--%'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(commented, 0, "schema.sql comments belong above each CREATE");
     }
 
     #[test]
