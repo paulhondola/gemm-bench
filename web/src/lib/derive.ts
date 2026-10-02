@@ -94,9 +94,19 @@ export const KNOB_LABEL: Record<string, string> = {
 
 export const knobLabel = (name: string): string => KNOB_LABEL[name] ?? name;
 
-/** Every swept knob in the rows, once each, sorted: one pill group per knob. */
+/**
+ * Every swept knob in the rows, once each: one pill group per knob. Known
+ * knobs come in KNOB_LABEL order, any other after them, alphabetically.
+ */
 export function knobNames(rows: Row[]): string[] {
-	return [...new Set(rows.flatMap((r) => Object.keys(r.swept)))].sort();
+	const known = Object.keys(KNOB_LABEL);
+	const rank = (name: string) => {
+		const i = known.indexOf(name);
+		return i < 0 ? known.length : i;
+	};
+	return [...new Set(rows.flatMap((r) => Object.keys(r.swept)))].sort(
+		(a, b) => rank(a) - rank(b) || a.localeCompare(b),
+	);
 }
 
 /** One knob's values, once each, sorted. */

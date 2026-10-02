@@ -213,8 +213,22 @@ const knobRows: Row[] = [
 	row({ kernel: "ikj", n: 64, gops: 5 }),
 ];
 
-test("knobNames lists each swept knob once, sorted", () => {
-	expect(knobNames(knobRows)).toEqual(["depth_block", "tile_size"]);
+test("knobNames lists each swept knob once, tile size before depth block", () => {
+	expect(knobNames(knobRows)).toEqual(["tile_size", "depth_block"]);
+});
+
+test("knobNames puts a knob it has no label for after the known ones, alphabetically", () => {
+	const unknown: Row[] = [
+		row({ kernel: "x", n: 64, swept: { zeta: 1 } }),
+		row({ kernel: "y", n: 64, swept: { alpha: 1, depth_block: 256 } }),
+		row({ kernel: "tiled", n: 64, swept: { tile_size: 32 } }),
+	];
+	expect(knobNames(unknown)).toEqual([
+		"tile_size",
+		"depth_block",
+		"alpha",
+		"zeta",
+	]);
 });
 
 test("knobValues lists one knob's values once, sorted", () => {

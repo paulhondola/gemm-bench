@@ -157,6 +157,7 @@ function selectTab(id: string) {
 						<PickerGroup
 							label={knobLabel(name)}
 							items={knobValues(store.rows, name)}
+							format={(v) => `${knobLabel(name).toLowerCase()} ${v}`}
 							selected={store.knobs[name] ?? 0}
 							disabled={(v) => !here.includes(v)}
 							title={(v) =>
