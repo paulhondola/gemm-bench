@@ -37,6 +37,7 @@ git clone https://github.com/paulhondola/gemm-bench.git
 cd gemm-bench
 just build                # install and build all dependencies
 just test                 # run the benchmark crate's test suite
+just init octocat/m1pro   # once: names your database (<github-login>/<machine>)
 just bench --sizes 256,512 --kernel ikj,rayon-ikj --precision f32
 just dev                  # start the dashboard dev server
 ```
