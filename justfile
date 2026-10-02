@@ -8,6 +8,18 @@ bench *args='':
 init id:
     printf '%s\n' '{{id}}' > .host
 
+# Checks every committed host database the way CI does.
+validate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    shopt -s nullglob
+    dbs=(data/db/*/*.sqlite)
+    if (( ${#dbs[@]} )); then
+        cargo run --quiet --manifest-path benchmark/Cargo.toml -- validate "${dbs[@]}"
+    else
+        echo "no host databases in data/db"
+    fi
+
 # Validates data/runs/**/*.csv and data/peaks.csv and writes the JSON files the dashboard loads: results.json from the runs, peaks.json from the peaks.
 data:
     duckdb -bail < data/build.sql

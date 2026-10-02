@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The ownership check diffs the PR against its base branch.
+          fetch-depth: 0
 
       - name: Install Rust nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -31,6 +34,31 @@ jobs:
 
       - name: Run Tests
         run: cargo test --manifest-path benchmark/Cargo.toml
+
+      - name: Validate Host Databases
+        run: |
+          shopt -s nullglob
+          dbs=(data/db/*/*.sqlite)
+          if (( ${#dbs[@]} )); then
+            cargo run --quiet --manifest-path benchmark/Cargo.toml -- validate "${dbs[@]}"
+          fi
+
+      # A contributed database is binary, so review can't see what changed:
+      # a PR may only touch data/db/<its author's login>/.
+      - name: Host Databases Belong to the PR Author
+        if: github.event_name == 'pull_request'
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          owner="data/db/$(printf %s "$AUTHOR" | tr '[:upper:]' '[:lower:]')/"
+          # --no-renames shows a move out of someone else's folder as that folder's deletion.
+          foreign=$(git diff --name-only --no-renames "origin/$BASE...HEAD" -- data/db | grep -v "^$owner" || true)
+          if [ -n "$foreign" ]; then
+            echo "A pull request may only change $owner. It also changes:"
+            echo "$foreign"
+            exit 1
+          fi
 
   web:
     name: Web (Data, Lint, Typecheck, Build)
