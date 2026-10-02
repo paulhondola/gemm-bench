@@ -184,6 +184,14 @@ impl Cli {
         let machine = Machine::capture();
         let output_path = match self.output {
             Some(path) => path,
+            None if cfg!(debug_assertions) => {
+                return Err(
+                    "a debug build's timings aren't comparable, so it does not write \
+                     the host database: use `just bench` (or `cargo run --release`), or pass \
+                     --output for a throwaway file"
+                        .into(),
+                );
+            }
             None => host::db_path(&host::read_host_file(Path::new(host::HOST_FILE))?),
         };
         let db = db::open_for_run(&output_path, &context.timestamp)?;
@@ -582,6 +590,20 @@ mod tests {
         drop(plan);
         assert!(output.is_file());
         fs::remove_dir_all(root).expect("remove test directories");
+    }
+
+    /// Tests run in debug, so without --output the plan is always refused,
+    /// whatever `.host` holds.
+    #[test]
+    fn a_debug_build_does_not_write_the_host_db() {
+        let error = Cli::try_parse_from(["gemm-bench", "--sizes", "8"])
+            .expect("arguments should parse")
+            .into_plan()
+            .expect_err("a debug build must not write the host DB");
+        assert!(
+            error.contains("debug build") && error.contains("--output"),
+            "{error}"
+        );
     }
 
     #[test]
