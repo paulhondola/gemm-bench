@@ -10,13 +10,17 @@ mod kernel;
 mod machine;
 mod plan;
 mod report;
+mod validate;
 
 use clap::{CommandFactory, Parser};
 
-use crate::cli::Cli;
+use crate::cli::{Cli, Command};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    if let Some(Command::Validate { dbs }) = &cli.command {
+        return validate::validate_all(dbs).map_err(Into::into);
+    }
     if cli.is_unpinned() {
         Cli::command().print_help()?;
         return Ok(());

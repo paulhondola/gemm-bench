@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::config::ConfigFile;
 use crate::context;
@@ -26,8 +26,15 @@ Examples:
 Presets in configs/: default, quick, precisions, knobs.";
 
 #[derive(Debug, Parser)]
-#[command(about = "Benchmark safe, row-major GEMM kernels", after_help = AFTER_HELP)]
+#[command(
+    about = "Benchmark safe, row-major GEMM kernels",
+    after_help = AFTER_HELP,
+    args_conflicts_with_subcommands = true
+)]
 pub(crate) struct Cli {
+    #[command(subcommand)]
+    pub(crate) command: Option<Command>,
+
     /// Matrix dimensions, as a comma-delimited list. Omit to sweep 64 through 4096.
     #[arg(long, value_delimiter = ',')]
     sizes: Vec<usize>,
@@ -76,11 +83,24 @@ pub(crate) struct Cli {
     config: Option<PathBuf>,
 }
 
+/// What the CLI does besides running a benchmark.
+#[derive(Debug, Subcommand)]
+pub(crate) enum Command {
+    /// Check host databases the way CI does before they merge: path, size,
+    /// schema, integrity, and every rule that spans rows.
+    Validate {
+        /// Database files, e.g. data/db/*/*.sqlite.
+        #[arg(required = true)]
+        dbs: Vec<PathBuf>,
+    },
+}
+
 impl Cli {
     /// True when nothing narrows the sweep and `--sweep` wasn't given; `main`
     /// shows the help instead of starting an hours-long run.
     pub(crate) fn is_unpinned(&self) -> bool {
-        !self.sweep
+        self.command.is_none()
+            && !self.sweep
             && self.config.is_none()
             && self.sizes.is_empty()
             && self.threads.is_empty()
@@ -880,5 +900,15 @@ mod tests {
         let cli = Cli::try_parse_from(["gemm-bench", "--config", "configs/quick.toml"])
             .expect("arguments should parse");
         assert!(!cli.is_unpinned());
+    }
+
+    #[test]
+    fn validate_takes_database_paths_and_needs_one() {
+        let cli = Cli::try_parse_from(["gemm-bench", "validate", "a.sqlite", "b.sqlite"])
+            .expect("parses");
+        assert!(
+            matches!(cli.command, Some(super::Command::Validate { ref dbs }) if dbs.len() == 2)
+        );
+        assert!(Cli::try_parse_from(["gemm-bench", "validate"]).is_err());
     }
 }

@@ -268,6 +268,13 @@ fn measure<T: Element>(
                 params,
             )
         }
+        // `value(skip)` keeps these out of every plan off macOS.
+        #[cfg(not(target_os = "macos"))]
+        KernelChoice::AccelerateBlas
+        | KernelChoice::AccelerateBnns
+        | KernelChoice::Mps
+        | KernelChoice::MetalNaive
+        | KernelChoice::MetalTiled => unreachable!("{} runs only on macOS", choice.label()),
     })
 }
 
@@ -428,19 +435,22 @@ fn tolerance<T: Element>(n: usize) -> f64 {
 mod tests {
     use std::time::Duration;
 
-    use clap::Parser;
+    use clap::{Parser, ValueEnum};
     use gemm_bench::Matrix;
 
     use gemm_bench::{
-        GemmKernel,
-        kernels::{IkjGemm, Param},
+        Element, GemmKernel,
+        kernels::{IkjGemm, Param, Source},
     };
 
     use super::{
         BenchmarkRecord, benchmark_inputs, f64_reference, max_relative_error, mean_relative_error,
         measure, run, summarize, tolerance,
     };
-    use crate::{cli::Cli, kernel::KernelChoice};
+    use crate::{
+        cli::Cli,
+        kernel::{KernelChoice, Precision},
+    };
 
     fn ms(values: &[u64]) -> Vec<Duration> {
         values.iter().map(|&v| Duration::from_millis(v)).collect()
@@ -659,5 +669,58 @@ mod tests {
         let expected = 2.0 * 8f64.powi(3) / (record.median_ms / 1_000.0) / 1e9;
         assert!((record.gops - expected).abs() <= 1e-9 * expected);
         assert!(record.setup_ms > 0.0);
+    }
+
+    /// The params one real measurement of `kernel` reports, at 2 threads and
+    /// its knob's smallest default value.
+    fn params_at(kernel: KernelChoice, precision: Precision, n: usize) -> Vec<Param> {
+        fn at<T: Element>(kernel: KernelChoice, n: usize) -> Vec<Param> {
+            let (lhs, rhs) = benchmark_inputs::<T>(n);
+            let mut output = Matrix::zeros(n, n);
+            let knob = kernel.knob().map(|knob| knob.defaults()[0]);
+            measure(kernel, 2, knob, 1, &lhs, &rhs, &mut output)
+                .expect("the kernel should run")
+                .params
+        }
+        match precision {
+            Precision::F16 => at::<f16>(kernel, n),
+            Precision::F32 => at::<f32>(kernel, n),
+            Precision::F64 => at::<f64>(kernel, n),
+            Precision::I32 => at::<i32>(kernel, n),
+            Precision::I64 => at::<i64>(kernel, n),
+        }
+    }
+
+    /// `validate` trusts `declared_params` for DBs it never saw being written,
+    /// so every kernel must report exactly what it declares.
+    #[test]
+    fn every_kernel_records_exactly_the_params_it_declares() {
+        for &kernel in KernelChoice::value_variants() {
+            #[cfg(target_os = "macos")]
+            if kernel == KernelChoice::AccelerateBnns
+                && gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none()
+            {
+                continue; // needs macOS 26
+            }
+            for &precision in Precision::value_variants() {
+                if !kernel.supports(precision) {
+                    continue;
+                }
+                for n in [8, 33] {
+                    let mut recorded: Vec<(&str, Source)> = params_at(kernel, precision, n)
+                        .iter()
+                        .map(|p| (p.name, p.source))
+                        .collect();
+                    recorded.sort_unstable_by_key(|&(name, _)| name);
+                    assert_eq!(
+                        recorded,
+                        kernel.declared_params(),
+                        "{} at {} with n = {n}",
+                        kernel.label(),
+                        precision.label()
+                    );
+                }
+            }
+        }
     }
 }

@@ -48,6 +48,22 @@ pub(crate) fn db_path(host: &str) -> PathBuf {
     Path::new("data/db").join(format!("{host}.sqlite"))
 }
 
+/// The host a DB path names, if it ends in `data/db/<login>/<machine>.sqlite`.
+pub(crate) fn host_of_db_path(path: &Path) -> Option<String> {
+    let mut parts = path
+        .components()
+        .rev()
+        .map(|part| part.as_os_str().to_str());
+    let (file, login, db, data) = (
+        parts.next()??,
+        parts.next()??,
+        parts.next()??,
+        parts.next()??,
+    );
+    let id = format!("{login}/{}", file.strip_suffix(".sqlite")?);
+    (db == "db" && data == "data" && is_host_id(&id)).then_some(id)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -55,7 +71,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use super::{db_path, is_host_id, read_host_file};
+    use super::{db_path, host_of_db_path, is_host_id, read_host_file};
 
     #[test]
     fn a_host_id_is_a_github_login_and_a_machine_name() {
@@ -108,5 +124,25 @@ mod tests {
             db_path("octocat/m1pro"),
             PathBuf::from("data/db/octocat/m1pro.sqlite")
         );
+    }
+
+    #[test]
+    fn a_committed_db_path_names_its_host() {
+        assert_eq!(
+            host_of_db_path(Path::new("data/db/octocat/m1pro.sqlite")).as_deref(),
+            Some("octocat/m1pro")
+        );
+        assert_eq!(
+            host_of_db_path(Path::new("/repo/data/db/octocat/m1pro.sqlite")).as_deref(),
+            Some("octocat/m1pro")
+        );
+        for path in [
+            "data/db/m1pro.sqlite",
+            "data/db/octocat/m1pro.db",
+            "data/x/octocat/m1pro.sqlite",
+            "data/db/Octo/m1.sqlite",
+        ] {
+            assert_eq!(host_of_db_path(Path::new(path)), None, "{path}");
+        }
     }
 }
