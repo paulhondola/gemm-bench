@@ -38,7 +38,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         plan.repetitions,
         &plan.machine,
         &records,
-    )?;
+    )
+    .map_err(|error| {
+        format!(
+            "cannot write the run to '{}': {error}. Nothing was saved: the results table above is the only copy of this run",
+            plan.output_path.display()
+        )
+    })?;
     eprintln!(
         "Wrote {} measurements to {}",
         records.len(),
