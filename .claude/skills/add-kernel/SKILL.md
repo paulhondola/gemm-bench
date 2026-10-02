@@ -20,6 +20,8 @@ Re-export from the family `mod.rs`, then from `kernels/mod.rs` (`pub use ...`).
 
 Add a `KernelChoice` variant and its row in `KernelChoice::info()`: the `label` (the `measurements.kernel` value and dashboard name, kebab-case), plus only the fields that differ from `KernelInfo::serial`: `workers` if it takes `--threads`, `knob` if it sweeps one (`Knob::TileSize` for `--tile-size`, `Knob::DepthBlock` for `--depth-block`), `derived` and `fixed` (the names of its other params, as `params` reports them), `row_per_worker` if every worker needs at least one row, `precisions` if it can't run all five. The CLI, the sweep, the skip notices and `gemm-bench validate` all read that row: `validate` rejects a database whose measurements don't record exactly the declared params.
 
+A committed host DB freezes its kernels' rows (label, backend, precisions, workers, declared params and sources): change an existing kernel's row only together with a schema migration. A new strategy, such as BLIS MC/NC blocking for `packed`, ships under a new kernel label.
+
 ## 3. Wire the harness (`benchmark/src/benchmark.rs`)
 
 Add the import and a one-line `measure` arm: `sample(&MyGemm::new(..)?, setup_start, io)`. `sample` runs the untimed warm-up and the timed repetitions; build any pool or setup in the arm, before it, so it is timed as `setup_ms`. Rayon-style kernels go through `InPool::new(threads, kernel)?`, which keeps `pool.install` inside each timed run.
