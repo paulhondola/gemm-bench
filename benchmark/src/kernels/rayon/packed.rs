@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 
-use crate::kernels::packed::{MR, multiply_strip, pack_a, pack_b};
-use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::kernels::packed::{MR, multiply_strip, pack_a, pack_b, params as packed_params};
+use crate::kernels::{GemmKernel, Param, assert_gemm_dimensions};
 use crate::{Element, Matrix};
 
 /// `packed` with Rayon work stealing over its 8-row strips of C. Each k-block's
@@ -41,5 +41,11 @@ impl<T: Element> GemmKernel<T> for RayonPackedGemm {
                     multiply_strip(packed_a, &packed_b, n, c_rows);
                 });
         }
+    }
+
+    fn params(&self, n: usize) -> Vec<Param> {
+        let mut params = packed_params::<T>(self.block_size, n);
+        params.push(Param::derived("row_strips", n.div_ceil(MR)));
+        params
     }
 }

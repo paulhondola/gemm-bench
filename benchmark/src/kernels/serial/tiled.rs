@@ -1,4 +1,4 @@
-use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, Param, assert_gemm_dimensions};
 use crate::{Element, Matrix};
 
 /// Sequential cache-blocked GEMM. A block size of 64 is a practical default,
@@ -43,5 +43,9 @@ impl<T: Element> GemmKernel<T> for TiledGemm {
                 }
             }
         }
+    }
+
+    fn params(&self, _n: usize) -> Vec<Param> {
+        vec![Param::swept("tile_size", self.block_size)]
     }
 }
