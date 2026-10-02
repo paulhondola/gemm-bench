@@ -53,7 +53,8 @@ jobs:
         run: |
           owner="data/db/$(printf %s "$AUTHOR" | tr '[:upper:]' '[:lower:]')/"
           # --no-renames shows a move out of someone else's folder as that folder's deletion.
-          foreign=$(git diff --name-only --no-renames "origin/$BASE...HEAD" -- data/db | grep -v "^$owner" || true)
+          changed=$(git diff --name-only --no-renames "origin/$BASE...HEAD" -- data/db)
+          foreign=$(printf '%s\n' "$changed" | grep -v "^$owner" || true)
           if [ -n "$foreign" ]; then
             echo "A pull request may only change $owner. It also changes:"
             echo "$foreign"
