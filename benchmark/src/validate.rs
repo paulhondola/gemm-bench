@@ -1,15 +1,25 @@
 //! `gemm-bench validate`: the gate every contributed database passes before
-//! it merges. The schema's CHECKs bind only files our DDL created, so this
-//! re-derives every guarantee from the file itself, and adds the rules that
-//! span rows, which no CHECK can express.
+//! it merges. A contributed file is untrusted, and the schema's CHECKs bind
+//! only a file our DDL created, so `validate`:
+//!
+//! - judges a private writable copy of the bytes it read, never the file:
+//!   SQLite would follow a symlink, apply a `-wal` file the dashboard never
+//!   fetches, and skip CHECKs on a read-only connection, where
+//!   `integrity_check` cannot verify them;
+//! - requires the stored DDL to equal data/schema.sql's before anything
+//!   evaluates it, so `integrity_check` runs only our own CHECK expressions
+//!   against every row;
+//! - adds the rules that span rows, which no CHECK can express.
 
 use std::{
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use clap::ValueEnum;
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::{
     db, host,
@@ -48,20 +58,94 @@ pub(crate) fn validate(path: &Path) -> Result<(), String> {
     if host::host_of_db_path(path).is_none() {
         return Err("the path must be data/db/<github-login>/<machine>.sqlite".into());
     }
-    let size = fs::metadata(path)
-        .map_err(|error| format!("cannot read it: {error}"))?
-        .len();
+    let size = check_unlinked(path)?;
     if size > MAX_BYTES {
         return Err(format!("{size} bytes is over the {MAX_BYTES}-byte limit"));
     }
-    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(sql)?;
+    let bytes = fs::read(path).map_err(|error| format!("cannot read it: {error}"))?;
+    check_header(&bytes)?;
+    // Declared before `db`, so the connection closes before the copy goes.
+    let scratch = Scratch::new()?;
+    let copy = scratch.0.join("copy.sqlite");
+    fs::write(&copy, &bytes).map_err(|error| format!("cannot copy it to scratch: {error}"))?;
+    let db = Connection::open(&copy).map_err(sql)?;
     check_stamps(&db)?;
-    check_integrity(&db)?;
     check_schema(&db)?;
+    check_integrity(&db)?;
     check_kernels(&db)?;
     check_params(&db)?;
     check_runs(&db)?;
     check_text(&db)
+}
+
+/// Git commits symlinks and SQLite follows them, so a link could publish
+/// another host's database under this login. Returns the file's size.
+fn check_unlinked(path: &Path) -> Result<u64, String> {
+    let unreadable = |error| format!("cannot read it: {error}");
+    let file = fs::symlink_metadata(path).map_err(unreadable)?;
+    if !file.is_file() {
+        return Err("it must be a regular file, not a symbolic link, directory or device".into());
+    }
+    if let Some(login) = path.parent()
+        && !fs::symlink_metadata(login).map_err(unreadable)?.is_dir()
+    {
+        return Err(
+            "its <github-login> folder must be a real directory, not a symbolic link".into(),
+        );
+    }
+    Ok(file.len())
+}
+
+/// The bytes must be an SQLite file in rollback-journal mode, which the writer
+/// uses (header bytes 18 and 19 are 1; WAL's are 2): a WAL-mode file keeps its
+/// latest rows in a `-wal` file that the dashboard never fetches.
+fn check_header(bytes: &[u8]) -> Result<(), String> {
+    if !bytes.starts_with(b"SQLite format 3\0") {
+        return Err("not an SQLite database".into());
+    }
+    match bytes.get(18..20) {
+        Some([1, 1]) => Ok(()),
+        Some(&[write, read]) => Err(format!(
+            "header bytes 18 and 19 are {write} and {read}, not 1 and 1: a WAL-mode file keeps rows in a -wal file the dashboard never fetches"
+        )),
+        _ => Err("not an SQLite database: the header is cut short".into()),
+    }
+}
+
+/// A folder of its own in the temp directory, removed with everything in it
+/// when dropped, so SQLite's `-journal` or `-wal` files never land next to
+/// the contributed file.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new() -> Result<Self, String> {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let temp = std::env::temp_dir();
+        loop {
+            let dir = temp.join(format!(
+                "gemm-bench-scratch-{}-{}",
+                std::process::id(),
+                COUNTER.fetch_add(1, Ordering::Relaxed)
+            ));
+            // `create_dir` fails on an existing path, a symlink included.
+            match fs::create_dir(&dir) {
+                Ok(()) => return Ok(Self(dir)),
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+                Err(error) => {
+                    return Err(format!(
+                        "cannot create a scratch folder in {}: {error}",
+                        temp.display()
+                    ));
+                }
+            }
+        }
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 
 fn sql(error: rusqlite::Error) -> String {
@@ -480,5 +564,109 @@ mod tests {
         let error = validate_all(&[good, bad]).expect_err("one bad file");
         assert!(error.contains("1 of 2"), "{error}");
         assert!(validate_all(&[valid_db("all-ok")]).is_ok());
+    }
+
+    /// `path` with `suffix` appended to its file name, such as SQLite's `-wal`.
+    fn sidecar(path: &Path, suffix: &str) -> PathBuf {
+        let mut name = path.as_os_str().to_owned();
+        name.push(suffix);
+        PathBuf::from(name)
+    }
+
+    /// The file names in the folder `path` is in, sorted.
+    fn siblings(path: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(path.parent().expect("a folder"))
+            .expect("read the folder")
+            .map(|entry| {
+                entry
+                    .expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn validating_leaves_nothing_next_to_the_input() {
+        let path = valid_db("untouched");
+        validate(&path).expect("valid");
+        assert_eq!(siblings(&path), ["m1pro.sqlite"]);
+    }
+
+    /// A read-only connection never evaluates CHECKs, so rows written with
+    /// `ignore_check_constraints` behind the exact DDL must still be caught.
+    #[test]
+    fn check_constraints_hold_on_a_file_written_with_them_off() {
+        for (name, sql) in [
+            ("esc", "UPDATE runs SET arch = 'arm' || char(27) || '[2J'"),
+            ("negative", "UPDATE measurements SET gops = -5"),
+            ("gpu-blank", "UPDATE runs SET gpu = ''"),
+        ] {
+            let smuggled = format!("PRAGMA ignore_check_constraints = ON; {sql}");
+            let error = failure(name, &smuggled);
+            assert!(error.contains("CHECK constraint failed"), "{name}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_wal_mode_file_is_refused() {
+        let path = valid_db("wal");
+        let db = Connection::open(&path).expect("open");
+        db.execute_batch("PRAGMA journal_mode = WAL")
+            .expect("switch to WAL");
+        drop(db);
+        let error = validate(&path).expect_err("a WAL-mode header");
+        assert!(error.contains("WAL"), "{error}");
+        assert_eq!(siblings(&path), ["m1pro.sqlite"]);
+    }
+
+    /// SQLite applies `<file>-wal` whenever it exists, but the dashboard
+    /// fetches only the `.sqlite` bytes: the verdict must be about those.
+    #[test]
+    fn a_wal_sidecar_cannot_hide_the_files_own_bytes() {
+        let path = valid_db("sidecar");
+        Connection::open(&path)
+            .expect("open")
+            .execute_batch("UPDATE measurements SET kernel = 'warp-drive' WHERE kernel = 'ikj'")
+            .expect("mutate");
+        // A WAL that rewrites the measurements page with clean rows and page 1
+        // (where the user_version cookie lives, so the header says WAL).
+        let clean = valid_db("sidecar-clean");
+        let writer = Connection::open(&clean).expect("open");
+        writer
+            .execute_batch(
+                "PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;
+                 UPDATE measurements SET stddev_ms = stddev_ms + 1; PRAGMA user_version = 1",
+            )
+            .expect("write a WAL");
+        fs::copy(sidecar(&clean, "-wal"), sidecar(&path, "-wal")).expect("copy the WAL");
+        drop(writer);
+        let error = validate(&path).expect_err("the base file's own rows are bad");
+        assert!(error.contains("unknown kernel"), "{error}");
+        assert_eq!(siblings(&path), ["m1pro.sqlite", "m1pro.sqlite-wal"]);
+    }
+
+    /// Git commits symlinks, and SQLite follows them: without this one PR
+    /// could publish another host's database under its own login.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_file_or_login_folder_is_refused() {
+        use std::os::unix::fs::symlink;
+
+        let real = valid_db("link-target");
+        let db_dir = real.parent().and_then(Path::parent).expect("data/db");
+        let mallory = db_dir.join("mallory");
+        fs::create_dir(&mallory).expect("login folder");
+        symlink(&real, mallory.join("m1.sqlite")).expect("link the file");
+        let error = validate(&mallory.join("m1.sqlite")).expect_err("a symlinked file");
+        assert!(error.contains("regular file"), "{error}");
+
+        let linked = db_dir.join("trudy");
+        symlink(real.parent().expect("octocat's folder"), &linked).expect("link the folder");
+        let error = validate(&linked.join("m1pro.sqlite")).expect_err("a symlinked folder");
+        assert!(error.contains("folder"), "{error}");
     }
 }
