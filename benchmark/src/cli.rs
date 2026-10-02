@@ -122,15 +122,11 @@ impl Cli {
             .precisions()
             .map_err(|error| annotate_config_error(&self.config, error))?;
         let explicit_kernels = !self.kernel.is_empty() || file_kernels.is_some();
+        // Only knob flags typed on the command line: a preset's knob keys
+        // serve whichever of its kernels sweep them.
         let explicit_knobs: Vec<Knob> = [
-            (
-                Knob::TileSize,
-                !self.tile_size.is_empty() || file.tile_size.is_some(),
-            ),
-            (
-                Knob::DepthBlock,
-                !self.depth_block.is_empty() || file.depth_block.is_some(),
-            ),
+            (Knob::TileSize, !self.tile_size.is_empty()),
+            (Knob::DepthBlock, !self.depth_block.is_empty()),
         ]
         .into_iter()
         .filter_map(|(knob, explicit)| explicit.then_some(knob))
@@ -334,8 +330,8 @@ fn reject_idle_kernels(
     Ok(())
 }
 
-/// A knob given explicitly (flag or config key) that no selected kernel
-/// sweeps would be silently ignored, so it is a mistake worth stopping for.
+/// A knob flag given on the command line that no selected kernel sweeps
+/// would be silently ignored, so it is a mistake worth stopping for.
 fn reject_unused_knobs(kernels: &[KernelChoice], explicit: &[Knob]) -> Result<(), String> {
     for &knob in explicit {
         if kernels.iter().any(|kernel| kernel.knob() == Some(knob)) {
@@ -969,6 +965,17 @@ mod tests {
             error.contains("static-ikj needs at least one row per thread"),
             "{error}"
         );
+    }
+
+    /// A preset's knob keys serve whichever kernels sweep them; narrowing
+    /// --kernel to one that doesn't must not trip over a flag never typed.
+    #[test]
+    fn a_preset_knob_key_no_selected_kernel_sweeps_is_ignored() {
+        let quick = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/quick.toml");
+        let plan = plan_for("quick-ikj", &["--config", quick, "--kernel", "ikj"])
+            .expect("a preset narrowed to ikj should plan");
+        assert_eq!(plan.kernels, [KernelChoice::Ikj]);
+        assert_eq!(plan.sizes, [64, 256]);
     }
 
     #[test]
