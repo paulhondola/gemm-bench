@@ -82,7 +82,9 @@ pub(crate) fn cpu_name() -> String {
     #[cfg(target_os = "linux")]
     let name = std::fs::read_to_string("/proc/cpuinfo")
         .ok()
-        .and_then(|cpuinfo| parse_cpu_model(&cpuinfo));
+        .and_then(|cpuinfo| parse_cpu_model(&cpuinfo))
+        // ARM kernels leave `model name` out; lscpu decodes the part number.
+        .or_else(|| command_output("lscpu", &[]).and_then(|text| parse_lscpu_model(&text)));
     // ponytail: Windows and other targets report `unknown`; use `sysinfo` once a contributor needs them.
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let name: Option<String> = None;
@@ -98,9 +100,21 @@ fn parse_cpu_model(cpuinfo: &str) -> Option<String> {
     })
 }
 
+/// lscpu's `Model name`, e.g. `Neoverse-V1` on an ARM server.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn parse_lscpu_model(lscpu: &str) -> Option<String> {
+    lscpu.lines().find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        (key.trim() == "Model name").then(|| value.trim().to_owned())
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{capture, cpu_name, file_stamp, iso_timestamp, parse_cpu_model, short_host};
+    use super::{
+        capture, cpu_name, file_stamp, iso_timestamp, parse_cpu_model, parse_lscpu_model,
+        short_host,
+    };
 
     #[test]
     fn iso_timestamp_formats_utc_calendar_dates() {
@@ -150,5 +164,12 @@ mod tests {
     #[test]
     fn cpu_name_is_never_empty() {
         assert!(!cpu_name().is_empty());
+    }
+
+    #[test]
+    fn parse_lscpu_model_reads_the_decoded_arm_part() {
+        let lscpu = "Architecture:  aarch64\nVendor ID:     ARM\nModel name:    Neoverse-V1\n";
+        assert_eq!(parse_lscpu_model(lscpu).as_deref(), Some("Neoverse-V1"));
+        assert_eq!(parse_lscpu_model("Architecture: aarch64\n"), None);
     }
 }

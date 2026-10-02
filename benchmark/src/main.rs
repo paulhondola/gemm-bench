@@ -5,6 +5,11 @@ mod cli;
 mod config;
 mod context;
 mod kernel;
+#[allow(
+    dead_code,
+    reason = "the SQLite writer (Task 6) records it; delete this attribute then"
+)]
+mod machine;
 mod plan;
 mod report;
 
