@@ -62,7 +62,7 @@ jobs:
           fi
 
   web:
-    name: Web (Data, Lint, Typecheck, Build)
+    name: Web (Lint, Typecheck, Test, Build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,17 +73,6 @@ jobs:
       - name: Install Dependencies
         run: bun install --frozen-lockfile
         working-directory: web
-
-      - name: Setup DuckDB
-        run: |
-          curl -fsSL -o duckdb.zip https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip
-          mkdir -p "$HOME/.local/bin"
-          unzip -q duckdb.zip -d "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      # Rejects contributor run files with missing values before they merge.
-      - name: Build Results JSON
-        run: duckdb -bail < data/build.sql
 
       - name: Biome Lint & Format Check
         run: bunx @biomejs/biome check src

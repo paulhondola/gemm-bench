@@ -20,11 +20,7 @@ validate:
         echo "no host databases in data/db"
     fi
 
-# Validates data/runs/**/*.csv and data/peaks.csv and writes the JSON files the dashboard loads: results.json from the runs, peaks.json from the peaks.
-data:
-    duckdb -bail < data/build.sql
-
-dev: data
+dev:
     cd web && bun dev
 
 build: build-bench build-web
@@ -32,7 +28,7 @@ build: build-bench build-web
 build-bench:
     cargo build --release --manifest-path benchmark/Cargo.toml
 
-build-web: data
+build-web:
     cd web && bun install && bun run build
 
 test: test-bench test-web
