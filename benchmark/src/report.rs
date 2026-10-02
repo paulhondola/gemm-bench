@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use gemm_bench::kernels::Source;
 use indicatif::{ProgressBar, ProgressStyle};
 use tabled::{
     Table, Tabled,
@@ -164,7 +165,7 @@ struct TerminalBenchmarkRecord<'a> {
     kernel: &'a str,
     n: usize,
     threads: usize,
-    block: String,
+    knob: String,
     precision: &'a str,
     median_ms: String,
     stddev_ms: String,
@@ -179,9 +180,11 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
         kernel: &record.kernel,
         n: record.n,
         threads: record.threads,
-        block: record
-            .block_size
-            .map_or_else(|| "-".to_owned(), |b| b.to_string()),
+        knob: record
+            .params
+            .iter()
+            .find(|p| p.source == Source::Swept)
+            .map_or_else(|| "-".to_owned(), |p| format!("{}={}", p.name, p.value)),
         precision: record.precision,
         median_ms: format!("{:.3}", record.median_ms),
         stddev_ms: format!("{:.3}", record.stddev_ms),
@@ -222,6 +225,7 @@ mod tests {
             gpu_ms: None,
             setup_ms: 0.05,
             block_size: None,
+            params: Vec::new(),
             repetitions: 5,
             host: "test-host".to_owned(),
             commit: "abc1234".to_owned(),
@@ -249,7 +253,13 @@ mod tests {
         assert!(table.contains("median_ms"));
         assert!(table.contains("stddev_ms"));
         assert!(table.contains("gops"));
-        assert!(table.contains("block"));
+        assert!(table.contains("knob"));
+        let tiled = BenchmarkRecord {
+            kernel: "tiled".to_owned(),
+            params: vec![gemm_bench::kernels::Param::swept("tile_size", 64)],
+            ..record()
+        };
+        assert!(render_results_table(&[tiled]).contains("tile_size=64"));
         assert!(table.contains("0.250"));
         assert!(table.contains("rayon-ikj"));
         assert!(table.contains("12.346"));

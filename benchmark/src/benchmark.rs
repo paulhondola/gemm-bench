@@ -10,7 +10,7 @@ use gemm_bench::kernels::{
 use gemm_bench::{
     Element, GemmKernel, Matrix,
     kernels::{
-        IkjGemm, NaiveGemm, PackedGemm, RayonIkjGemm, RayonPackedGemm, RayonTiledGemm,
+        IkjGemm, NaiveGemm, PackedGemm, Param, RayonIkjGemm, RayonPackedGemm, RayonTiledGemm,
         StaticIkjGemm, StaticTiledGemm, TiledGemm,
     },
 };
@@ -45,6 +45,10 @@ pub(crate) struct BenchmarkRecord {
     pub(crate) setup_ms: f64,
     /// Empty in the CSV for kernels that don't tile.
     pub(crate) block_size: Option<usize>,
+    /// The knob values the kernel ran with; the terminal table shows the
+    /// swept one. Not a CSV column: the DB writer (Task 6) stores them.
+    #[serde(skip)]
+    pub(crate) params: Vec<Param>,
     pub(crate) repetitions: usize,
     pub(crate) host: String,
     pub(crate) commit: String,
@@ -131,6 +135,7 @@ fn run_precision<T: Element>(
                 }
 
                 let stats = summarize(&samples.timed);
+                let gpu_ms = samples.gpu.as_deref().map(|gpu| summarize(gpu).median_ms);
                 records.push(BenchmarkRecord {
                     kernel: kernel.label().to_owned(),
                     backend: kernel.backend(),
@@ -143,9 +148,10 @@ fn run_precision<T: Element>(
                     median_ms: stats.median_ms,
                     min_ms: stats.min_ms,
                     stddev_ms: stats.stddev_ms,
-                    gpu_ms: samples.gpu.as_deref().map(|gpu| summarize(gpu).median_ms),
+                    gpu_ms,
                     setup_ms: samples.setup.as_secs_f64() * 1_000.0,
                     block_size,
+                    params: samples.params,
                     repetitions: plan.repetitions,
                     host: plan.context.host.clone(),
                     commit: plan.context.commit.clone(),
@@ -176,16 +182,19 @@ struct Samples {
     timed: Vec<Duration>,
     gpu: Option<Vec<Duration>>,
     setup: Duration,
+    /// The knob values the kernel reported for this configuration.
+    params: Vec<Param>,
 }
 
 /// A Metal kernel's round trip and GPU window, with its buffer allocation
 /// added to the time it took to build the kernel.
 #[cfg(target_os = "macos")]
-fn on_gpu(built: Duration, samples: GpuSamples) -> Samples {
+fn on_gpu(built: Duration, samples: GpuSamples, params: Vec<Param>) -> Samples {
     Samples {
         timed: samples.e2e,
         gpu: Some(samples.gpu),
         setup: built + samples.setup,
+        params,
     }
 }
 
@@ -243,21 +252,36 @@ fn measure<T: Element>(
         KernelChoice::Mps => {
             let kernel = MpsGemm::<T>::new().expect("MPS needs a Metal device and f16 or f32");
             let built = setup_start.elapsed();
-            on_gpu(built, kernel.benchmark(lhs, rhs, io.2, repetitions)?)
+            let params = GemmKernel::<T>::params(&kernel, lhs.rows());
+            on_gpu(
+                built,
+                kernel.benchmark(lhs, rhs, io.2, repetitions)?,
+                params,
+            )
         }
         #[cfg(target_os = "macos")]
         KernelChoice::MetalNaive => {
             let kernel = ShaderGemm::<T>::new(Shader::Naive)?
                 .expect("metal-naive needs a Metal device and f16, f32, i32 or i64");
             let built = setup_start.elapsed();
-            on_gpu(built, kernel.benchmark(lhs, rhs, io.2, repetitions)?)
+            let params = GemmKernel::<T>::params(&kernel, lhs.rows());
+            on_gpu(
+                built,
+                kernel.benchmark(lhs, rhs, io.2, repetitions)?,
+                params,
+            )
         }
         #[cfg(target_os = "macos")]
         KernelChoice::MetalTiled => {
             let kernel = ShaderGemm::<T>::new(Shader::Tiled)?
                 .expect("metal-tiled needs a Metal device and f16, f32, i32 or i64");
             let built = setup_start.elapsed();
-            on_gpu(built, kernel.benchmark(lhs, rhs, io.2, repetitions)?)
+            let params = GemmKernel::<T>::params(&kernel, lhs.rows());
+            on_gpu(
+                built,
+                kernel.benchmark(lhs, rhs, io.2, repetitions)?,
+                params,
+            )
         }
     })
 }
@@ -270,6 +294,7 @@ fn sample<T: Element>(
     (lhs, rhs, output, repetitions): (&Matrix<T>, &Matrix<T>, &mut Matrix<T>, usize),
 ) -> Samples {
     let setup = setup_start.elapsed();
+    let params = kernel.params(lhs.rows());
     kernel.compute(lhs, rhs, output);
     Samples {
         timed: (0..repetitions)
@@ -277,6 +302,7 @@ fn sample<T: Element>(
             .collect(),
         gpu: None,
         setup,
+        params,
     }
 }
 
@@ -297,6 +323,10 @@ impl<K> InPool<K> {
 impl<T: Element, K: GemmKernel<T>> GemmKernel<T> for InPool<K> {
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>) {
         self.pool.install(|| self.kernel.compute(lhs, rhs, output));
+    }
+
+    fn params(&self, n: usize) -> Vec<Param> {
+        self.pool.install(|| self.kernel.params(n))
     }
 }
 
@@ -416,7 +446,10 @@ mod tests {
     use clap::Parser;
     use gemm_bench::Matrix;
 
-    use gemm_bench::{GemmKernel, kernels::IkjGemm};
+    use gemm_bench::{
+        GemmKernel,
+        kernels::{IkjGemm, Param},
+    };
 
     use super::{
         BenchmarkRecord, benchmark_inputs, f64_reference, max_relative_error, mean_relative_error,
@@ -556,6 +589,36 @@ mod tests {
         // `timed` is the round trip, and the GPU window sits inside it.
         assert!(gpu.iter().zip(&samples.timed).all(|(gpu, e2e)| gpu <= e2e));
         assert!(samples.setup > Duration::ZERO);
+    }
+
+    #[test]
+    fn a_measurement_carries_the_params_its_kernel_reports() {
+        let (lhs, rhs) = benchmark_inputs::<f32>(64);
+        let mut output = Matrix::zeros(64, 64);
+        let tiled = measure(KernelChoice::Tiled, 1, Some(16), 1, &lhs, &rhs, &mut output)
+            .expect("tiled runs");
+        assert_eq!(tiled.params, [Param::swept("tile_size", 16)]);
+        // Asked inside its own 2-worker pool: 8 tasks of 8 rows. Asked on
+        // the global pool it would plan 4 tasks per core of this machine.
+        let rayon = measure(
+            KernelChoice::RayonTiled,
+            2,
+            Some(16),
+            1,
+            &lhs,
+            &rhs,
+            &mut output,
+        )
+        .expect("rayon-tiled runs");
+        assert!(
+            rayon.params.contains(&Param::derived("tasks", 8)),
+            "{:?}",
+            rayon.params
+        );
+        assert!(rayon.params.contains(&Param::derived("rows_per_task", 8)));
+        let ikj =
+            measure(KernelChoice::Ikj, 1, None, 1, &lhs, &rhs, &mut output).expect("ikj runs");
+        assert!(ikj.params.is_empty());
     }
 
     /// One real run of `kernel` at n = 8, planned through the CLI as `main` does.

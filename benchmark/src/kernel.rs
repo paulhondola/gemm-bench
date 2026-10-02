@@ -30,8 +30,7 @@ pub(crate) enum KernelChoice {
 struct KernelInfo {
     /// The `kernel` column in the CSV.
     label: &'static str,
-    /// Hardware family. Needed next to `device` because Apple Silicon reports
-    /// the same name for its CPU and GPU.
+    /// Hardware family: `cpu`, `matrix` (a matrix unit behind a vendor library) or `metal`. Needed next to `device` because Apple Silicon reports the same name for its CPU and GPU.
     backend: &'static str,
     precisions: &'static [Precision],
     /// Sweeps `--threads`; the others run on one caller thread.
@@ -100,17 +99,16 @@ impl KernelChoice {
                 row_per_worker: true,
                 ..serial("static-tiled")
             },
-            // The AMX matrix coprocessor, reached only through Accelerate,
-            // which picks its own threading: one caller thread.
+            // A matrix unit (Apple's AMX, or Arm SME on M4 and later) reached only through Accelerate, which picks its own threading: one caller thread.
             #[cfg(target_os = "macos")]
             Self::AccelerateBlas => KernelInfo {
-                backend: "amx",
+                backend: "matrix",
                 precisions: &[F32, F64],
                 ..serial("accelerate-blas")
             },
             #[cfg(target_os = "macos")]
             Self::AccelerateBnns => KernelInfo {
-                backend: "amx",
+                backend: "matrix",
                 precisions: &[F16, F32],
                 ..serial("accelerate-bnns")
             },
@@ -208,7 +206,7 @@ mod tests {
                 kernel,
                 KernelChoice::AccelerateBlas | KernelChoice::AccelerateBnns
             ) {
-                assert_eq!(kernel.backend(), "amx");
+                assert_eq!(kernel.backend(), "matrix");
                 continue;
             }
             assert_eq!(kernel.backend(), "cpu", "{}", kernel.label());
