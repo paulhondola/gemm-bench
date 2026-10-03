@@ -250,3 +250,23 @@ impl<T: Element> GemmKernel<T> for ShaderGemm<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{BLOCK_COLS, BLOCK_ROWS, DEPTH_STEP, SIMDGROUPS, SOURCE};
+
+    /// The params a run records come from these constants, the shader from
+    /// `gemm.metal`'s; a mismatch would store the wrong shape in a host DB.
+    #[test]
+    fn simdgroup_constants_match_the_shader() {
+        for (name, value) in [
+            ("BM", BLOCK_ROWS),
+            ("BN", BLOCK_COLS),
+            ("BK", DEPTH_STEP),
+            ("SG", SIMDGROUPS),
+        ] {
+            let line = format!("constant constexpr uint {name} = {value};");
+            assert!(SOURCE.contains(&line), "gemm.metal lacks `{line}`");
+        }
+    }
+}

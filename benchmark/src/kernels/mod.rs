@@ -259,8 +259,8 @@ mod tests {
         assert!(samples.setup > std::time::Duration::ZERO);
     }
 
-    /// Checks a shader against `NaiveGemm` at n = 7, 37 and 100, none a multiple
-    /// of `metal-tiled`'s 16-wide tile, so edge tiles are partial.
+    /// Checks a shader against `NaiveGemm` at n = 7, 37, 100 and 132, none a
+    /// multiple of `metal-tiled`'s 16-wide tile, so edge tiles are partial.
     #[cfg(target_os = "macos")]
     fn shader_matches_naive<T: Element>(shader: super::Shader) {
         // 100 spans two blocks per side for metal-simdgroup, the second ragged,

@@ -85,8 +85,9 @@ type Group = "host" | "gpu";
  * free slot that clears the floors against every ink in the GPU chart, not
  * just its legend neighbours: CVD ΔE ≥ 10.2, normal-vision ΔE ≥ 15.3 (both
  * nearest: the AMX reference blue). Aqua, the slot it would get unpinned,
- * fails normal vision against the parallel reference's green (11.9). Maps, not object literals: kernel
- * names come from host databases, and "constructor" must not resolve.
+ * fails normal vision against the parallel reference's green (11.9). Maps,
+ * not object literals: kernel names come from host databases, and
+ * "constructor" must not resolve.
  */
 const SLOT_OF: Record<Group, Map<string, number>> = {
 	host: new Map([
