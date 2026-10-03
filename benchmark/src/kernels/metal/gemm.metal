@@ -90,8 +90,6 @@ constant constexpr uint FM = SM / 8;  // 8×8 fragments per simdgroup, down
 constant constexpr uint FN = SN / 8;  // and across
 // A's strip then B's, per staged step.
 constant constexpr uint STRIPS = BM * BK + BK * BN;
-// One buffer, reused: the strips while multiplying, C while storing.
-constant constexpr uint STAGE = STRIPS > BM * BN ? STRIPS : BM * BN;
 // 4-element groups of A's and B's strips each thread stages per step.
 constant constexpr uint A_GROUPS = BM * BK / (THREADS * 4);
 constant constexpr uint B_GROUPS = BK * BN / (THREADS * 4);
@@ -159,8 +157,9 @@ kernel void gemm_simdgroup(device const T* a [[buffer(0)]],
                            constant uint& n [[buffer(3)]],
                            uint2 group [[threadgroup_position_in_grid]],
                            ushort tid [[thread_index_in_threadgroup]],
-                           ushort sg [[simdgroup_index_in_threadgroup]]) {
-    threadgroup T stage[STAGE];
+                           ushort sg [[simdgroup_index_in_threadgroup]],
+                           ushort lane [[thread_index_in_simdgroup]]) {
+    threadgroup T stage[STRIPS];
     threadgroup T* a_stage = stage;            // [BM][BK]
     threadgroup T* b_stage = stage + BM * BK;  // [BK][BN]
     const uint row0 = group.y * BM;
@@ -206,26 +205,36 @@ kernel void gemm_simdgroup(device const T* a [[buffer(0)]],
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
 
-    // ponytail: every block stores through threadgroup memory, so edge blocks
-    // need no second path; simdgroup_store straight to c for blocks wholly
-    // inside n×n if the store ever shows up in a profile.
+    // Interior fragments go straight from registers to C. A fragment that
+    // crosses the edge goes through this simdgroup's own 8×8 slice of the
+    // stage, free since the k-loop's last barrier, and only its in-range
+    // elements are written.
+    threadgroup T* edge = stage + sg * 64;
     #pragma clang loop unroll(full)
     for (uint i = 0; i < FM; ++i) {
         #pragma clang loop unroll(full)
         for (uint j = 0; j < FN; ++j) {
-            simdgroup_store(acc[i][j], stage + (sg_row + i * 8) * BN + sg_col + j * 8, BN);
-        }
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint e = tid; e < BM * BN; e += THREADS) {
-        uint row = row0 + e / BN, col = col0 + e % BN;
-        if (row < n && col < n) {
-            c[row * n + col] = stage[e];
+            const uint frag_row = row0 + sg_row + i * 8;
+            const uint frag_col = col0 + sg_col + j * 8;
+            if (frag_row + 8 <= n && frag_col + 8 <= n) {
+                simdgroup_store(acc[i][j], c + frag_row * n + frag_col, n);
+            } else {
+                simdgroup_store(acc[i][j], edge, 8);
+                simdgroup_barrier(mem_flags::mem_threadgroup);
+                for (uint e = lane; e < 64; e += 32) {
+                    uint row = frag_row + e / 8, col = frag_col + e % 8;
+                    if (row < n && col < n) {
+                        c[row * n + col] = edge[e];
+                    }
+                }
+                // The next edge fragment reuses the slice.
+                simdgroup_barrier(mem_flags::mem_threadgroup);
+            }
         }
     }
 }
 
 template [[host_name("gemm_simdgroup_half")]] kernel void gemm_simdgroup<half>(
-    device const half*, device const half*, device half*, constant uint&, uint2, ushort, ushort);
+    device const half*, device const half*, device half*, constant uint&, uint2, ushort, ushort, ushort);
 template [[host_name("gemm_simdgroup_float")]] kernel void gemm_simdgroup<float>(
-    device const float*, device const float*, device float*, constant uint&, uint2, ushort, ushort);
+    device const float*, device const float*, device float*, constant uint&, uint2, ushort, ushort, ushort);
