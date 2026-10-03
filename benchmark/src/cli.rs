@@ -561,7 +561,8 @@ mod tests {
                 "skipping accelerate-bnns at f64 (unsupported precision)",
                 "skipping mps at f64 (unsupported precision)",
                 "skipping metal-naive at f64 (unsupported precision)",
-                "skipping metal-tiled at f64 (unsupported precision)"
+                "skipping metal-tiled at f64 (unsupported precision)",
+                "skipping metal-simdgroup at f64 (unsupported precision)"
             ]
         );
     }
@@ -672,6 +673,7 @@ mod tests {
             ("mps", "i32"),
             ("metal-naive", "f64"),
             ("metal-tiled", "f64"),
+            ("metal-simdgroup", "i32"),
             ("accelerate-blas", "f16"),
             ("accelerate-bnns", "f64"),
         ] {
