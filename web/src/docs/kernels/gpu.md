@@ -53,7 +53,7 @@ C[i][j] = acc
 ```
 
 - **Runs via:** The same as `metal-naive`.
-- **Tunes:** Nothing: the 16 × 16 tile is fixed, so the block size doesn't apply.
+- **Tunes:** Nothing: the 16 × 16 tile is fixed, so no knob applies.
 - **Precisions:** `f16`, `f32`, `i32`, `i64`.
 - **Watch for:** At `i64` it runs slower than `metal-naive`. The emulated 64-bit multiplies make the work compute-bound, so tiling saves no memory traffic that matters, while each step still pays for two barriers.
 - **Source:** [`benchmark/src/kernels/metal/gemm.metal`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/metal/gemm.metal)

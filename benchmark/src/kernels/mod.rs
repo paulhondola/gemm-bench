@@ -6,6 +6,7 @@ pub(crate) mod common;
 #[cfg(target_os = "macos")]
 pub mod metal;
 pub(crate) mod packed;
+mod param;
 pub mod rayon;
 pub mod serial;
 pub mod static_threads;
@@ -17,6 +18,7 @@ pub use accelerate::AccelerateBnnsGemm;
 pub(crate) use common::{assert_gemm_dimensions, ikj_rows};
 #[cfg(target_os = "macos")]
 pub use metal::{MpsGemm, Shader, ShaderGemm};
+pub use param::{Param, Source};
 pub use rayon::{RayonIkjGemm, RayonPackedGemm, RayonTiledGemm};
 pub use serial::{IkjGemm, NaiveGemm, PackedGemm, TiledGemm};
 pub use static_threads::{StaticIkjGemm, StaticTiledGemm};
@@ -30,12 +32,18 @@ use crate::{Element, Matrix};
 /// LLVM can eliminate repeated index checks and autovectorize contiguous work.
 pub trait GemmKernel<T: Element>: Send + Sync {
     fn compute(&self, lhs: &Matrix<T>, rhs: &Matrix<T>, output: &mut Matrix<T>);
+
+    /// The knob values this kernel uses at size `n`, as the `params` table
+    /// records them. Empty for kernels with no knobs.
+    fn params(&self, _n: usize) -> Vec<Param> {
+        Vec::new()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        Element, GemmKernel, IkjGemm, NaiveGemm, PackedGemm, RayonIkjGemm, RayonPackedGemm,
+        Element, GemmKernel, IkjGemm, NaiveGemm, PackedGemm, Param, RayonIkjGemm, RayonPackedGemm,
         RayonTiledGemm, StaticIkjGemm, StaticTiledGemm, TiledGemm,
     };
     use crate::Matrix;
@@ -294,5 +302,125 @@ mod tests {
         let kernel = super::ShaderGemm::<f64>::new(super::Shader::Naive)
             .expect("an unsupported precision is not a compile error");
         assert!(kernel.is_none());
+    }
+
+    #[test]
+    fn kernels_without_knobs_record_no_params() {
+        assert!(GemmKernel::<f32>::params(&IkjGemm, 64).is_empty());
+        assert!(GemmKernel::<f32>::params(&NaiveGemm, 64).is_empty());
+    }
+
+    #[test]
+    fn tiled_records_its_tile() {
+        assert_eq!(
+            GemmKernel::<f32>::params(&TiledGemm::new(32), 64),
+            [Param::swept("tile_size", 32)]
+        );
+    }
+
+    #[test]
+    fn packed_records_the_requested_and_the_used_depth_block() {
+        assert_eq!(
+            GemmKernel::<f32>::params(&PackedGemm::new(1024), 512),
+            [
+                Param::swept("depth_block", 1024),
+                Param::derived("depth_block_used", 512),
+                Param::derived("register_cols", 12),
+                Param::fixed("register_rows", 8),
+                Param::fixed("register_col_vectors", 3),
+            ]
+        );
+        let cols = |params: Vec<Param>| {
+            params
+                .into_iter()
+                .find(|p| p.name == "register_cols")
+                .map(|p| p.value)
+        };
+        assert_eq!(
+            cols(GemmKernel::<f16>::params(&PackedGemm::new(64), 512)),
+            Some(24)
+        );
+        assert_eq!(
+            cols(GemmKernel::<f64>::params(&PackedGemm::new(64), 512)),
+            Some(6)
+        );
+    }
+
+    #[test]
+    fn rayon_packed_adds_its_row_strips() {
+        let params = GemmKernel::<f32>::params(&RayonPackedGemm::new(256), 100);
+        assert!(params.contains(&Param::derived("row_strips", 13)));
+        assert!(params.contains(&Param::derived("depth_block_used", 100)));
+    }
+
+    #[test]
+    fn rayon_tiled_records_the_split_of_the_pool_it_runs_in() {
+        let pool = ::rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .expect("a 4-thread pool");
+        let params = pool.install(|| GemmKernel::<f32>::params(&RayonTiledGemm::new(64), 10));
+        assert_eq!(
+            params,
+            [
+                Param::swept("tile_size", 64),
+                // 16 tasks are planned for 4 workers, but 10 rows make 10 one-row tasks.
+                Param::derived("tasks", 10),
+                Param::derived("rows_per_task", 1),
+                Param::fixed("tasks_per_worker", 4),
+            ]
+        );
+    }
+
+    #[test]
+    fn static_kernels_record_their_largest_row_share() {
+        let ikj = StaticIkjGemm::new(3).expect("a 3-thread pool");
+        assert_eq!(
+            GemmKernel::<f32>::params(&ikj, 10),
+            [Param::derived("max_rows_per_thread", 4)]
+        );
+        let tiled = StaticTiledGemm::new(3, 32).expect("a 3-thread pool");
+        assert_eq!(
+            GemmKernel::<f32>::params(&tiled, 10),
+            [
+                Param::swept("tile_size", 32),
+                Param::derived("max_rows_per_thread", 4),
+            ]
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn metal_shaders_record_their_threadgroups() {
+        use super::{Shader, ShaderGemm};
+        let tiled = ShaderGemm::<f32>::new(Shader::Tiled)
+            .expect("gemm.metal compiles")
+            .expect("a Metal device");
+        assert_eq!(
+            GemmKernel::<f32>::params(&tiled, 100),
+            [
+                Param::fixed("threadgroup_width", 16),
+                Param::fixed("threadgroup_height", 16),
+                Param::fixed("depth_step", 16),
+                Param::derived("threadgroups", 49),
+            ]
+        );
+        let naive = ShaderGemm::<f32>::new(Shader::Naive)
+            .expect("gemm.metal compiles")
+            .expect("a Metal device");
+        let params = GemmKernel::<f32>::params(&naive, 100);
+        let value = |name: &str| {
+            params
+                .iter()
+                .find(|p| p.name == name)
+                .map(|p| p.value)
+                .unwrap_or_else(|| panic!("{name} is missing"))
+        };
+        let (width, height) = (value("threadgroup_width"), value("threadgroup_height"));
+        assert!(width * height <= 1024, "{width}x{height}");
+        assert_eq!(
+            value("threadgroups"),
+            100usize.div_ceil(width) * 100usize.div_ceil(height)
+        );
     }
 }

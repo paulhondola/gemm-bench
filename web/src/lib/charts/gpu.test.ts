@@ -8,7 +8,7 @@ const f: Filters = {
 	precision: "f32",
 	n: 512,
 	kernel: "mps",
-	blockSize: 32,
+	knobs: {},
 	relative: false,
 };
 
@@ -31,8 +31,8 @@ const f32: Row[] = [
 	gpu("mps", 1024, 1675, 1.282, 0.995),
 	row({ kernel: "rayon-ikj", n: 512, threads: 8, gops: 174 }),
 	row({ kernel: "rayon-ikj", n: 1024, threads: 8, gops: 197 }),
-	row({ kernel: "accelerate-blas", n: 512, gops: 1968, backend: "amx" }),
-	row({ kernel: "accelerate-blas", n: 1024, gops: 1748, backend: "amx" }),
+	row({ kernel: "accelerate-blas", n: 512, gops: 1968, backend: "matrix" }),
+	row({ kernel: "accelerate-blas", n: 1024, gops: 1748, backend: "matrix" }),
 ];
 
 test("no GPU chart builds without metal rows", () => {
@@ -46,7 +46,7 @@ test("no GPU chart builds without metal rows", () => {
 test("the kernel chart draws each GPU kernel then both CPU references, in validated order", () => {
 	const spec = gpuKernels(f32, f, makeCtx(f32));
 	expect(legendOf(spec)).toEqual({
-		names: ["metal-naive", "metal-tiled", "mps", "AMX", "parallel CPU"],
+		names: ["metal-naive", "metal-tiled", "mps", "Matrix", "parallel CPU"],
 		colors: ["#d95926", "#9085e9", "#e66767", "#3987e5", "#008300"],
 	});
 });
@@ -97,7 +97,7 @@ test("each series' hover is measured against its own ceiling, and AMX has none",
 		" · rayon-ikj · 8T",
 		" · 22% of peak",
 	]);
-	expect(at512("AMX")?.[1]).toBe("");
+	expect(at512("Matrix")?.[1]).toBe("");
 	expect(spec?.data[0].hovertemplate).toContain(
 		"%{customdata[0]}%{customdata[1]}<extra>",
 	);
@@ -168,7 +168,9 @@ test("the ratio chart draws 1.0 as a dashed reference across the whole plot", ()
 });
 
 test("a size the counterpart never ran contributes no point, never NaN", () => {
-	const noAmxAt512 = f32.filter((r) => !(r.backend === "amx" && r.n === 512));
+	const noAmxAt512 = f32.filter(
+		(r) => !(r.backend === "matrix" && r.n === 512),
+	);
 	const spec = gpuEqualEffort(noAmxAt512, f, makeCtx(noAmxAt512));
 	expect(pointsOf(spec, "mps").find((p) => p.x === 512)?.y).toBeNull();
 	expect(plotted(spec).every((p) => Number.isFinite(p.y))).toBe(true);
@@ -182,7 +184,7 @@ test("end labels that would overlap on the log axis share one line of text", () 
 		gpu("metal-tiled", 4096, 541, 1, 0.96),
 		gpu("mps", 4096, 3558, 1, 0.88),
 		row({ kernel: "rayon-ikj", n: 4096, threads: 8, gops: 155 }),
-		row({ kernel: "accelerate-blas", n: 4096, gops: 2224, backend: "amx" }),
+		row({ kernel: "accelerate-blas", n: 4096, gops: 2224, backend: "matrix" }),
 	];
 	const spec = gpuEqualEffort(converging, f, makeCtx(converging));
 	const labels = spec?.data.find((t) => t.uid === "labels_");

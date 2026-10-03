@@ -11,25 +11,19 @@ pub(crate) const UNKNOWN: &str = "unknown";
 /// Provenance shared by every record of one run.
 #[derive(Debug)]
 pub(crate) struct RunContext {
-    pub(crate) host: String,
     pub(crate) commit: String,
     pub(crate) timestamp: String,
-    pub(crate) file_stamp: String,
 }
 
-/// Looks up the host and commit and reads the clock. Failed lookups become
-/// `unknown` so a missing `git` or `hostname` never aborts a benchmark.
+/// Looks up the commit and reads the clock.
 pub(crate) fn capture() -> RunContext {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());
     RunContext {
-        host: command_output("hostname", &[])
-            .map_or_else(|| UNKNOWN.to_owned(), |raw| short_host(&raw)),
         commit: command_output("git", &["describe", "--always", "--dirty"])
             .unwrap_or_else(|| UNKNOWN.to_owned()),
         timestamp: iso_timestamp(secs),
-        file_stamp: file_stamp(secs),
     }
 }
 
@@ -41,22 +35,9 @@ pub(crate) fn command_output(program: &str, args: &[&str]) -> Option<String> {
     (output.status.success() && !text.is_empty()).then(|| text.to_owned())
 }
 
-/// `Pauls-MacBook-Pro.local` → `Pauls-MacBook-Pro`: the domain adds nothing
-/// to results and would differ between networks.
-fn short_host(raw: &str) -> String {
-    raw.split('.').next().unwrap_or(raw).to_owned()
-}
-
 fn iso_timestamp(secs: u64) -> String {
     let [year, month, day, hour, minute, second] = utc_fields(secs);
     format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
-}
-
-/// The same instant as `iso_timestamp`, without separators, for filenames:
-/// colons are invalid on Windows, and this still sorts chronologically.
-fn file_stamp(secs: u64) -> String {
-    let [year, month, day, hour, minute, second] = utc_fields(secs);
-    format!("{year:04}{month:02}{day:02}T{hour:02}{minute:02}{second:02}Z")
 }
 
 /// Splits Unix seconds into UTC `[year, month, day, hour, minute, second]`,
@@ -82,25 +63,43 @@ pub(crate) fn cpu_name() -> String {
     #[cfg(target_os = "linux")]
     let name = std::fs::read_to_string("/proc/cpuinfo")
         .ok()
-        .and_then(|cpuinfo| parse_cpu_model(&cpuinfo));
+        .and_then(|cpuinfo| parse_cpu_model(&cpuinfo))
+        // ARM kernels leave `model name` out; lscpu decodes the part number.
+        .or_else(|| command_output("lscpu", &[]).and_then(|text| parse_lscpu_model(&text)));
     // ponytail: Windows and other targets report `unknown`; use `sysinfo` once a contributor needs them.
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let name: Option<String> = None;
     name.unwrap_or_else(|| UNKNOWN.to_owned())
 }
 
-/// The first `model name` line of `/proc/cpuinfo`. ARM kernels often omit it.
+/// The first `model name` line of `/proc/cpuinfo`, unless blank. ARM kernels
+/// often omit it.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn parse_cpu_model(cpuinfo: &str) -> Option<String> {
-    cpuinfo.lines().find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        (key.trim() == "model name").then(|| value.trim().to_owned())
-    })
+    cpuinfo
+        .lines()
+        .find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key.trim() == "model name").then(|| value.trim().to_owned())
+        })
+        .filter(|name| !name.is_empty())
+}
+
+/// lscpu's `Model name`, e.g. `Neoverse-V1` on an ARM server, unless blank.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn parse_lscpu_model(lscpu: &str) -> Option<String> {
+    lscpu
+        .lines()
+        .find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key.trim() == "Model name").then(|| value.trim().to_owned())
+        })
+        .filter(|name| !name.is_empty())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{capture, cpu_name, file_stamp, iso_timestamp, parse_cpu_model, short_host};
+    use super::{capture, cpu_name, iso_timestamp, parse_cpu_model, parse_lscpu_model};
 
     #[test]
     fn iso_timestamp_formats_utc_calendar_dates() {
@@ -110,26 +109,11 @@ mod tests {
     }
 
     #[test]
-    fn file_stamp_is_a_compact_sortable_utc_instant() {
-        assert_eq!(file_stamp(0), "19700101T000000Z");
-        assert_eq!(file_stamp(1_709_210_096), "20240229T123456Z");
-        assert_eq!(file_stamp(2_208_988_800), "20400101T000000Z");
-    }
-
-    #[test]
-    fn short_host_drops_the_domain() {
-        assert_eq!(short_host("Pauls-MacBook-Pro.local"), "Pauls-MacBook-Pro");
-        assert_eq!(short_host("build-box"), "build-box");
-    }
-
-    #[test]
     fn capture_fills_every_field() {
         let context = capture();
-        assert!(!context.host.is_empty());
         assert!(!context.commit.is_empty());
         assert_eq!(context.timestamp.len(), "2026-09-17T12:15:00Z".len());
         assert!(context.timestamp.ends_with('Z'));
-        assert_eq!(context.file_stamp.len(), "20260917T121500Z".len());
     }
 
     #[test]
@@ -147,8 +131,22 @@ mod tests {
         assert_eq!(parse_cpu_model(cpuinfo), None);
     }
 
+    /// An empty name would fail runs.cpu's CHECK only once the sweep is over.
+    #[test]
+    fn a_blank_model_name_counts_as_missing() {
+        assert_eq!(parse_cpu_model("model name\t: \nprocessor\t: 0\n"), None);
+        assert_eq!(parse_lscpu_model("Model name:   \t\n"), None);
+    }
+
     #[test]
     fn cpu_name_is_never_empty() {
         assert!(!cpu_name().is_empty());
+    }
+
+    #[test]
+    fn parse_lscpu_model_reads_the_decoded_arm_part() {
+        let lscpu = "Architecture:  aarch64\nVendor ID:     ARM\nModel name:    Neoverse-V1\n";
+        assert_eq!(parse_lscpu_model(lscpu).as_deref(), Some("Neoverse-V1"));
+        assert_eq!(parse_lscpu_model("Architecture: aarch64\n"), None);
     }
 }

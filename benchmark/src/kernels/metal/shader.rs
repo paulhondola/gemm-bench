@@ -14,7 +14,7 @@ use objc2_metal::{
 };
 
 use super::{GpuDispatch, GpuOperands, GpuSamples, MetalContext, time_dispatch};
-use crate::kernels::GemmKernel;
+use crate::kernels::{GemmKernel, Param};
 use crate::{Element, Matrix};
 
 /// ponytail: compiled per kernel instance (~17 ms, untimed); cache the
@@ -101,6 +101,13 @@ impl<T: Element> ShaderGemm<T> {
         }))
     }
 
+    /// `metal-naive`'s threadgroup: one SIMD-group wide, as tall as the
+    /// pipeline allows (32×32 on M1 Pro).
+    fn naive_threadgroup(&self) -> (usize, usize) {
+        let width = self.pipeline.threadExecutionWidth();
+        (width, self.pipeline.maxTotalThreadsPerThreadgroup() / width)
+    }
+
     /// Times `repetitions` dispatches after one untimed warm-up; see
     /// [`time_dispatch`](super::time_dispatch).
     pub fn benchmark(
@@ -144,9 +151,7 @@ impl<T: Element> GpuDispatch<T> for ShaderGemm<T> {
         };
         match self.shader {
             Shader::Naive => {
-                // One SIMD-group wide, as tall as the pipeline allows (32×32 on M1 Pro).
-                let width = self.pipeline.threadExecutionWidth();
-                let height = self.pipeline.maxTotalThreadsPerThreadgroup() / width;
+                let (width, height) = self.naive_threadgroup();
                 encoder.dispatchThreads_threadsPerThreadgroup(
                     square(operands.n),
                     MTLSize {
@@ -173,5 +178,24 @@ impl<T: Element> GemmKernel<T> for ShaderGemm<T> {
         // Zero repetitions: just the untimed dispatch and the copy back.
         self.benchmark(lhs, rhs, output, 0)
             .expect("the shader dispatch failed");
+    }
+
+    fn params(&self, n: usize) -> Vec<Param> {
+        match self.shader {
+            Shader::Naive => {
+                let (width, height) = self.naive_threadgroup();
+                vec![
+                    Param::derived("threadgroup_width", width),
+                    Param::derived("threadgroup_height", height),
+                    Param::derived("threadgroups", n.div_ceil(width) * n.div_ceil(height)),
+                ]
+            }
+            Shader::Tiled => vec![
+                Param::fixed("threadgroup_width", TILE),
+                Param::fixed("threadgroup_height", TILE),
+                Param::fixed("depth_step", TILE),
+                Param::derived("threadgroups", n.div_ceil(TILE).pow(2)),
+            ],
+        }
     }
 }

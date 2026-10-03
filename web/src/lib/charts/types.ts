@@ -11,7 +11,7 @@ import {
 	families,
 	familyPeak,
 	kernels,
-	singleBlockSizeKernels,
+	singleValueKernels,
 } from "../derive";
 import { FAMILY_INK, paletteFor } from "../palette";
 
@@ -31,7 +31,8 @@ export interface Filters {
 	precision: string;
 	n: number;
 	kernel: string;
-	blockSize: number;
+	/** The pinned value of each swept knob, by params.name. */
+	knobs: Record<string, number>;
 	/** true renders the chart's relative projection (speedup / ratio). */
 	relative: boolean;
 }
@@ -39,9 +40,9 @@ export interface Filters {
 export interface Ctx {
 	palette: Map<string, string>;
 	family: Map<string, Family>;
-	/** Kernels measured at exactly one block size: the dimension does not vary
-	 *  for them, so a block-size selection must not filter them away. */
-	singleBlockSize: Set<string>;
+	/** Per knob, the kernels measured at only one value of it: the knob does
+	 *  not vary for them, so a pin must not filter them away. */
+	singleKnob: Map<string, Set<string>>;
 	/** Hardware ceilings from data/peaks.csv. Empty draws no ceiling anywhere. */
 	peaks: Peak[];
 }
@@ -52,7 +53,7 @@ export function makeCtx(allRows: Row[], peaks: Peak[] = []): Ctx {
 	return {
 		palette: paletteFor(kernels(allRows), family),
 		family,
-		singleBlockSize: singleBlockSizeKernels(allRows),
+		singleKnob: singleValueKernels(allRows),
 		peaks,
 	};
 }
@@ -126,8 +127,8 @@ const CEILING_LABEL: Record<Family, (cores: number) => string> = {
 	serial: () => "1-core peak",
 	parallel: (cores) => `CPU peak (${cores} P)`,
 	gpu: () => "GPU peak",
-	// familyPeak lists no AMX peak, so this is unreachable until it does.
-	amx: () => "AMX peak",
+	// familyPeak lists no matrix-unit peak, so this is unreachable until it does.
+	matrix: () => "Matrix peak",
 };
 
 /**
@@ -147,7 +148,9 @@ export function ceilingOf(
 	if (devices.size !== 1 || precisions.size !== 1) return undefined;
 	const [device] = devices;
 	const [precision] = precisions;
-	const peak = familyPeak(ctx.peaks, family, device, precision);
+	const cores = new Set(rows.map((r) => r.gpu_cores));
+	const gpuCores = cores.size === 1 ? [...cores][0] : null;
+	const peak = familyPeak(ctx.peaks, family, device, precision, gpuCores);
 	if (!peak) return undefined;
 	return {
 		family,
@@ -314,7 +317,7 @@ function escapeDeep<T>(v: T): T {
 /**
  * Plotly renders trace names, text, hover fields and category ticks as a
  * subset of HTML (<b>, <a href>, <span style>). Kernel and precision names
- * come from contributed CSVs, so they are escaped to show literally.
+ * come from host databases, so they are escaped to show literally.
  * Templates are the charts' own and keep their markup.
  */
 export function escapeLabels(fig: Figure): Figure {

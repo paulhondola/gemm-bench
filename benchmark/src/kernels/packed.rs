@@ -9,13 +9,14 @@
 
 use crate::Element;
 use crate::element::Lanes;
+use crate::kernels::Param;
 
 /// Rows of C per micro-kernel block.
 pub(crate) const MR: usize = 8;
 
 /// Vectors per block row. MR × NR_VECS = 24 accumulators, plus 3 B vectors
 /// and 1 A splat: 28 of the 32 NEON registers.
-const NR_VECS: usize = 3;
+pub(crate) const NR_VECS: usize = 3;
 
 /// Most lanes of any element type (`f16`), which sizes the write-back buffer.
 const MAX_LANES: usize = 8;
@@ -23,6 +24,18 @@ const MAX_LANES: usize = 8;
 /// Columns per micro-kernel block: 12 for f32/i32, 24 for f16, 6 for f64/i64.
 fn nr<T: Element>() -> usize {
     NR_VECS * T::Vector::LANES
+}
+
+/// The knobs both packed kernels record at size `n`: the requested k-block
+/// depth, the depth the blocks actually use, and the register block.
+pub(crate) fn params<T: Element>(depth_block: usize, n: usize) -> Vec<Param> {
+    vec![
+        Param::swept("depth_block", depth_block),
+        Param::derived("depth_block_used", depth_block.min(n)),
+        Param::derived("register_cols", nr::<T>()),
+        Param::fixed("register_rows", MR),
+        Param::fixed("register_col_vectors", NR_VECS),
+    ]
 }
 
 /// Packs rows `pc..pc + kc` of the n×n `rhs` into nr-wide strips, each

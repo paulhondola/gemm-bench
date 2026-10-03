@@ -1,0 +1,5 @@
+# Every tile size and depth block at three sizes, for the dashboard's Tuning
+# knobs tab. Omitted knob keys sweep their full default ranges.
+sizes = [512, 1024, 2048]
+precision = ["f32"]
+kernel = ["tiled", "static-tiled", "rayon-tiled", "packed", "rayon-packed"]

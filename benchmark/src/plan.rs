@@ -1,7 +1,10 @@
-use std::{fs::File, path::PathBuf};
+use std::path::PathBuf;
 
-use crate::context::{self, RunContext};
-use crate::kernel::{KernelChoice, Precision};
+use rusqlite::Connection;
+
+use crate::context::RunContext;
+use crate::kernel::{KernelChoice, Knob, Precision};
+use crate::machine::Machine;
 
 /// Fully resolved configuration used by the benchmark runner.
 #[derive(Debug)]
@@ -11,10 +14,13 @@ pub(crate) struct BenchmarkPlan {
     pub(crate) kernels: Vec<KernelChoice>,
     pub(crate) precisions: Vec<Precision>,
     pub(crate) repetitions: usize,
-    pub(crate) block_sizes: Vec<usize>,
+    pub(crate) tile_sizes: Vec<usize>,
+    pub(crate) depth_blocks: Vec<usize>,
     pub(crate) context: RunContext,
-    pub(crate) devices: Devices,
-    pub(crate) output: File,
+    /// The machine as it is now, recorded with the run.
+    pub(crate) machine: Machine,
+    /// Opened and checked before any kernel runs; the run is written into it.
+    pub(crate) db: Connection,
     pub(crate) output_path: PathBuf,
     pub(crate) no_progress: bool,
     /// One line per group of skipped cells, printed before the run.
@@ -22,7 +28,15 @@ pub(crate) struct BenchmarkPlan {
 }
 
 impl BenchmarkPlan {
-    /// The (threads, block size) cells measured for one kernel at one
+    /// The values swept for `knob`.
+    pub(crate) fn knob_values(&self, knob: Knob) -> &[usize] {
+        match knob {
+            Knob::TileSize => &self.tile_sizes,
+            Knob::DepthBlock => &self.depth_blocks,
+        }
+    }
+
+    /// The (threads, knob value) cells measured for one kernel at one
     /// precision and size; empty when the kernel can't run there. The single
     /// source for the sweep loop and the configuration count.
     pub(crate) fn cells(
@@ -43,14 +57,13 @@ impl BenchmarkPlan {
         } else {
             vec![1]
         };
-        let blocks: Vec<Option<usize>> = if kernel.uses_blocks() {
-            self.block_sizes.iter().copied().map(Some).collect()
-        } else {
-            vec![None]
+        let knobs: Vec<Option<usize>> = match kernel.knob() {
+            Some(knob) => self.knob_values(knob).iter().copied().map(Some).collect(),
+            None => vec![None],
         };
         threads
             .iter()
-            .flat_map(|&t| blocks.iter().map(move |&b| (t, b)))
+            .flat_map(|&t| knobs.iter().map(move |&k| (t, k)))
             .collect()
     }
 
@@ -65,61 +78,5 @@ impl BenchmarkPlan {
             }
         }
         total
-    }
-}
-
-/// Device names, looked up once per backend before any kernel runs.
-#[derive(Debug)]
-pub(crate) struct Devices {
-    pub(crate) cpu: String,
-    #[cfg(target_os = "macos")]
-    pub(crate) metal: String,
-}
-
-impl Devices {
-    // Off macOS only the CPU is looked up, leaving `kernels` unread.
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-    pub(crate) fn lookup(kernels: &[KernelChoice]) -> Self {
-        Self {
-            cpu: context::cpu_name(),
-            #[cfg(target_os = "macos")]
-            metal: kernels
-                .iter()
-                .any(|kernel| kernel.backend() == "metal")
-                .then(gemm_bench::kernels::metal::default_device_name)
-                .flatten()
-                .unwrap_or_else(|| context::UNKNOWN.to_owned()),
-        }
-    }
-
-    /// The device `kernel` runs on.
-    // Off macOS every kernel is a CPU kernel, leaving `kernel` unread.
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-    pub(crate) fn of(&self, kernel: KernelChoice) -> &str {
-        #[cfg(target_os = "macos")]
-        if kernel.backend() == "metal" {
-            return &self.metal;
-        }
-        &self.cpu
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Devices;
-    use crate::kernel::KernelChoice;
-
-    #[test]
-    fn kernels_report_the_device_of_their_backend() {
-        let devices = Devices {
-            cpu: "Test CPU".to_owned(),
-            #[cfg(target_os = "macos")]
-            metal: "Test GPU".to_owned(),
-        };
-        assert_eq!(devices.of(KernelChoice::RayonTiled), "Test CPU");
-        #[cfg(target_os = "macos")]
-        assert_eq!(devices.of(KernelChoice::Mps), "Test GPU");
-        #[cfg(target_os = "macos")]
-        assert_eq!(devices.of(KernelChoice::MetalNaive), "Test GPU");
     }
 }

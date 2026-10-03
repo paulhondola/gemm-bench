@@ -8,11 +8,11 @@ const FLOATS = ["f16", "f32", "f64"];
 /** One line of the About tab's peak-vs-measured table. */
 export interface EngineRow {
 	device: string;
-	/** "1 P-core", "8 P-cores", "AMX", "GPU (16 cores)": the dashboard's own strings. */
+	/** "1 P-core", "8 P-cores", "Matrix unit", "GPU (16 cores)": the dashboard's own strings. */
 	engine: string;
 	family: Family;
 	precision: string;
-	/** The ceiling the charts draw for this family (familyPeak); none for AMX. */
+	/** The ceiling the charts draw for this family (familyPeak); none for the matrix unit. */
 	peak: Peak | undefined;
 	/** The family's fastest row on this device at this precision, any size. */
 	best: Row | undefined;
@@ -25,8 +25,8 @@ function engineLabel(family: Family, peak: Peak | undefined): string {
 			return peak ? "1 P-core" : "CPU (1 thread)";
 		case "parallel":
 			return peak ? `${peak.cores} P-cores` : "CPU (all threads)";
-		case "amx":
-			return "AMX";
+		case "matrix":
+			return "Matrix unit";
 		case "gpu":
 			return peak ? `GPU (${peak.cores} cores)` : "GPU";
 	}
@@ -60,10 +60,13 @@ export function engineRows(
 			...peaks.map((p) => p.device),
 		]),
 	].sort();
-	return devices.flatMap((device) =>
-		FAMILY_ORDER.flatMap((f) =>
+	return devices.flatMap((device) => {
+		const gpuCores =
+			rows.find((r) => r.device === device && r.gpu_cores !== null)
+				?.gpu_cores ?? null;
+		return FAMILY_ORDER.flatMap((f) =>
 			FLOATS.flatMap((precision) => {
-				const peak = familyPeak(peaks, f, device, precision);
+				const peak = familyPeak(peaks, f, device, precision, gpuCores);
 				const top = best.get(key(device, f, precision));
 				if (!peak && !top) return [];
 				return [
@@ -77,6 +80,6 @@ export function engineRows(
 					},
 				];
 			}),
-		),
-	);
+		);
+	});
 }

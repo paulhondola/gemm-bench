@@ -9,7 +9,7 @@ const f: Filters = {
 	precision: "f32",
 	n: 64,
 	kernel: "ikj",
-	blockSize: 32,
+	knobs: {},
 	relative: false,
 };
 
@@ -56,7 +56,7 @@ test("a row at a different size does not leak into the pinned size", () => {
 
 test("the i32 group has a GPU bar and no AMX bar", () => {
 	const mixed: Row[] = [
-		row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "amx" }),
+		row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "matrix" }),
 		row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 27 }),
 		row({
 			kernel: "rayon-ikj",
@@ -80,7 +80,7 @@ test("the i32 group has a GPU bar and no AMX bar", () => {
 			.map((b) => b.series)
 			.sort();
 	expect(at("i32")).toEqual(["gpu", "parallel"]);
-	expect(at("f32")).toEqual(["amx", "parallel"]);
+	expect(at("f32")).toEqual(["matrix", "parallel"]);
 });
 
 /** The accuracy chart's trace for one (family, precision). */
@@ -112,7 +112,7 @@ const accuracyRows: Row[] = [
 		precision: "f64",
 		n: 64,
 		gops: 400,
-		backend: "amx",
+		backend: "matrix",
 		mean_rel_error_f64: 3.4e-18,
 	}),
 	row({
@@ -148,7 +148,7 @@ test("one trace per family and precision, in family then float-precision order",
 		uidOf("serial f16"),
 		uidOf("serial f32"),
 		uidOf("parallel f32"),
-		uidOf("amx f64"),
+		uidOf("matrix f64"),
 		uidOf("gpu f16"),
 		uidOf("gpu f32"),
 	]);
@@ -162,7 +162,7 @@ test("each trace is named for its precision and grouped under its family", () =>
 		["serial", "serial", "f16"],
 		["serial", "serial", "f32"],
 		["parallel", "parallel", "f32"],
-		["amx", "amx", "f64"],
+		["matrix", "matrix", "f64"],
 		["gpu", "gpu", "f16"],
 		["gpu", "gpu", "f32"],
 	]);
@@ -208,7 +208,7 @@ test("exact, non-finite and integer rows are left out", () => {
 			gops: 50,
 			mean_rel_error_f64: 0,
 		}),
-		// build.sql writes a non-finite error as null.
+		// SQLite stores a NaN error as NULL.
 		row({ kernel: "tiled", n: 64, gops: 20, mean_rel_error_f64: null }),
 		// Integers are exact in practice; the precision filter, not the error
 		// filter, is what keeps this one out.
@@ -234,6 +234,20 @@ test("exact, non-finite and integer rows are left out", () => {
 	]);
 	// A precision left with no point gets no empty legend entry.
 	expect(accuracyTrace(spec, "parallel", "f64")).toBeUndefined();
+});
+
+test("an infinite error (a kernel that produced NaN) is left out of the accuracy chart", () => {
+	const rows = [
+		row({ kernel: "ikj", n: 512, gops: 20, mean_rel_error_f64: 1e-6 }),
+		row({
+			kernel: "tiled",
+			n: 512,
+			gops: 25,
+			mean_rel_error_f64: Number.POSITIVE_INFINITY,
+		}),
+	];
+	const spec = accuracyVsThroughput(rows, { ...f, n: 512 }, makeCtx(rows));
+	expect(plotted(spec).every((p) => Number.isFinite(Number(p.x)))).toBe(true);
 });
 
 test("f.n pins the size", () => {

@@ -5,21 +5,23 @@ import {
 	BASELINE_KERNEL,
 	bestPerFamily,
 	bestPerKernel,
-	blockSizes,
-	blockSizesFor,
-	defaultBlockSizeFor,
 	defaultParallelKernel,
 	defaultPrecision,
 	defaultSize,
 	families,
 	familyOf,
 	familyPeak,
+	formatParams,
 	hasKernel,
 	hasSingleThreadBaseline,
 	isPlottable,
+	knobNames,
+	knobValues,
+	knobValuesFor,
 	partitionPlottable,
+	pinKnobs,
 	precisions,
-	singleBlockSizeKernels,
+	singleValueKernels,
 	sizesFor,
 } from "./derive";
 import { peak, row } from "./fixtures";
@@ -60,9 +62,9 @@ test("a metal kernel stays gpu even with only single-thread rows", () => {
 test("an amx kernel is its own family, not serial, despite threads=1", () => {
 	expect(
 		families([
-			row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "amx" }),
+			row({ kernel: "accelerate-blas", n: 64, gops: 400, backend: "matrix" }),
 		]).get("accelerate-blas"),
-	).toBe("amx");
+	).toBe("matrix");
 });
 
 test("sizesFor narrows to the precision; allSizes does not", () => {
@@ -169,16 +171,6 @@ test("isPlottable rejects Infinity median_ms", () => {
 	).toBe(false);
 });
 
-test("isPlottable rejects null stddev_ms", () => {
-	// build.sql writes non-finite doubles as null (JSON has no NaN or
-	// Infinity), and Number(null) is 0, which a >= 0 check would let through.
-	expect(isPlottable({ ...validRow, stddev_ms: null })).toBe(false);
-});
-
-test("isPlottable rejects null gops", () => {
-	expect(isPlottable({ ...validRow, gops: null })).toBe(false);
-});
-
 test("isPlottable rejects negative threads", () => {
 	expect(isPlottable({ ...validRow, threads: -1 })).toBe(false);
 });
@@ -187,6 +179,13 @@ test("isPlottable keeps a valid row with stddev_ms = 0", () => {
 	// Zero standard deviation is legitimate (a perfectly consistent
 	// measurement), not an error condition.
 	expect(isPlottable({ ...validRow, stddev_ms: 0 })).toBe(true);
+});
+
+test("formatParams lists name=value pairs", () => {
+	expect(formatParams({ depth_block: 256, register_cols: 12 })).toBe(
+		"depth_block=256 register_cols=12",
+	);
+	expect(formatParams({})).toBe("");
 });
 
 test("partitionPlottable reports the usable rows and the dropped count", () => {
@@ -204,55 +203,70 @@ test("baseline guards detect what a partial sweep is missing", () => {
 	);
 });
 
-const blockRows: Row[] = [
-	row({ kernel: "ikj", n: 64, gops: 10, block_size: 32 }),
-	row({ kernel: "ikj", n: 128, gops: 12, block_size: 32 }),
-	row({ kernel: "ikj", n: 256, gops: 14, block_size: 32 }),
-	row({ kernel: "ikj", n: 64, gops: 9, block_size: 64 }),
-	row({ kernel: "ikj", n: 128, gops: 11, block_size: 64 }),
+const knobRows: Row[] = [
+	row({ kernel: "tiled", n: 64, gops: 10, swept: { tile_size: 32 } }),
+	row({ kernel: "tiled", n: 128, gops: 12, swept: { tile_size: 32 } }),
+	row({ kernel: "tiled", n: 256, gops: 14, swept: { tile_size: 32 } }),
+	row({ kernel: "tiled", n: 64, gops: 9, swept: { tile_size: 64 } }),
+	row({ kernel: "tiled", n: 128, gops: 11, swept: { tile_size: 64 } }),
+	row({ kernel: "packed", n: 64, gops: 30, swept: { depth_block: 256 } }),
+	row({ kernel: "ikj", n: 64, gops: 5 }),
 ];
 
-test("blockSizes lists each block size once, sorted", () => {
-	expect(blockSizes(blockRows)).toEqual([32, 64]);
+test("knobNames lists each swept knob once, tile size before depth block", () => {
+	expect(knobNames(knobRows)).toEqual(["tile_size", "depth_block"]);
 });
 
-test("blockSizesFor narrows to the given precision and n", () => {
-	expect(blockSizesFor(blockRows, "f32", 64)).toEqual([32, 64]);
-	expect(blockSizesFor(blockRows, "f32", 256)).toEqual([32]);
-});
-
-test("defaultBlockSizeFor recovers a selection stranded by an n change", () => {
-	// block_size=64 is a real, valid selection at n=128 — the App.svelte
-	// pickSize control's exact scenario is choosing 64 there, then moving to
-	// n=256, which only has block_size=32.
-	const stranded = 64;
-	expect(blockSizesFor(blockRows, "f32", 128)).toContain(stranded);
-	expect(blockSizesFor(blockRows, "f32", 256)).not.toContain(stranded);
-	expect(defaultBlockSizeFor(blockRows, "f32", 256)).toBe(32);
-});
-
-test("defaultBlockSizeFor is 0 when nothing exists for that precision/n", () => {
-	expect(defaultBlockSizeFor(blockRows, "f16", 256)).toBe(0);
-	expect(defaultBlockSizeFor(blockRows, "f32", 4096)).toBe(0);
-});
-
-test("singleBlockSizeKernels: a kernel with two block sizes in the dataset is excluded, a kernel with one is included", () => {
-	const mixed: Row[] = [
-		...blockRows, // ikj: block_size 32 and 64 -> not single
-		row({ kernel: "mps", n: 256, gops: 900, backend: "metal", block_size: 32 }),
+test("knobNames puts a knob it has no label for after the known ones, alphabetically", () => {
+	const unknown: Row[] = [
+		row({ kernel: "x", n: 64, swept: { zeta: 1 } }),
+		row({ kernel: "y", n: 64, swept: { alpha: 1, depth_block: 256 } }),
+		row({ kernel: "tiled", n: 64, swept: { tile_size: 32 } }),
 	];
-	const single = singleBlockSizeKernels(mixed);
-	expect(single.has("mps")).toBe(true);
-	expect(single.has("ikj")).toBe(false);
+	expect(knobNames(unknown)).toEqual([
+		"tile_size",
+		"depth_block",
+		"alpha",
+		"zeta",
+	]);
 });
 
-test("rows without a block size are not a block size", () => {
-	const withUntiled: Row[] = [
-		...blockRows,
-		row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 40, block_size: null }),
-	];
-	expect(blockSizes(withUntiled)).toEqual([32, 64]);
-	expect(blockSizesFor(withUntiled, "f32", 64)).toEqual([32, 64]);
+test("knobValues lists one knob's values once, sorted", () => {
+	expect(knobValues(knobRows, "tile_size")).toEqual([32, 64]);
+	expect(knobValues(knobRows, "depth_block")).toEqual([256]);
+});
+
+test("knobValuesFor narrows to the given precision and n", () => {
+	expect(knobValuesFor(knobRows, "tile_size", "f32", 64)).toEqual([32, 64]);
+	expect(knobValuesFor(knobRows, "tile_size", "f32", 256)).toEqual([32]);
+	expect(knobValuesFor(knobRows, "tile_size", "f16", 64)).toEqual([]);
+});
+
+test("pinKnobs keeps a pin still measured there and moves a stranded one to the smallest value", () => {
+	// Tile 64 is valid at n=128, but n=256 has only 32 (the pickSize scenario).
+	expect(pinKnobs(knobRows, "f32", 128, { tile_size: 64 })).toEqual({
+		tile_size: 64,
+	});
+	expect(pinKnobs(knobRows, "f32", 256, { tile_size: 64 })).toEqual({
+		tile_size: 32,
+	});
+	expect(pinKnobs(knobRows, "f32", 64, {})).toEqual({
+		depth_block: 256,
+		tile_size: 32,
+	});
+});
+
+test("pinKnobs leaves out a knob with no values at that size", () => {
+	expect(pinKnobs(knobRows, "f32", 4096, { tile_size: 32 })).toEqual({});
+});
+
+test("singleValueKernels: per knob, the kernels measured at only one value", () => {
+	const single = singleValueKernels(knobRows);
+	expect(single.get("depth_block")?.has("packed")).toBe(true);
+	expect(single.get("tile_size")?.has("tiled")).toBe(false);
+	expect([...single.values()].some((kernels) => kernels.has("ikj"))).toBe(
+		false,
+	);
 });
 
 test("bestPerFamily keeps each family's winning row per precision and size", () => {
@@ -313,21 +327,34 @@ test("familyPeak: parallel gets nothing when the cpu only has a 1-core row", () 
 });
 
 test("familyPeak: gpu takes the metal row, never a cpu one", () => {
-	const found = familyPeak(M1_PEAKS, "gpu", "Apple M1 Pro", "f32");
+	const found = familyPeak(M1_PEAKS, "gpu", "Apple M1 Pro", "f32", 16);
 	expect(found?.backend).toBe("metal");
 	expect(found?.gflops).toBe(5308);
 	expect(
-		familyPeak([peak({ cores: 8 })], "gpu", "Apple M1 Pro", "f32"),
+		familyPeak([peak({ cores: 8 })], "gpu", "Apple M1 Pro", "f32", 16),
 	).toBeUndefined();
 });
 
+test("familyPeak: a GPU ceiling needs the run's core count to match", () => {
+	// The 14- and 16-core M1 Pro GPUs report the same name.
+	expect(
+		familyPeak(M1_PEAKS, "gpu", "Apple M1 Pro", "f32", 14),
+	).toBeUndefined();
+	expect(
+		familyPeak(M1_PEAKS, "gpu", "Apple M1 Pro", "f32", null),
+	).toBeUndefined();
+	expect(familyPeak(M1_PEAKS, "gpu", "Apple M1 Pro", "f32", 16)?.gflops).toBe(
+		5308,
+	);
+});
+
 test("familyPeak: amx has no peak, even with cpu and metal rows present", () => {
-	expect(familyPeak(M1_PEAKS, "amx", "Apple M1 Pro", "f32")).toBeUndefined();
+	expect(familyPeak(M1_PEAKS, "matrix", "Apple M1 Pro", "f32")).toBeUndefined();
 });
 
 test("familyPeak: another device gets nothing", () => {
 	expect(familyPeak(M1_PEAKS, "serial", "Apple M3", "f32")).toBeUndefined();
-	expect(familyPeak(M1_PEAKS, "gpu", "Apple M3", "f32")).toBeUndefined();
+	expect(familyPeak(M1_PEAKS, "gpu", "Apple M3", "f32", 16)).toBeUndefined();
 });
 
 test("familyPeak: an integer precision gets nothing when only f32 rows exist", () => {
@@ -335,7 +362,9 @@ test("familyPeak: an integer precision gets nothing when only f32 rows exist", (
 	expect(
 		familyPeak(M1_PEAKS, "parallel", "Apple M1 Pro", "i32"),
 	).toBeUndefined();
-	expect(familyPeak(M1_PEAKS, "gpu", "Apple M1 Pro", "i32")).toBeUndefined();
+	expect(
+		familyPeak(M1_PEAKS, "gpu", "Apple M1 Pro", "i32", 16),
+	).toBeUndefined();
 });
 
 test("familyPeak: only rows of the asked precision count", () => {

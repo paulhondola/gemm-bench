@@ -4,30 +4,49 @@ mod benchmark;
 mod cli;
 mod config;
 mod context;
+mod db;
+mod host;
 mod kernel;
+mod machine;
 mod plan;
 mod report;
+mod validate;
 
 use clap::{CommandFactory, Parser};
 
-use crate::cli::Cli;
+use crate::cli::{Cli, Command};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    if let Some(Command::Validate { dbs }) = &cli.command {
+        return validate::validate_all(dbs).map_err(Into::into);
+    }
     if cli.is_unpinned() {
         Cli::command().print_help()?;
         return Ok(());
     }
-    let plan = cli.into_plan()?;
+    let mut plan = cli.into_plan()?;
     for notice in &plan.skipped {
         eprintln!("{notice}");
     }
     let records = benchmark::run(&plan)?;
 
     report::print_results_table(&records);
-    report::write_records(plan.output, &records)?;
+    db::write_run(
+        &mut plan.db,
+        &plan.context,
+        plan.repetitions,
+        &plan.machine,
+        &records,
+    )
+    .map_err(|error| {
+        format!(
+            "cannot write the run to '{}': {error}. Nothing was saved: the results table above is the only copy of this run",
+            plan.output_path.display()
+        )
+    })?;
     eprintln!(
-        "Wrote {} records to {}",
+        "Wrote {} measurements to {}",
         records.len(),
         plan.output_path.display()
     );

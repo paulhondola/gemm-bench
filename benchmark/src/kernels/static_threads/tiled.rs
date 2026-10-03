@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 
-use crate::kernels::{GemmKernel, assert_gemm_dimensions};
+use crate::kernels::{GemmKernel, Param, assert_gemm_dimensions};
 use crate::{Element, Matrix};
 
 use super::static_row_counts;
@@ -80,5 +80,13 @@ impl<T: Element> GemmKernel<T> for StaticTiledGemm {
                 }
             }
         });
+    }
+
+    fn params(&self, n: usize) -> Vec<Param> {
+        let threads = self.pool.current_num_threads();
+        vec![
+            Param::swept("tile_size", self.block_size),
+            Param::derived("max_rows_per_thread", n.div_ceil(threads)),
+        ]
     }
 }

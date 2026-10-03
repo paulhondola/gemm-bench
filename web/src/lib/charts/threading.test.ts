@@ -12,7 +12,7 @@ const f: Filters = {
 	precision: "f16",
 	n: 1024,
 	kernel: "rayon-ikj",
-	blockSize: 32,
+	knobs: {},
 	relative: false,
 };
 

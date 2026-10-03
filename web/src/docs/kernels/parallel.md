@@ -32,7 +32,7 @@ parallel for chunk in chunks:    # Rayon work stealing
 ```
 
 - **Runs via:** A Rayon parallel iterator over the row chunks, on a pool built before timing starts.
-- **Tunes:** Thread count and block size.
+- **Tunes:** Thread count and tile size (`--tile-size`).
 - **Precisions:** `f16`, `f32`, `f64`, `i32`, `i64`.
 - **Source:** [`benchmark/src/kernels/rayon/tiled.rs`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/rayon/tiled.rs)
 
@@ -51,7 +51,7 @@ for kk in steps of b:
 ```
 
 - **Runs via:** A Rayon parallel iterator over the 8-row strips, on a pool built before timing starts, with the `packed` micro-kernel on each core.
-- **Tunes:** Thread count and block size (the k-block depth).
+- **Tunes:** Thread count and depth block (`--depth-block`, alias `--kc`).
 - **Precisions:** `f16`, `f32`, `f64`, `i32`, `i64`.
 - **Watch for:** B is packed on one thread between parallel rounds: an estimated 8% of an 8-thread run at N = 2048 and about a quarter at N = 512, so its speedup over `packed` shrinks at small N. There are also few strips to share there: N / 8, so 8 at N = 64.
 - **Source:** [`benchmark/src/kernels/rayon/packed.rs`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/rayon/packed.rs)
@@ -89,7 +89,7 @@ on every thread at once:
 ```
 
 - **Runs via:** The same pool and broadcast as `static-ikj`.
-- **Tunes:** Thread count and block size.
+- **Tunes:** Thread count and tile size (`--tile-size`).
 - **Precisions:** `f16`, `f32`, `f64`, `i32`, `i64`.
 - **Watch for:** As for `static-ikj`, a thread count above N is skipped.
 - **Source:** [`benchmark/src/kernels/static_threads/tiled.rs`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/static_threads/tiled.rs)

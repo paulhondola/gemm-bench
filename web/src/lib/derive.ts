@@ -6,12 +6,10 @@ export function precisions(rows: Row[]): string[] {
 }
 
 /**
- * Contributor CSVs are untrusted: build.sql only rejects NULLs, so zero and
- * negative values reach results.json, and NaN and Infinity reach it as null
- * (JSON has neither). A single non-positive n or gops poisons a log scale's
- * whole domain, blanking every series on the chart rather than just the bad
- * row — so unusable rows are dropped at the door. Number(null) is 0, so only
- * a real number counts.
+ * Host databases are contributed, and the schema allows +Inf (a kernel whose
+ * timing rounded to zero). A single non-finite or non-positive n or gops
+ * poisons a log scale's whole domain, blanking every series on the chart
+ * rather than just the bad row, so unusable rows are dropped at the door.
  */
 export function isPlottable(row: Row): boolean {
 	const finite = (v: unknown): v is number =>
@@ -36,7 +34,14 @@ export function partitionPlottable(rows: Row[]): {
 	return { rows: usable, dropped: rows.length - usable.length };
 }
 
-export type Family = "serial" | "parallel" | "amx" | "gpu";
+/** A row's params for the data view: `depth_block=256 register_cols=12`. */
+export function formatParams(params: Record<string, number>): string {
+	return Object.entries(params)
+		.map(([name, value]) => `${name}=${value}`)
+		.join(" ");
+}
+
+export type Family = "serial" | "parallel" | "matrix" | "gpu";
 
 /**
  * Kernel family, read off the rows rather than the kernel's name. A prefix
@@ -49,11 +54,11 @@ export function families(rows: Row[]): Map<string, Family> {
 		const kernel = String(r.kernel);
 		// Vendor backends manage their own threading and record threads=1,
 		// so their family comes from the backend, not the thread count.
-		if (r.backend === "metal" || r.backend === "amx") {
-			out.set(kernel, r.backend === "metal" ? "gpu" : "amx");
+		if (r.backend === "metal" || r.backend === "matrix") {
+			out.set(kernel, r.backend === "metal" ? "gpu" : "matrix");
 			continue;
 		}
-		if (out.get(kernel) === "gpu" || out.get(kernel) === "amx") continue;
+		if (out.get(kernel) === "gpu" || out.get(kernel) === "matrix") continue;
 		if (Number(r.threads) > 1 || out.get(kernel) === "parallel") {
 			out.set(kernel, "parallel");
 		} else if (!out.has(kernel)) {
@@ -69,9 +74,6 @@ export function kernels(rows: Row[]): string[] {
 
 const ascending = (a: number, b: number) => a - b;
 
-/** Rows from kernels that don't tile carry no block size (null). */
-const hasBlockSize = (r: Row) => r.block_size != null;
-
 export function sizesFor(rows: Row[], precision: string): number[] {
 	return [
 		...new Set(
@@ -84,59 +86,93 @@ export function allSizes(rows: Row[]): number[] {
 	return [...new Set(rows.map((r) => Number(r.n)))].sort(ascending);
 }
 
-/** Every distinct block size present, sorted. */
-export function blockSizes(rows: Row[]): number[] {
+/** Display names of the swept knobs; an unknown knob shows its params.name. */
+export const KNOB_LABEL: Record<string, string> = {
+	tile_size: "Tile size",
+	depth_block: "Depth block",
+};
+
+export const knobLabel = (name: string): string => KNOB_LABEL[name] ?? name;
+
+/**
+ * Every swept knob in the rows, once each: one pill group per knob. Known
+ * knobs come in KNOB_LABEL order, any other after them, alphabetically.
+ */
+export function knobNames(rows: Row[]): string[] {
+	const known = Object.keys(KNOB_LABEL);
+	const rank = (name: string) => {
+		const i = known.indexOf(name);
+		return i < 0 ? known.length : i;
+	};
+	return [...new Set(rows.flatMap((r) => Object.keys(r.swept)))].sort(
+		(a, b) => rank(a) - rank(b) || a.localeCompare(b),
+	);
+}
+
+/** One knob's values, once each, sorted. */
+export function knobValues(rows: Row[], name: string): number[] {
 	return [
-		...new Set(rows.filter(hasBlockSize).map((r) => Number(r.block_size))),
+		...new Set(rows.flatMap((r) => (name in r.swept ? [r.swept[name]] : []))),
 	].sort(ascending);
 }
 
-/** Block sizes available for a given precision and size, for the disabled-pill reason text. */
-export function blockSizesFor(
+/** One knob's values at a precision and size: the pills selectable there. */
+export function knobValuesFor(
 	rows: Row[],
+	name: string,
 	precision: string,
 	n: number,
 ): number[] {
-	return [
-		...new Set(
-			rows
-				.filter(
-					(r) =>
-						hasBlockSize(r) && r.precision === precision && Number(r.n) === n,
-				)
-				.map((r) => Number(r.block_size)),
-		),
-	].sort(ascending);
+	return knobValues(
+		rows.filter((r) => r.precision === precision && r.n === n),
+		name,
+	);
 }
 
 /**
- * The block size to fall back to when the current selection is invalid for
- * this specific (precision, n) — the smallest one actually available there.
- * It must stay valid as precision/n change, so it reads the exact
- * combination the fallback needs to hold for.
+ * Every knob's pin, kept valid at (precision, n): a pin still measured there
+ * stays, any other falls back to the smallest value there, and a knob with
+ * no values there has no pin.
  */
-export function defaultBlockSizeFor(
+export function pinKnobs(
 	rows: Row[],
 	precision: string,
 	n: number,
-): number {
-	return blockSizesFor(rows, precision, n)[0] ?? 0;
+	current: Record<string, number>,
+): Record<string, number> {
+	const pins: Record<string, number> = {};
+	for (const name of knobNames(rows)) {
+		const values = knobValuesFor(rows, name, precision, n);
+		if (values.length === 0) continue;
+		pins[name] = values.includes(current[name]) ? current[name] : values[0];
+	}
+	return pins;
 }
 
-/** Kernels present at exactly one distinct block_size across the whole
- * dataset: the dimension does not vary for them, so a block-size selection
- * must not filter them away. */
-export function singleBlockSizeKernels(rows: Row[]): Set<string> {
-	const byKernel = new Map<string, Set<number>>();
+/**
+ * Per knob, the kernels measured at only one value of it in the whole
+ * dataset: the knob doesn't vary for them, so a pin must not filter them away.
+ */
+export function singleValueKernels(rows: Row[]): Map<string, Set<string>> {
+	const seen = new Map<string, Map<string, Set<number>>>();
 	for (const r of rows) {
-		if (!hasBlockSize(r)) continue;
-		const kernel = String(r.kernel);
-		const sizes = byKernel.get(kernel) ?? new Set<number>();
-		sizes.add(Number(r.block_size));
-		byKernel.set(kernel, sizes);
+		for (const [name, value] of Object.entries(r.swept)) {
+			const byKernel = seen.get(name) ?? new Map<string, Set<number>>();
+			const values = byKernel.get(r.kernel) ?? new Set<number>();
+			values.add(value);
+			byKernel.set(r.kernel, values);
+			seen.set(name, byKernel);
+		}
 	}
-	return new Set(
-		[...byKernel].filter(([, sizes]) => sizes.size === 1).map(([k]) => k),
+	return new Map(
+		[...seen].map(([name, byKernel]) => [
+			name,
+			new Set(
+				[...byKernel]
+					.filter(([, values]) => values.size === 1)
+					.map(([kernel]) => kernel),
+			),
+		]),
 	);
 }
 
@@ -195,7 +231,7 @@ export function familyOf(row: Row, family: Map<string, Family>): Family {
 
 /**
  * One row per (family, precision, n): the family's best row, whatever kernel,
- * thread count or block size produced it. The whole winning row is kept so a
+ * thread count or knob value produced it. The whole winning row is kept so a
  * family chart can name the kernel behind each point. Precision is part of
  * the key because the Precision tab passes every precision at once. A strict
  * `>` keeps the first row on a tie, so the result is stable.
@@ -219,13 +255,15 @@ export function bestPerFamily(rows: Row[], family: Map<string, Family>): Row[] {
  * 1-core figure up would overstate the 8-core ceiling. So serial reads the
  * 1-core row and parallel the widest cpu row. A cpu with only a 1-core row
  * gives parallel nothing, since that row is the serial ceiling. Apple
- * publishes no AMX peak, so amx never has one.
+ * publishes no matrix-unit peak, so matrix never has one. A GPU ceiling must
+ * also match the run's GPU core count.
  */
 export function familyPeak(
 	peaks: Peak[],
 	family: Family,
 	device: string,
 	precision: string,
+	gpuCores: number | null = null,
 ): Peak | undefined {
 	const own = peaks.filter(
 		(p) => p.device === device && p.precision === precision,
@@ -245,8 +283,12 @@ export function familyPeak(
 			return cpu && cpu.cores > 1 ? cpu : undefined;
 		}
 		case "gpu":
-			return widest("metal");
-		case "amx":
+			// The 14- and 16-core M1 Pro GPUs report the same name, so only the
+			// run's core count picks the right ceiling; without one, none.
+			return gpuCores == null
+				? undefined
+				: own.find((p) => p.backend === "metal" && p.cores === gpuCores);
+		case "matrix":
 			return undefined;
 	}
 }

@@ -15,7 +15,10 @@ pub(crate) struct ConfigFile {
     pub(crate) threads: Option<Vec<usize>>,
     kernel: Option<Vec<String>>,
     precision: Option<Vec<String>>,
-    pub(crate) block_size: Option<Vec<usize>>,
+    #[serde(alias = "tile")]
+    pub(crate) tile_size: Option<Vec<usize>>,
+    #[serde(alias = "kc")]
+    pub(crate) depth_block: Option<Vec<usize>>,
     pub(crate) repetitions: Option<usize>,
 }
 

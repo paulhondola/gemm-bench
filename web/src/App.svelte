@@ -3,17 +3,22 @@ import About from "./lib/About.svelte";
 import Chart from "./lib/Chart.svelte";
 import { rowsForTab, visibleTabs } from "./lib/charts/index";
 import { makeCtx } from "./lib/charts/types";
+import type { Row } from "./lib/db";
 import {
 	allSizes,
-	blockSizes,
-	blockSizesFor,
-	defaultBlockSizeFor,
 	defaultParallelKernel,
 	defaultSize,
 	families,
+	formatParams,
 	kernels,
+	knobLabel,
+	knobNames,
+	knobValues,
+	knobValuesFor,
+	pinKnobs,
 	sizesFor,
 } from "./lib/derive";
+import { machineLabel } from "./lib/machine";
 import PickerGroup from "./lib/PickerGroup.svelte";
 import { boot, store } from "./lib/state.svelte";
 
@@ -24,7 +29,7 @@ const filters = $derived({
 	precision: store.precision,
 	n: store.n,
 	kernel: store.kernel,
-	blockSize: store.blockSize,
+	knobs: store.knobs,
 	relative: store.relative,
 });
 const tabs = $derived(visibleTabs(store.rows, filters, ctx));
@@ -32,12 +37,12 @@ const tabs = $derived(visibleTabs(store.rows, filters, ctx));
 const about = $derived(store.tab === "about");
 const tab = $derived(tabs.find((t) => t.id === store.tab) ?? tabs[0]);
 const scoped = $derived(
-	tab ? rowsForTab(tab, store.rows, store.precision, store.blockSize, ctx) : [],
+	tab ? rowsForTab(tab, store.rows, store.precision, store.knobs, ctx) : [],
+);
+const columns = $derived(
+	scoped.length ? (Object.keys(scoped[0]) as (keyof Row)[]) : [],
 );
 const available = $derived(sizesFor(store.rows, store.precision));
-const availableBlockSizes = $derived(
-	blockSizesFor(store.rows, store.precision, store.n),
-);
 // The kernel pill group is threading-tab-only and must offer only the
 // kernels that tab's chart can plot — parallel-family kernels — not every
 // kernel in scope.
@@ -45,14 +50,20 @@ const parallelKernelList = $derived(
 	kernels(scoped).filter((k) => ctx.family.get(k) === "parallel"),
 );
 
+/** One data-view cell: params as name=value pairs, floats to 3 places. */
+function cell(value: Row[keyof Row]): string {
+	if (value !== null && typeof value === "object") return formatParams(value);
+	if (typeof value === "number" && !Number.isInteger(value))
+		return value.toFixed(3);
+	return String(value ?? "");
+}
+
 function pickPrecision(p: string) {
 	store.precision = p;
 	if (!sizesFor(store.rows, p).includes(store.n)) {
 		store.n = defaultSize(store.rows, p);
 	}
-	if (!blockSizesFor(store.rows, p, store.n).includes(store.blockSize)) {
-		store.blockSize = defaultBlockSizeFor(store.rows, p, store.n);
-	}
+	store.knobs = pinKnobs(store.rows, p, store.n, store.knobs);
 	const family = families(store.rows);
 	const kernelStillValid = store.rows.some(
 		(r) =>
@@ -67,15 +78,12 @@ function pickPrecision(p: string) {
 
 function pickSize(s: number) {
 	store.n = s;
-	if (
-		!blockSizesFor(store.rows, store.precision, s).includes(store.blockSize)
-	) {
-		store.blockSize = defaultBlockSizeFor(store.rows, store.precision, s);
-	}
+	store.knobs = pinKnobs(store.rows, store.precision, s, store.knobs);
 }
 
-function pickBlockSize(b: number) {
-	store.blockSize = b;
+/** Loads another host as a fresh page: no picker state carries over from the last one. */
+function selectHost(id: string) {
+	location.search = new URLSearchParams({ host: id }).toString();
 }
 
 function selectTab(id: string) {
@@ -95,14 +103,30 @@ function selectTab(id: string) {
 				(non-finite or non-positive values)
 			</p>
 		{/if}
+		{#if store.hosts.length > 0}
+			<div class="host">
+				<label>
+					Host
+					<select value={store.host?.id} onchange={(e) => selectHost(e.currentTarget.value)}>
+						{#each store.hosts as h (h.id)}<option value={h.id}>{h.id}</option>{/each}
+					</select>
+				</label>
+				{#if store.machine}<span class="muted">{machineLabel(store.machine)}</span>{/if}
+			</div>
+		{/if}
 	</header>
 
 	{#if store.error}
 		<p class="error">{store.error}</p>
 	{:else if !store.loaded}
 		<p class="muted">Loading results…</p>
+	{:else if !store.host}
+		<p class="muted">
+			No host databases yet. Run <code>just init &lt;github-login&gt;/&lt;machine&gt;</code> once,
+			then <code>just bench</code>.
+		</p>
 	{:else if !tab}
-		<p class="muted">No results yet. Run <code>just bench</code> and <code>just data</code>.</p>
+		<p class="muted">{store.host.id} has no measurements to chart yet.</p>
 	{:else}
 		<nav>
 			{#each tabs as t}
@@ -118,7 +142,11 @@ function selectTab(id: string) {
 		</nav>
 
 		{#if about}
-			<About rows={store.rows} peaks={store.peaks} family={ctx.family} />
+			<About
+				rows={store.rows}
+				peaks={store.peaks}
+				family={ctx.family}
+				machine={store.machine} />
 		{:else}
 			<div class="controls">
 				{#if tab.controls.includes("precision") || tab.inertPrecision}
@@ -144,18 +172,21 @@ function selectTab(id: string) {
 						onSelect={pickSize} />
 				{/if}
 
-				{#if tab.controls.includes("blockSize")}
-					<PickerGroup
-						label="Block size"
-						items={blockSizes(store.rows)}
-						selected={store.blockSize}
-						format={(b) => `b = ${b}`}
-						disabled={(b) => !availableBlockSizes.includes(b)}
-						title={(b) =>
-							availableBlockSizes.includes(b)
-								? ""
-								: `no ${store.precision} b = ${b} runs at N = ${store.n}`}
-						onSelect={pickBlockSize} />
+				{#if tab.controls.includes("knobs")}
+					{#each knobNames(store.rows) as name (name)}
+						{@const here = knobValuesFor(store.rows, name, store.precision, store.n)}
+						<PickerGroup
+							label={knobLabel(name)}
+							items={knobValues(store.rows, name)}
+							format={(v) => `${knobLabel(name).toLowerCase()} ${v}`}
+							selected={store.knobs[name] ?? 0}
+							disabled={(v) => !here.includes(v)}
+							title={(v) =>
+								here.includes(v)
+									? ""
+									: `no ${store.precision} ${knobLabel(name).toLowerCase()} ${v} runs at N = ${store.n}`}
+							onSelect={(v) => (store.knobs = { ...store.knobs, [name]: v })} />
+					{/each}
 				{/if}
 
 				{#if tab.controls.includes("kernel")}
@@ -190,19 +221,13 @@ function selectTab(id: string) {
 					<table>
 						<thead>
 							<tr>
-								{#each scoped.length ? Object.keys(scoped[0]) : [] as c}<th>{c}</th>{/each}
+								{#each columns as c}<th>{c}</th>{/each}
 							</tr>
 						</thead>
 						<tbody>
 							{#each scoped as row}
 								<tr>
-									{#each Object.keys(scoped[0]) as c}
-										<td>
-											{typeof row[c] === "number" && !Number.isInteger(row[c])
-												? (row[c] as number).toFixed(3)
-												: row[c]}
-										</td>
-									{/each}
+									{#each columns as c}<td>{cell(row[c])}</td>{/each}
 								</tr>
 							{/each}
 						</tbody>
@@ -237,6 +262,18 @@ function selectTab(id: string) {
 	}
 	.error {
 		color: #e66767;
+	}
+	.host {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 10px;
+		font-size: 13px;
+		color: #9aa1a8;
+	}
+	.host select {
+		margin-left: 6px;
+		font: inherit;
 	}
 	nav {
 		display: flex;

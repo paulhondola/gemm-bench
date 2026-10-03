@@ -2,13 +2,31 @@ import type { Datum } from "plotly.js-dist-min";
 import type { Figure } from "./charts/types";
 import type { Peak, Row } from "./db";
 
-/** A test row; most rows are single-threaded f32 CPU results. */
-export function row(fields: Row): Row {
+/**
+ * A test row: a single-threaded f32 CPU result on the M1 Pro unless the
+ * fields say otherwise. Timings left out are NaN, as they read when missing.
+ */
+export function row(fields: Partial<Row>): Row {
 	return {
+		kernel: "",
+		backend: "cpu",
 		device: "Apple M1 Pro",
 		precision: "f32",
+		n: Number.NaN,
 		threads: 1,
-		backend: "cpu",
+		gops: Number.NaN,
+		mean_rel_error_f64: Number.NaN,
+		median_ms: Number.NaN,
+		min_ms: Number.NaN,
+		stddev_ms: Number.NaN,
+		gpu_ms: null,
+		setup_ms: Number.NaN,
+		gpu_cores: fields.backend === "metal" ? 16 : null,
+		started_at: "2026-10-01T00:00:00Z",
+		commit_id: "test",
+		repetitions: 5,
+		params: {},
+		swept: {},
 		...fields,
 	};
 }

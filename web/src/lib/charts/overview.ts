@@ -259,8 +259,8 @@ export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
 };
 
 /**
- * One line per family: each family's best kernel, thread count and block size
- * at every size. Metal rows are timed end-to-end, the same host-to-host scope
+ * One line per family: each family's best kernel, thread count, tile size and
+ * depth block at every size. Metal rows are timed end-to-end, the same host-to-host scope
  * as the CPU rows they are drawn against, so every line is solid. A family
  * with a hardware peak gets a dashed ceiling in its legend group, so hiding
  * the family hides its ceiling.
@@ -333,7 +333,7 @@ const RUNGS: { label: string; family: Family | null }[] = [
 	{ label: BASELINE_KERNEL, family: null },
 	{ label: "serial", family: "serial" },
 	{ label: "parallel", family: "parallel" },
-	{ label: "amx", family: "amx" },
+	{ label: "matrix", family: "matrix" },
 	{ label: "gpu", family: "gpu" },
 ];
 

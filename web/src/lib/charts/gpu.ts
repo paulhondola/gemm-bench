@@ -21,19 +21,19 @@ import {
 /**
  * The CPU family each GPU kernel is measured against at equal engineering
  * effort: vendor library against vendor library (mps against Accelerate on
- * AMX), hand-written against hand-written (the shaders against the parallel
+ * the matrix unit), hand-written against hand-written (the shaders against the parallel
  * CPU kernels). Nothing in the data marks mps as a vendor library, since all
  * three GPU kernels are backend "metal", so like BASELINE_KERNEL this is keyed
- * by name. A Map, not an object literal: kernel names come from contributed
- * CSVs, and "constructor" must not resolve to a prototype member.
+ * by name. A Map, not an object literal: kernel names come from host
+ * databases, and "constructor" must not resolve to a prototype member.
  */
-export const COUNTERPART = new Map<string, Family>([["mps", "amx"]]);
+export const COUNTERPART = new Map<string, Family>([["mps", "matrix"]]);
 const counterpartOf = (kernel: string): Family =>
 	COUNTERPART.get(kernel) ?? "parallel";
 
 /** The CPU-side reference lines drawn beside the GPU kernels, in legend order. */
 const REFERENCES: { family: Family; label: string }[] = [
-	{ family: "amx", label: "AMX" },
+	{ family: "matrix", label: "Matrix" },
 	{ family: "parallel", label: "parallel CPU" },
 ];
 
@@ -76,7 +76,7 @@ function familyBest(rows: Row[], ctx: Ctx, family: Family): Map<number, Row> {
 }
 
 /**
- * Each GPU kernel against the best parallel-CPU and AMX result at every size.
+ * Each GPU kernel against the best parallel-CPU and the matrix unit result at every size.
  * GPU rows carry end-to-end timings, the same host-to-host scope as the CPU
  * rows, so every line is solid. The GPU ceiling spans three kernel series and
  * so belongs to no legend group; the parallel one shares its reference's, so

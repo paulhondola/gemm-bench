@@ -1,4 +1,4 @@
-**What it shows.** Each multi-threaded CPU kernel's throughput as threads are added, at the selected precision, matrix size and block size. Both axes are linear.
+**What it shows.** Each multi-threaded CPU kernel's throughput as threads are added, at the selected precision, matrix size, tile size and depth block. Both axes are linear.
 
 **How to read it.** A perfectly scaling kernel rises in a straight line. The `rayon-*` kernels balance work by letting idle threads take it from busy ones (work stealing); the `static-*` kernels split the rows evenly up front, like OpenMP's static schedule. Turn on **Relative** to plot speedup over the same kernel on one thread, with a dashed line for ideal scaling (speedup equal to the thread count).
 

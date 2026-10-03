@@ -1,4 +1,4 @@
-**What it shows.** For every matrix size, the single fastest kernel at the selected precision, chosen over every kernel, thread count and block size. Each cell names the winner and its GOP/s, and is coloured by the winner's family.
+**What it shows.** For every matrix size, the single fastest kernel at the selected precision, chosen over every kernel, thread count, tile size and depth block. Each cell names the winner and its GOP/s, and is coloured by the winner's family.
 
 **How to read it.** Read it left to right to see where the winner changes. Small matrices tend to favour kernels with little fixed cost per call; large ones, the kernels with the most raw throughput.
 

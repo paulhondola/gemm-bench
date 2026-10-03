@@ -1,18 +1,17 @@
 use std::{
-    fs::File,
-    io::{Seek, SeekFrom},
     sync::mpsc::{self, RecvTimeoutError, Sender},
     thread::{self, JoinHandle},
     time::Duration,
 };
 
+use gemm_bench::kernels::Source;
 use indicatif::{ProgressBar, ProgressStyle};
 use tabled::{
     Table, Tabled,
     settings::{Alignment, Style, object::Columns},
 };
 
-use crate::benchmark::BenchmarkRecord;
+use crate::{benchmark::BenchmarkRecord, kernel::Knob};
 
 /// Interactive progress tracker wrapping `indicatif::ProgressBar`.
 pub(crate) struct BenchmarkProgress {
@@ -49,11 +48,13 @@ impl BenchmarkProgress {
         n: usize,
         precision: &str,
         threads: usize,
-        block_size: Option<usize>,
+        knob: Option<(Knob, usize)>,
     ) {
-        let block = block_size.map_or_else(String::new, |b| format!(" b={b}"));
+        let knob = knob.map_or_else(String::new, |(knob, value)| {
+            format!(" {}={value}", knob.short())
+        });
         self.bar.set_message(format!(
-            "{kernel:<11} n={n:<4} {precision:<3} t={threads}{block}"
+            "{kernel:<11} n={n:<4} {precision:<3} t={threads}{knob}"
         ));
     }
 
@@ -141,30 +142,14 @@ pub(crate) fn print_results_table(records: &[BenchmarkRecord]) {
     println!("{}", render_results_table(records));
 }
 
-/// Writes into the output file that `Cli::into_plan` opened before the sweep.
-/// Truncation happens only now, so a failed run leaves earlier results intact.
-pub(crate) fn write_records(
-    mut csv_file: File,
-    records: &[BenchmarkRecord],
-) -> Result<(), Box<dyn std::error::Error>> {
-    csv_file.set_len(0)?;
-    csv_file.seek(SeekFrom::Start(0))?;
-    let mut writer = csv::Writer::from_writer(csv_file);
-    for record in records {
-        writer.serialize(record)?;
-    }
-    writer.flush()?;
-    Ok(())
-}
-
-/// Presentation-only view: benchmark files retain the full precision values
-/// in `BenchmarkRecord`, while the terminal stays compact and easy to scan.
+/// Presentation-only view: the database keeps the full-precision values of
+/// `BenchmarkRecord`, while the terminal stays compact and easy to scan.
 #[derive(Tabled)]
 struct TerminalBenchmarkRecord<'a> {
     kernel: &'a str,
     n: usize,
     threads: usize,
-    block: String,
+    knob: String,
     precision: &'a str,
     median_ms: String,
     stddev_ms: String,
@@ -179,9 +164,11 @@ fn render_results_table(records: &[BenchmarkRecord]) -> String {
         kernel: &record.kernel,
         n: record.n,
         threads: record.threads,
-        block: record
-            .block_size
-            .map_or_else(|| "-".to_owned(), |b| b.to_string()),
+        knob: record
+            .params
+            .iter()
+            .find(|p| p.source == Source::Swept)
+            .map_or_else(|| "-".to_owned(), |p| format!("{}={}", p.name, p.value)),
         precision: record.precision,
         median_ms: format!("{:.3}", record.median_ms),
         stddev_ms: format!("{:.3}", record.stddev_ms),
@@ -204,13 +191,13 @@ mod tests {
 
     use super::render_results_table;
     use crate::benchmark::BenchmarkRecord;
+    use crate::kernel::Knob;
     use indicatif::{ProgressBar, ProgressStyle};
 
     fn record() -> BenchmarkRecord {
         BenchmarkRecord {
             kernel: "rayon-ikj".to_owned(),
             backend: "cpu",
-            device: "Test CPU".to_owned(),
             precision: "f32",
             n: 256,
             threads: 4,
@@ -221,11 +208,7 @@ mod tests {
             stddev_ms: 0.25,
             gpu_ms: None,
             setup_ms: 0.05,
-            block_size: None,
-            repetitions: 5,
-            host: "test-host".to_owned(),
-            commit: "abc1234".to_owned(),
-            timestamp: "2026-09-17T12:15:00Z".to_owned(),
+            params: Vec::new(),
         }
     }
 
@@ -249,7 +232,13 @@ mod tests {
         assert!(table.contains("median_ms"));
         assert!(table.contains("stddev_ms"));
         assert!(table.contains("gops"));
-        assert!(table.contains("block"));
+        assert!(table.contains("knob"));
+        let tiled = BenchmarkRecord {
+            kernel: "tiled".to_owned(),
+            params: vec![gemm_bench::kernels::Param::swept("tile_size", 64)],
+            ..record()
+        };
+        assert!(render_results_table(&[tiled]).contains("tile_size=64"));
         assert!(table.contains("0.250"));
         assert!(table.contains("rayon-ikj"));
         assert!(table.contains("12.346"));
@@ -278,7 +267,7 @@ mod tests {
     fn progress_bar_lifecycle_disabled() {
         let mut progress = super::BenchmarkProgress::new(5, true);
         progress.set_target("naive", 64, "f32", 1, None);
-        progress.set_target("tiled", 64, "f32", 1, Some(64));
+        progress.set_target("tiled", 64, "f32", 1, Some((Knob::TileSize, 64)));
         progress.step();
         progress.finish();
     }
@@ -287,39 +276,5 @@ mod tests {
     fn template_compilation() {
         let res = ProgressStyle::default_bar().template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} {msg} ({eta})");
         assert!(res.is_ok(), "template error: {:?}", res.err());
-    }
-
-    #[test]
-    fn write_records_outputs_csv_in_schema_order() {
-        let csv_path =
-            std::env::temp_dir().join(format!("gemm-bench-report-test-{}.csv", std::process::id()));
-        let csv_file = std::fs::File::create(&csv_path).expect("create csv file");
-        let tiled = BenchmarkRecord {
-            kernel: "tiled".to_owned(),
-            block_size: Some(64),
-            ..record()
-        };
-        let mps = BenchmarkRecord {
-            kernel: "mps".to_owned(),
-            backend: "metal",
-            device: "Test GPU".to_owned(),
-            threads: 1,
-            gpu_ms: Some(10.5),
-            ..record()
-        };
-
-        super::write_records(csv_file, &[record(), tiled, mps]).expect("write records");
-
-        let csv_content = std::fs::read_to_string(&csv_path).expect("read csv");
-        // Kernels that don't tile leave block_size empty, and kernels off Metal
-        // leave gpu_ms empty; the others record them.
-        assert_eq!(
-            csv_content,
-            "kernel,backend,device,precision,n,threads,gops,mean_rel_error_f64,median_ms,min_ms,stddev_ms,gpu_ms,setup_ms,block_size,repetitions,host,commit,timestamp\n\
-             rayon-ikj,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,,0.05,,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
-             tiled,cpu,Test CPU,f32,256,4,2.5,0.001234,12.34567,12.0,0.25,,0.05,64,5,test-host,abc1234,2026-09-17T12:15:00Z\n\
-             mps,metal,Test GPU,f32,256,1,2.5,0.001234,12.34567,12.0,0.25,10.5,0.05,,5,test-host,abc1234,2026-09-17T12:15:00Z\n"
-        );
-        let _ = std::fs::remove_file(csv_path);
     }
 }

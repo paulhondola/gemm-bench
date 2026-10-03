@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 
-use crate::kernels::{GemmKernel, assert_gemm_dimensions, ikj_rows};
+use crate::kernels::{GemmKernel, Param, assert_gemm_dimensions, ikj_rows};
 use crate::{Element, Matrix};
 
 use super::static_row_counts;
@@ -59,5 +59,10 @@ impl<T: Element> GemmKernel<T> for StaticIkjGemm {
             let (first_row, rows) = &mut *chunk;
             ikj_rows(lhs_data, rhs_data, rows, *first_row, n);
         });
+    }
+
+    fn params(&self, n: usize) -> Vec<Param> {
+        let threads = self.pool.current_num_threads();
+        vec![Param::derived("max_rows_per_thread", n.div_ceil(threads))]
     }
 }

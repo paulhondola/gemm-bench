@@ -4,11 +4,23 @@ default:
 bench *args='':
     cargo run --release --manifest-path benchmark/Cargo.toml -- {{args}}
 
-# Validates data/runs/**/*.csv and data/peaks.csv and writes the JSON files the dashboard loads: results.json from the runs, peaks.json from the peaks.
-data:
-    duckdb -bail < data/build.sql
+# Names this machine for `just bench`, once: <github-login>/<machine>, e.g. octocat/m1pro.
+init id:
+    printf '%s\n' '{{id}}' > .host
 
-dev: data
+# Checks every committed host database the way CI does.
+validate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    shopt -s nullglob
+    dbs=(data/db/*/*.sqlite)
+    if (( ${#dbs[@]} )); then
+        cargo run --quiet --manifest-path benchmark/Cargo.toml -- validate "${dbs[@]}"
+    else
+        echo "no host databases in data/db"
+    fi
+
+dev:
     cd web && bun dev
 
 build: build-bench build-web
@@ -16,7 +28,7 @@ build: build-bench build-web
 build-bench:
     cargo build --release --manifest-path benchmark/Cargo.toml
 
-build-web: data
+build-web:
     cd web && bun install && bun run build
 
 test: test-bench test-web

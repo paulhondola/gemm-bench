@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The ownership check diffs the PR against its base branch.
+          fetch-depth: 0
 
       - name: Install Rust nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -32,8 +35,34 @@ jobs:
       - name: Run Tests
         run: cargo test --manifest-path benchmark/Cargo.toml
 
+      - name: Validate Host Databases
+        run: |
+          shopt -s nullglob
+          dbs=(data/db/*/*.sqlite)
+          if (( ${#dbs[@]} )); then
+            cargo run --quiet --manifest-path benchmark/Cargo.toml -- validate "${dbs[@]}"
+          fi
+
+      # A contributed database is binary, so review can't see what changed:
+      # a PR may only touch data/db/<its author's login>/.
+      - name: Host Databases Belong to the PR Author
+        if: github.event_name == 'pull_request'
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          owner="data/db/$(printf %s "$AUTHOR" | tr '[:upper:]' '[:lower:]')/"
+          # --no-renames shows a move out of someone else's folder as that folder's deletion.
+          changed=$(git diff --name-only --no-renames "origin/$BASE...HEAD" -- data/db)
+          foreign=$(printf '%s\n' "$changed" | grep -v "^$owner" || true)
+          if [ -n "$foreign" ]; then
+            echo "A pull request may only change $owner. It also changes:"
+            echo "$foreign"
+            exit 1
+          fi
+
   web:
-    name: Web (Data, Lint, Typecheck, Build)
+    name: Web (Lint, Typecheck, Test, Build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,17 +73,6 @@ jobs:
       - name: Install Dependencies
         run: bun install --frozen-lockfile
         working-directory: web
-
-      - name: Setup DuckDB
-        run: |
-          curl -fsSL -o duckdb.zip https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip
-          mkdir -p "$HOME/.local/bin"
-          unzip -q duckdb.zip -d "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      # Rejects contributor run files with missing values before they merge.
-      - name: Build Results JSON
-        run: duckdb -bail < data/build.sql
 
       - name: Biome Lint & Format Check
         run: bunx @biomejs/biome check src

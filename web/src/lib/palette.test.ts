@@ -91,7 +91,7 @@ test("a group that runs out of slots caps rather than generating a hue", () => {
 });
 
 test("family ink is the all-pairs-validated set, in legend order", () => {
-	expect(FAMILY_ORDER).toEqual(["serial", "parallel", "amx", "gpu"]);
+	expect(FAMILY_ORDER).toEqual(["serial", "parallel", "matrix", "gpu"]);
 	expect(FAMILY_ORDER.map((f) => FAMILY_INK[f])).toEqual([
 		"#844da2",
 		"#008300",
