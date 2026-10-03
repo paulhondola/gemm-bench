@@ -38,7 +38,7 @@ A simdgroup fragment is spread across 32 lanes, and the operand copies each lane
 - **Changing `metal-tiled`.** A committed host DB freezes each kernel's `KernelInfo`, and its committed rows must keep describing the kernel that produced them. A new strategy ships under a new label.
 - **Integer precisions.** MSL's `simdgroup_matrix` has `half` and `float` only (bfloat on newer GPU families).
 - **A swept knob.** The block shape is tuned during development and frozen as `fixed` params, the way `metal-tiled` records its 16×16.
-- **Double buffering, `simdgroup_async_copy`, vectorized device loads, threadgroup padding.** These are later levers if the kernel falls short (see Follow-ups). `simdgroup_async_copy` is undocumented and not public API, so it is out of scope entirely.
+- **`simdgroup_async_copy` and threadgroup padding.** `simdgroup_async_copy` is undocumented and not public API, so it is out of scope entirely. Padding against bank conflicts stays a follow-up. (Double buffering, vectorized device loads and a direct store were non-goals until the first tuning round missed the bar; see Second Round.)
 - **Mixed-precision accumulation.** f16 sums in half, like every other kernel.
 - **Changing what `gpu_ms` measures.** It stays the CPU-clocked `commit` → `waitUntilCompleted` window.
 
@@ -88,6 +88,22 @@ Four candidates, measured at f16 and f32, n ∈ {1024, 2048, 4096}, every run wr
 | 32 × 32 | 16 × 16 | 32 |
 
 Freeze the candidate with the best `gpu_ms` at n=4096. The 32×32 blocks are there for small n: at n=1024, 64×64 blocks give 256 threadgroups (16 per core), and 32×32 gives four times as many, at a worse load ratio (1/8 instead of 1/16).
+
+### Second Round (added after the first tuning round missed the bar)
+
+The first round froze 32-k16 at n=4096: f16 1,614 and f32 1,531 GFLOPS (30.4% / 28.8%), against the 2,654 bar. The 64-wide blocks reached ~2,130 at f16 but only ~1,100 at f32. f16 running ~2× f32 at an equal ALU rate points at bytes again, as it did for `metal-tiled`. Two suspects:
+
+- **Threadgroup memory per block.** The single store path sizes the stage for all of C (`BM*BN`), 16 KB at f32 for a 64×64 block even when `BK`=16 needs only 8 KB for the strips, so fewer threadgroups fit per core.
+- **Nothing hides device latency.** Each step is copy → barrier → multiply → barrier, with four guarded scalar loads per group.
+
+The user approved three levers, tried one at a time in this order:
+
+0. **Refactor (no intended speed change):** move the strip copy into `load_strips` (device → registers, zero past the edge) and `store_strips` (registers → stage), each thread handling groups of 4 consecutive elements. Every lever below then edits one place.
+1. **Direct store:** a fragment wholly inside n×n goes from registers to C with `simdgroup_store`. A fragment that crosses the edge goes through its simdgroup's own 8×8 slice of the stage, written by lanes with bounds checks. The stage shrinks to the strips (`BM*BK + BK*BN`).
+2. **Vector loads:** when both strips are wholly inside n×n and `n % 4 == 0` (every row 16-byte aligned), `load_strips` reads each group with one `vec<T, 4>` load instead of four guarded scalar loads.
+3. **Double buffering:** two stages take turns. The next step's strips are read into registers before the current step's multiplies and stored into the other stage after them, leaving one barrier per step instead of two.
+
+Rule: score S = the higher, over the 64-k16 and 32-k16 shapes, of min(f16, f32) GFLOPS by `gpu_ms` at n=4096. The refactor's measurement sets the baseline. A lever is kept only if S improves by more than 3% (the noise level) over the best S so far; otherwise it is reverted. If no lever is kept and the refactor itself cost more than 3% against the first round's S (1,531), the refactor is reverted too. After the levers, all four shapes are re-measured and the winner re-picked by the first round's rule. A shape whose pipeline cannot be built (64-k32 with double buffering at f32 needs exactly 32 KB) is dropped. The 50% bar is unchanged.
 
 ### Rust (`benchmark/src/kernels/metal/shader.rs`)
 
@@ -165,11 +181,11 @@ If f16 at n=100 exceeds 8ε, measure the drift and report it before touching the
 - **Runtime compile.** `shader.rs` compiles with default options, which select the latest MSL version the OS supports. An offline probe with `xcrun metal` compiled `simdgroup_load`, `simdgroup_multiply_accumulate`, `simdgroup_store` and `make_filled_simdgroup_matrix` for `half` and `float`. If the runtime compiler rejects them, pass `MTLCompileOptions` with language version ≥ 2.3.
 - **One library for all shaders.** `gemm.metal` compiles as one unit, so a GPU without `simdgroup_matrix` (before Apple7) would fail to compile the naive and tiled shaders too. The Metal kernels are Apple Silicon only, and M1 is Apple7, so this is accepted.
 - **Register pressure.** 16 accumulator fragments plus 8 operand fragments per lane may cap threads per threadgroup or occupancy. The `maxTotalThreadsPerThreadgroup` check catches the cap. A drop in occupancy shows up in tuning, where the 16×16-per-simdgroup candidates hold a quarter of the accumulators.
-- **Below 50% after tuning.** Stop before committing measurements; the next lever is double buffering.
+- **Below 50% after tuning.** The first round was; the second round (above) followed. If the second round is also below, stop before committing measurements and bring the numbers back.
+- **Threadgroup memory limit.** Double buffering at 64-k32 needs `2 × (64·32 + 32·64)` f32 = 32 KB, exactly the M1 limit. If its pipeline fails to build, that shape is dropped from the re-tune.
 
 ## Follow-ups
 
-- **Double buffering** of the staged strips, if the kernel lands below 50% or to close the gap to `mps`.
-- **Direct `simdgroup_store`** for blocks wholly inside n×n, if the store shows up in profiles.
-- **Threadgroup padding** against bank conflicts, and **vectorized device loads**, if a GPU profile points there.
+- **Any second-round lever that was not kept**, if a GPU profile later points at it.
+- **Threadgroup padding** against bank conflicts, if a GPU profile points there.
 - **GPU timestamps** (`GPUStartTime` / `GPUEndTime`) for `gpu_ms`, which would remove submission latency at small n. This changes what a stored column means, so it is a schema-level decision.

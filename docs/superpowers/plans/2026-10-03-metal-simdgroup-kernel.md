@@ -22,6 +22,7 @@
 - Lefthook runs fmt, clippy and `cargo test` on commit. Never bypass it.
 - Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Success bar: n=4096, 2n³ / `gpu_ms` ≥ **2,654 GFLOPS** (50% of 5,308.416) at both f16 and f32. Stretch: ≥ 0.9 × `mps` in the same run.
+- Second-round rule (Task 2b): a lever is kept only if score S (the higher, over 64-k16 and 32-k16, of min(f16, f32) `gflops_gpu` at n=4096) improves by more than 3% over the best S so far.
 
 ## File Map
 
@@ -506,7 +507,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Task 1's constants.
-- Produces: the frozen constants, which Task 3's README row and Task 5's measurement use. `SG`/`SIMDGROUPS` stays 4 in every candidate.
+- Produces: the frozen constants, which Task 2b starts from. `SG`/`SIMDGROUPS` stays 4 in every candidate.
 
 The four candidates (per-simdgroup size is always half of each block side):
 
@@ -587,6 +588,324 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 (The angle-bracket parts are filled from Step 2's measurements; nothing else in the message is left open.)
+
+---
+
+### Task 2b: Second round of levers, then re-tune
+
+Added after Task 2 froze 32-k16 at f16 1,614 / f32 1,531 GFLOPS (n=4096), below the 2,654 bar. Spec section: "Second Round".
+
+**Files:**
+- Modify: `benchmark/src/kernels/metal/gemm.metal` (the `gemm_simdgroup` section only)
+- Modify: `benchmark/src/kernels/metal/shader.rs` (`BLOCK_ROWS` / `BLOCK_COLS` / `DEPTH_STEP` during measurement and the final freeze only)
+- Modify: `benchmark/src/kernels/mod.rs` (`metal_shaders_record_their_threadgroups` expected values, final freeze only)
+- Modify: `web/src/docs/kernels/gpu.md` (the `metal-simdgroup` section)
+
+**Interfaces:**
+- Consumes: Task 2's kernel at `5d21977` (32-k16 frozen; `SG` = 4 always).
+- Produces: the final kernel and frozen shape. Param names and `KernelInfo` are unchanged.
+
+**Score S (all of this task's decisions use it):** the higher, over the 64-k16 and 32-k16 shapes, of min(f16 `gflops_gpu`, f32 `gflops_gpu`) at n=4096. A lever is kept only if its S is more than 3% above the best S so far (`S_new > 1.03 × S_best`).
+
+**Measure a variant (procedure M):** for each shape in {64-k16, 32-k16}:
+1. Set `BM`/`BN` in `gemm.metal` and `BLOCK_ROWS`/`BLOCK_COLS` in `shader.rs` to 64 or 32 (`BK`/`DEPTH_STEP` stays 16).
+2. Run `cargo test --manifest-path benchmark/Cargo.toml metal_simdgroup_matches` → PASS. A failure is a bug in the lever; fix it before measuring, never measure a failing variant.
+3. Run `just bench --kernel metal-simdgroup --precision f16,f32 --sizes 2048,4096 --output /tmp/simdgroup-2b-<step>-<shape>.sqlite` (delete that /tmp file first if it exists; one run at a time).
+4. Read it with Task 2's query:
+
+```bash
+sqlite3 -header -column /tmp/simdgroup-2b-<step>-<shape>.sqlite \
+  "SELECT precision, n, round(2.0*n*n*n/(gpu_ms*1e6), 1) AS gflops_gpu,
+          round(100*2.0*n*n*n/(gpu_ms*1e6)/5308.416, 1) AS pct_peak
+   FROM measurements ORDER BY precision, n"
+```
+
+Put the constants back to 32-k16 (32/32/16) before any commit, so the params test passes under lefthook.
+
+- [ ] **Step 1: Refactor the strip copy into helpers (no intended speed change)**
+
+In `gemm.metal`, replace these two lines:
+
+```metal
+// One buffer, reused: A then B while multiplying, C while storing.
+constant constexpr uint STAGE = BM * BK + BK * BN > BM * BN ? BM * BK + BK * BN : BM * BN;
+```
+
+with:
+
+```metal
+// A's strip then B's, per staged step.
+constant constexpr uint STRIPS = BM * BK + BK * BN;
+// One buffer, reused: the strips while multiplying, C while storing.
+constant constexpr uint STAGE = STRIPS > BM * BN ? STRIPS : BM * BN;
+// 4-element groups of A's and B's strips each thread stages per step.
+constant constexpr uint A_GROUPS = BM * BK / (THREADS * 4);
+constant constexpr uint B_GROUPS = BK * BN / (THREADS * 4);
+
+// This thread's share of one step's strips, held in registers.
+template <typename T>
+struct Strips {
+    vec<T, 4> a[A_GROUPS];
+    vec<T, 4> b[B_GROUPS];
+};
+
+// Reads this thread's share of the strips at depth t, zero past the edge.
+// Groups never straddle a row, since BK and BN are multiples of 4.
+template <typename T>
+inline Strips<T> load_strips(device const T* a, device const T* b, uint n,
+                             uint row0, uint col0, uint t, ushort tid) {
+    Strips<T> s;
+    #pragma clang loop unroll(full)
+    for (uint q = 0; q < A_GROUPS; ++q) {
+        const uint e = (tid + q * THREADS) * 4;
+        const uint row = row0 + e / BK, col = t + e % BK;
+        for (uint r = 0; r < 4; ++r) {
+            s.a[q][r] = (row < n && col + r < n) ? a[row * n + col + r] : T(0);
+        }
+    }
+    #pragma clang loop unroll(full)
+    for (uint q = 0; q < B_GROUPS; ++q) {
+        const uint e = (tid + q * THREADS) * 4;
+        const uint row = t + e / BN, col = col0 + e % BN;
+        for (uint r = 0; r < 4; ++r) {
+            s.b[q][r] = (row < n && col + r < n) ? b[row * n + col + r] : T(0);
+        }
+    }
+    return s;
+}
+
+// Writes this thread's share of the strips into a stage: A as [BM][BK], then B as [BK][BN].
+template <typename T>
+inline void store_strips(thread const Strips<T>& s, threadgroup T* stage, ushort tid) {
+    #pragma clang loop unroll(full)
+    for (uint q = 0; q < A_GROUPS; ++q) {
+        const uint e = (tid + q * THREADS) * 4;
+        for (uint r = 0; r < 4; ++r) {
+            stage[e + r] = s.a[q][r];
+        }
+    }
+    #pragma clang loop unroll(full)
+    for (uint q = 0; q < B_GROUPS; ++q) {
+        const uint e = BM * BK + (tid + q * THREADS) * 4;
+        for (uint r = 0; r < 4; ++r) {
+            stage[e + r] = s.b[q][r];
+        }
+    }
+}
+```
+
+In the kernel's k-loop, replace the two staging `for (uint e = tid; ...)` loops (A's and B's) with the single line:
+
+```metal
+        store_strips(load_strips(a, b, n, row0, col0, t, tid), stage, tid);
+```
+
+Run `cargo test --manifest-path benchmark/Cargo.toml` → PASS. Run procedure M with `<step>` = `s0` and record S0. S_best = S0. If S0 < 1,485 (more than 3% below the first round's 1,531), record that; Step 5 handles it. Commit:
+
+```bash
+git add benchmark/src/kernels/metal/gemm.metal
+git commit -m "Stage metal-simdgroup's strips through registers
+
+Groundwork for the second-round levers; no intended speed change.
+S0 = <S0> GFLOPS (64-k16 f16/f32 <..>/<..>, 32-k16 f16/f32 <..>/<..> at n=4096).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+- [ ] **Step 2: Lever 1, direct store**
+
+In `gemm.metal`:
+- Delete the `STAGE` constant and its comment line. The declaration `threadgroup T stage[STAGE];` becomes `threadgroup T stage[STRIPS];`.
+- Add a kernel parameter after `sg`: `ushort lane [[thread_index_in_simdgroup]]`. The `sg` line ends with `,` and the new line ends with `) {`.
+- Both template instantiations gain a fourth `ushort` at the end of their parameter lists: `constant uint&, uint2, ushort, ushort, ushort);`.
+- Replace everything from the `// ponytail: every block stores through threadgroup memory` comment to the kernel's closing `}` with:
+
+```metal
+    // Interior fragments go straight from registers to C. A fragment that
+    // crosses the edge goes through this simdgroup's own 8×8 slice of the
+    // stage, free since the k-loop's last barrier, and only its in-range
+    // elements are written.
+    threadgroup T* edge = stage + sg * 64;
+    #pragma clang loop unroll(full)
+    for (uint i = 0; i < FM; ++i) {
+        #pragma clang loop unroll(full)
+        for (uint j = 0; j < FN; ++j) {
+            const uint frag_row = row0 + sg_row + i * 8;
+            const uint frag_col = col0 + sg_col + j * 8;
+            if (frag_row + 8 <= n && frag_col + 8 <= n) {
+                simdgroup_store(acc[i][j], c + frag_row * n + frag_col, n);
+            } else {
+                simdgroup_store(acc[i][j], edge, 8);
+                simdgroup_barrier(mem_flags::mem_threadgroup);
+                for (uint e = lane; e < 64; e += 32) {
+                    uint row = frag_row + e / 8, col = frag_col + e % 8;
+                    if (row < n && col < n) {
+                        c[row * n + col] = edge[e];
+                    }
+                }
+                // The next edge fragment reuses the slice.
+                simdgroup_barrier(mem_flags::mem_threadgroup);
+            }
+        }
+    }
+}
+```
+
+The branch is uniform across a simdgroup (it depends only on the group, the simdgroup, i, j and n), so the `simdgroup_barrier`s are reached by all 32 lanes. n ∈ {7, 37, 100} covers both branches.
+
+Run `cargo test --manifest-path benchmark/Cargo.toml metal_simdgroup` → PASS, then procedure M with `<step>` = `l1`, giving S1.
+- If S1 > 1.03 × S_best: set S_best = S1 and commit (`git add benchmark/src/kernels/metal/gemm.metal`) with the message `Store metal-simdgroup's interior fragments straight to C`, a body giving S1 and its four numbers, and the Co-Authored-By line.
+- Otherwise: `git checkout -- benchmark/src/kernels/metal/gemm.metal benchmark/src/kernels/metal/shader.rs` and record S1 in the report as rejected.
+
+- [ ] **Step 3: Lever 2, vector loads**
+
+In `load_strips`, insert as its first statement (before `Strips<T> s;`):
+
+```metal
+    // Both strips wholly inside n×n, and every row 16-byte aligned: one
+    // vector load per group instead of four guarded scalar loads.
+    const bool inside = n % 4 == 0 && row0 + BM <= n && col0 + BN <= n && t + BK <= n;
+```
+
+Replace A's inner `for (uint r ...)` loop with:
+
+```metal
+        if (inside) {
+            s.a[q] = *reinterpret_cast<device const vec<T, 4>*>(a + row * n + col);
+        } else {
+            for (uint r = 0; r < 4; ++r) {
+                s.a[q][r] = (row < n && col + r < n) ? a[row * n + col + r] : T(0);
+            }
+        }
+```
+
+Replace B's inner `for (uint r ...)` loop with:
+
+```metal
+        if (inside) {
+            s.b[q] = *reinterpret_cast<device const vec<T, 4>*>(b + row * n + col);
+        } else {
+            for (uint r = 0; r < 4; ++r) {
+                s.b[q][r] = (row < n && col + r < n) ? b[row * n + col + r] : T(0);
+            }
+        }
+```
+
+Alignment holds because `col` is a multiple of 4 (`t`, `col0`, `e % BK` and `e % BN` all are), and so is `n`. n=100 takes the vector path for its interior steps; n=7 and n=37 take only the scalar path.
+
+Run `cargo test --manifest-path benchmark/Cargo.toml metal_simdgroup` → PASS, then procedure M with `<step>` = `l2`, giving S2. Keep (commit `Read metal-simdgroup's interior strips with vector loads`, body with S2) or revert, by the same rule as Step 2.
+
+- [ ] **Step 4: Lever 3, double buffering**
+
+In the kernel:
+- The stage declaration becomes `threadgroup T stage[2 * STRIPS];` under the comment `// Two stages that take turns: one is multiplied while the other fills.`
+- Delete the two lines that set `a_stage` and `b_stage` at the top of the kernel.
+- If Lever 1 was rejected (the `STAGE` constant still exists), delete the `STAGE` constant and its comment. The kept store-through-stage path indexes `stage[0 .. BM*BN)`, and `2 * STRIPS` covers that for every candidate shape.
+- Replace the whole k-loop, from the `// No early return for blocks past the edge` comment through the loop's closing `}`, with:
+
+```metal
+    // No early return for blocks past the edge: every thread must reach every
+    // barrier, so out-of-range elements load as zeros instead.
+    store_strips(load_strips(a, b, n, row0, col0, 0, tid), stage, tid);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint t = 0, buf = 0; t < n; t += BK, buf ^= 1) {
+        threadgroup T* a_stage = stage + buf * STRIPS;  // [BM][BK]
+        threadgroup T* b_stage = a_stage + BM * BK;     // [BK][BN]
+        const bool more = t + BK < n;
+        // Issued before the multiplies, so the device reads are in flight
+        // while they run; stored to the other stage after them.
+        Strips<T> next;
+        if (more) {
+            next = load_strips(a, b, n, row0, col0, t + BK, tid);
+        }
+        #pragma clang loop unroll(full)
+        for (uint kk = 0; kk < BK; kk += 8) {
+            simdgroup_matrix<T, 8, 8> a_frag[FM];
+            simdgroup_matrix<T, 8, 8> b_frag[FN];
+            #pragma clang loop unroll(full)
+            for (uint i = 0; i < FM; ++i) {
+                simdgroup_load(a_frag[i], a_stage + (sg_row + i * 8) * BK + kk, BK);
+            }
+            #pragma clang loop unroll(full)
+            for (uint j = 0; j < FN; ++j) {
+                simdgroup_load(b_frag[j], b_stage + kk * BN + sg_col + j * 8, BN);
+            }
+            #pragma clang loop unroll(full)
+            for (uint i = 0; i < FM; ++i) {
+                #pragma clang loop unroll(full)
+                for (uint j = 0; j < FN; ++j) {
+                    simdgroup_multiply_accumulate(acc[i][j], a_frag[i], b_frag[j], acc[i][j]);
+                }
+            }
+        }
+        if (more) {
+            store_strips(next, stage + (buf ^ 1) * STRIPS, tid);
+        }
+        // One barrier per step: the other stage is complete, and nobody reads
+        // this one again until it has been refilled.
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+```
+
+Why one barrier suffices: step t writes the other stage, which was last read during step t−1's multiplies, and those finished at step t−1's barrier. `more` is the same for every thread, so the barrier stays uniform.
+
+Run `cargo test --manifest-path benchmark/Cargo.toml metal_simdgroup` → PASS, then procedure M with `<step>` = `l3`, giving S3. Keep (commit `Double-buffer metal-simdgroup's staged strips`, body with S3) or revert, by the same rule as Step 2.
+
+(Every on/off combination of Levers 1–3 on top of Step 1 was compiled with `xcrun -sdk macosx metal -Wall` at all four candidate shapes during planning: clean.)
+
+- [ ] **Step 5: If nothing was kept and the refactor cost speed, undo it**
+
+If Steps 2–4 all reverted and S0 < 1,485, run `git revert --no-edit <Step 1's SHA>` (the kernel returns to Task 2's). Otherwise skip this step.
+
+- [ ] **Step 6: Re-tune all four shapes**
+
+Run Task 2 Step 1's procedure (`--sizes 1024,2048,4096`, output `/tmp/simdgroup-2b-final-<name>.sqlite`) on the final kernel for 64-k16, 64-k32, 32-k16 and 32-k32. If a shape fails to build its pipeline (for example, 64-k32 with double buffering at f32 needs exactly 32 KB of threadgroup memory), drop it and record the error. Pick the winner by Task 2 Step 2's rule (highest min(f16, f32) `pct_peak` at n=4096; ties within 2 points broken at n=1024).
+
+- [ ] **Step 7: Freeze, update the params test and the doc**
+
+Set both files' constants to the winner. Update `metal_shaders_record_their_threadgroups` from Task 2 Step 3's table.
+
+Then update the `metal-simdgroup` section of `web/src/docs/kernels/gpu.md`. The text below is written for a 32 × 32 block and 16-deep steps. For a 64-wide block, apply Task 2 Step 3's substitutions: 64 × 64, 32 × 32 of it as 4 × 4 pieces, `acc[4][4]`, `i in 0..4`, `j in 0..4`. For `BK` = 32, every depth of 16 becomes 32: `0 .. 16` → `0 .. 32`, `t+16 .. t+32` → `t+32 .. t+64`, `step 16` → `step 32`, and `0..16 step 8` → `0..32 step 8`.
+
+- In the first paragraph, "Each value loaded now feeds many multiply-adds instead of one." becomes "Each value read from threadgroup memory now feeds many multiply-adds instead of one." Do this in every case.
+- If Lever 3 was kept: in the first paragraph, "Every step it loads a strip of A and one of B into threadgroup memory," becomes "Every step it reads the next strip of A and of B into one of two threadgroup buffers while multiplying out of the other," and the sketch becomes:
+
+```text
+# 128 GPU threads per 32 × 32 block of C; each simdgroup holds 16 × 16 of it as 2 × 2 pieces
+acc[2][2] = 0
+stage[0] = A[block rows][0 .. 16], B[0 .. 16][block cols]   # zeros past the edge
+barrier
+for t in 0..N step 16, cur = 0, 1, 0, 1, …:
+  next = A[block rows][t+16 .. t+32], B[t+16 .. t+32][block cols]   # in flight during the multiplies
+  for kk in 0..16 step 8:
+    a[i] = 8 × 8 piece of stage[cur]'s A, i in 0..2
+    b[j] = 8 × 8 piece of stage[cur]'s B, j in 0..2
+    acc[i][j] += a[i] × b[j]          # simdgroup_multiply_accumulate
+  stage[1 - cur] = next
+  barrier                             # one per step: the two stages take turns
+C[block] = acc                        # through threadgroup memory, skipping past the edge
+```
+
+- If Lever 1 was kept: the sketch's last line (in either version) becomes `C[block] = acc                        # straight from registers; pieces that cross the edge go through threadgroup memory`.
+
+- [ ] **Step 8: Test and commit**
+
+Run: `just test` → PASS. Then:
+
+```bash
+git add benchmark/src/kernels/metal/gemm.metal benchmark/src/kernels/metal/shader.rs benchmark/src/kernels/mod.rs web/src/docs/kernels/gpu.md
+git commit -m "Re-tune metal-simdgroup after the second round: <winner>
+
+Levers kept: <list>. <the four-shape table: gflops_gpu by shape, precision and n>
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+(The angle-bracket parts are filled from Steps 1–6's measurements.)
+
+- [ ] **Step 9: Check the bar**
+
+Pass: the winner's n=4096 `gflops_gpu` is ≥ 2,654 at both f16 and f32. If it misses, report DONE_WITH_CONCERNS with every S and the final table. The controller stops and brings the numbers to the user, and Task 5 does not commit measurements.
 
 ---
 
@@ -699,7 +1018,7 @@ Keep the comment's last sentence (`Maps, not object literals: ...`) as it is.
 | 192 | `` `accelerate-bnns` or `mps` outside `f16`/`f32` `` | `` `accelerate-bnns`, `mps` or `metal-simdgroup` outside `f16`/`f32` `` |
 | 255 | `` (`mps`, `metal-naive`, `metal-tiled`) `` | `` (`mps`, `metal-naive`, `metal-tiled`, `metal-simdgroup`) `` |
 
-Insert a table row after the `metal-tiled` row (line 88). Use Task 2's frozen numbers; the text below is for `64-k32`. For a 32-wide block, write 32×32 and 16×16; for `BK` 16, write 16-deep.
+Insert a table row after the `metal-tiled` row (line 88). Use Task 2b's frozen numbers and kept levers; the text below is for `64-k32` with no levers. For a 32-wide block, write 32×32 and 16×16; for `BK` 16, write 16-deep. If Task 2b kept double buffering, replace "it stages a strip of A and one of B in threadgroup memory (zeros past the edge)" with "it stages a strip of A and one of B in one of two threadgroup buffers (zeros past the edge), reading the next step's strips while multiplying the current ones". If it kept the direct store, add "Interior results go straight from registers to C." after "instead of one."
 
 ```markdown
 | `metal-simdgroup` | Same shader source | Each threadgroup of 4 simdgroups (128 threads) computes a 64×64 block of C. Per 32-deep step it stages a strip of A and one of B in threadgroup memory (zeros past the edge), and each simdgroup multiplies 8×8 `simdgroup_matrix` fragments out of them into the 32×32 part of the block it holds in registers, so each loaded value feeds many multiply-adds instead of one. Supports `f16` and `f32` only (`simdgroup_matrix` has no integer types). The block shape is fixed, so no knob applies. Accumulates in the element type; timed like `mps`. On M1 the fragment multiplies run on the ordinary GPU ALUs: there is no matrix hardware. |
