@@ -88,8 +88,64 @@ constant constexpr uint SM = BM / 2;  // rows of C per simdgroup
 constant constexpr uint SN = BN / 2;  // columns of C per simdgroup
 constant constexpr uint FM = SM / 8;  // 8×8 fragments per simdgroup, down
 constant constexpr uint FN = SN / 8;  // and across
-// One buffer, reused: A then B while multiplying, C while storing.
-constant constexpr uint STAGE = BM * BK + BK * BN > BM * BN ? BM * BK + BK * BN : BM * BN;
+// A's strip then B's, per staged step.
+constant constexpr uint STRIPS = BM * BK + BK * BN;
+// One buffer, reused: the strips while multiplying, C while storing.
+constant constexpr uint STAGE = STRIPS > BM * BN ? STRIPS : BM * BN;
+// 4-element groups of A's and B's strips each thread stages per step.
+constant constexpr uint A_GROUPS = BM * BK / (THREADS * 4);
+constant constexpr uint B_GROUPS = BK * BN / (THREADS * 4);
+
+// This thread's share of one step's strips, held in registers.
+template <typename T>
+struct Strips {
+    vec<T, 4> a[A_GROUPS];
+    vec<T, 4> b[B_GROUPS];
+};
+
+// Reads this thread's share of the strips at depth t, zero past the edge.
+// Groups never straddle a row, since BK and BN are multiples of 4.
+template <typename T>
+inline Strips<T> load_strips(device const T* a, device const T* b, uint n,
+                             uint row0, uint col0, uint t, ushort tid) {
+    Strips<T> s;
+    #pragma clang loop unroll(full)
+    for (uint q = 0; q < A_GROUPS; ++q) {
+        const uint e = (tid + q * THREADS) * 4;
+        const uint row = row0 + e / BK, col = t + e % BK;
+        for (uint r = 0; r < 4; ++r) {
+            s.a[q][r] = (row < n && col + r < n) ? a[row * n + col + r] : T(0);
+        }
+    }
+    #pragma clang loop unroll(full)
+    for (uint q = 0; q < B_GROUPS; ++q) {
+        const uint e = (tid + q * THREADS) * 4;
+        const uint row = t + e / BN, col = col0 + e % BN;
+        for (uint r = 0; r < 4; ++r) {
+            s.b[q][r] = (row < n && col + r < n) ? b[row * n + col + r] : T(0);
+        }
+    }
+    return s;
+}
+
+// Writes this thread's share of the strips into a stage: A as [BM][BK], then B as [BK][BN].
+template <typename T>
+inline void store_strips(thread const Strips<T>& s, threadgroup T* stage, ushort tid) {
+    #pragma clang loop unroll(full)
+    for (uint q = 0; q < A_GROUPS; ++q) {
+        const uint e = (tid + q * THREADS) * 4;
+        for (uint r = 0; r < 4; ++r) {
+            stage[e + r] = s.a[q][r];
+        }
+    }
+    #pragma clang loop unroll(full)
+    for (uint q = 0; q < B_GROUPS; ++q) {
+        const uint e = BM * BK + (tid + q * THREADS) * 4;
+        for (uint r = 0; r < 4; ++r) {
+            stage[e + r] = s.b[q][r];
+        }
+    }
+}
 
 // Each threadgroup of SG simdgroups computes one BM×BN block of C, and each
 // simdgroup holds an SM×SN quarter of it as FM×FN 8×8 simdgroup_matrix
@@ -124,14 +180,7 @@ kernel void gemm_simdgroup(device const T* a [[buffer(0)]],
     // No early return for blocks past the edge: every thread must reach every
     // barrier, so out-of-range elements load as zeros instead.
     for (uint t = 0; t < n; t += BK) {
-        for (uint e = tid; e < BM * BK; e += THREADS) {
-            uint row = row0 + e / BK, col = t + e % BK;
-            a_stage[e] = (row < n && col < n) ? a[row * n + col] : T(0);
-        }
-        for (uint e = tid; e < BK * BN; e += THREADS) {
-            uint row = t + e / BN, col = col0 + e % BN;
-            b_stage[e] = (row < n && col < n) ? b[row * n + col] : T(0);
-        }
+        store_strips(load_strips(a, b, n, row0, col0, t, tid), stage, tid);
         threadgroup_barrier(mem_flags::mem_threadgroup);
         #pragma clang loop unroll(full)
         for (uint kk = 0; kk < BK; kk += 8) {
