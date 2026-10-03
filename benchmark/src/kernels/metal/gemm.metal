@@ -79,9 +79,9 @@ template [[host_name("gemm_tiled_long")]] kernel void gemm_tiled<long>(
     device const long*, device const long*, device long*, constant uint&, uint2, uint2);
 
 // Must equal BLOCK_ROWS, BLOCK_COLS, DEPTH_STEP and SIMDGROUPS in shader.rs.
-constant constexpr uint BM = 64;  // rows of C per threadgroup
-constant constexpr uint BN = 64;  // columns of C per threadgroup
-constant constexpr uint BK = 32;  // depth of each staged step
+constant constexpr uint BM = 32;  // rows of C per threadgroup
+constant constexpr uint BN = 32;  // columns of C per threadgroup
+constant constexpr uint BK = 16;  // depth of each staged step
 constant constexpr uint SG = 4;   // simdgroups per threadgroup, arranged 2×2
 constant constexpr uint THREADS = SG * 32;
 constant constexpr uint SM = BM / 2;  // rows of C per simdgroup

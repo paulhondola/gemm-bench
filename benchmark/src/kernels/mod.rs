@@ -432,11 +432,11 @@ mod tests {
         assert_eq!(
             GemmKernel::<f32>::params(&simdgroup, 100),
             [
-                Param::fixed("block_rows", 64),
-                Param::fixed("block_cols", 64),
-                Param::fixed("depth_step", 32),
+                Param::fixed("block_rows", 32),
+                Param::fixed("block_cols", 32),
+                Param::fixed("depth_step", 16),
                 Param::fixed("simdgroups", 4),
-                Param::derived("threadgroups", 4),
+                Param::derived("threadgroups", 16),
             ]
         );
         let naive = ShaderGemm::<f32>::new(Shader::Naive)
