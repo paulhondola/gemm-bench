@@ -38,13 +38,15 @@ A simdgroup fragment is spread across 32 lanes, and the operand copies each lane
 - **Changing `metal-tiled`.** A committed host DB freezes each kernel's `KernelInfo`, and its committed rows must keep describing the kernel that produced them. A new strategy ships under a new label.
 - **Integer precisions.** MSL's `simdgroup_matrix` has `half` and `float` only (bfloat on newer GPU families).
 - **A swept knob.** The block shape is tuned during development and frozen as `fixed` params, the way `metal-tiled` records its 16×16.
-- **`simdgroup_async_copy` and threadgroup padding.** `simdgroup_async_copy` is undocumented and not public API, so it is out of scope entirely. (Double buffering, vectorized device loads and a direct store were non-goals until the first tuning round missed the bar, and padding until the performance review; see Second Round.)
+- **`simdgroup_async_copy`.** It is undocumented and not public API, so it is out of scope entirely. (Double buffering, vectorized device loads and a direct store were non-goals until the first tuning round missed the bar, and threadgroup padding until the performance review. Padding shipped; see Second Round and Outcome.)
 - **Mixed-precision accumulation.** f16 sums in half, like every other kernel.
 - **Changing what `gpu_ms` measures.** It stays the CPU-clocked `commit` → `waitUntilCompleted` window.
 
 ## Design
 
 ### Shader (`benchmark/src/kernels/metal/gemm.metal`)
+
+This section describes the kernel as first built. Second Round and Outcome supersede it.
 
 A new template `gemm_simdgroup<T>`, instantiated only as `gemm_simdgroup_half` and `gemm_simdgroup_float`. It includes `<metal_simdgroup_matrix>`. Buffers and `n` use the existing slots 0–3.
 
@@ -87,7 +89,7 @@ Four candidates, measured at f16 and f32, n ∈ {1024, 2048, 4096}, every run wr
 | 32 × 32 | 16 × 16 | 16 |
 | 32 × 32 | 16 × 16 | 32 |
 
-Freeze the candidate with the best `gpu_ms` at n=4096. The 32×32 blocks are there for small n: at n=1024, 64×64 blocks give 256 threadgroups (16 per core), and 32×32 gives four times as many, at a worse load ratio (1/8 instead of 1/16).
+Freeze the candidate with the highest min(f16 `pct_peak`, f32 `pct_peak`) at n=4096, ties within 2 points broken at n=1024. The 32×32 blocks are there for small n: at n=1024, 64×64 blocks give 256 threadgroups (16 per core), and 32×32 gives four times as many, at a worse load ratio (1/8 instead of 1/16).
 
 ### Second Round (added after the first tuning round missed the bar)
 
@@ -100,12 +102,41 @@ The user approved three levers, tried one at a time in this order:
 
 0. **Refactor (no intended speed change):** move the strip copy into `load_strips` (device → registers, zero past the edge) and `store_strips` (registers → stage), each thread handling groups of 4 consecutive elements. Every lever below then edits one place.
 1. **Direct store:** a fragment wholly inside n×n goes from registers to C with `simdgroup_store`. A fragment that crosses the edge goes through its simdgroup's own 8×8 slice of the stage, written by lanes with bounds checks. The stage shrinks to the strips (`BM*BK + BK*BN`).
-2. **Vector loads:** when both strips are wholly inside n×n and `n % 4 == 0` (every row 16-byte aligned), `load_strips` reads each group with one `vec<T, 4>` load instead of four guarded scalar loads.
+2. **Vector loads:** when both strips are wholly inside n×n and `n % 4 == 0` (every row aligned for a `vec<T, 4>` load), `load_strips` reads each group with one `vec<T, 4>` load instead of four guarded scalar loads.
 3. **Double buffering:** two stages take turns. The next step's strips are read into registers before the current step's multiplies and stored into the other stage after them, leaving one barrier per step instead of two.
 
 Rule: score S = the higher, over the 64-k16 and 32-k16 shapes, of min(f16, f32) GFLOPS by `gpu_ms` at n=4096. The refactor's measurement sets the baseline. A lever is kept only if S improves by more than 3% (the noise level) over the best S so far; otherwise it is reverted. If no lever is kept and the refactor itself cost more than 3% against the first round's S (1,531), the refactor is reverted too. After the levers, all four shapes are re-measured and the winner re-picked by the first round's rule. A shape whose pipeline cannot be built (64-k32 with double buffering at f32 needs exactly 32 KB) is dropped. The 50% bar is unchanged.
 
-After the re-tune, a performance review padded every staged row by 16 bytes, as MLX's steel GEMM does (A's row stride `BK + 16/sizeof(T)`, B's `BN + 16/sizeof(T)`, each group one vector store), kept at +3.0% on the median of min(f16, f32) at n=4096 over three interleaved baseline/variant runs each.
+After the re-tune, a performance review padded every staged row by 16 bytes, as MLX's steel GEMM does (A's row stride `BK + 16/sizeof(T)`, B's `BN + 16/sizeof(T)`, each group one vector store). The median of min(f16, f32) at n=4096 over three interleaved baseline/variant runs each rose 3.0%, which is within run-to-run noise. The padding was kept because it is harmless.
+
+### Outcome
+
+What shipped:
+
+- **Geometry:** `BM` × `BN` = 64 × 64 per threadgroup, `BK` = 16, 4 simdgroups in a 2×2 grid. Each simdgroup holds 32 × 32 of C as a 4×4 grid of `simdgroup_matrix<T, 8, 8>` accumulators, and `T` accumulates in the element type.
+- **Staging:** `load_strips` / `store_strips`, each thread handling groups of 4 consecutive elements. A group is one `vec<T, 4>` device load when both strips are wholly inside n×n and `n % 4 == 0`, and guarded scalar loads otherwise. Staged rows are padded by 16 bytes (A's stride is `BK + 16/sizeof(T)`, B's `BN + 16/sizeof(T)`), and each group is one `vec<T, 4>` threadgroup store into an `alignas(16)` stage.
+- **Store:** a fragment wholly inside n×n goes from registers to C with `simdgroup_store`. A fragment crossing the edge goes through the simdgroup's own 8×8 slice of the stage, with bounds-checked lane writes.
+- **Register limit:** f32 is register-limited to 768 threads per threadgroup (6 resident 128-thread threadgroups per core), against 1,024 for f16. Check any lever that keeps more values live across the multiplies with a thread-cap probe first.
+
+Kept and reverted, by score S (GFLOPS):
+
+| lever | result | verdict |
+|---|---|---|
+| direct store | S 2,321.4 → 2,552.4 | kept |
+| vector loads | S → 3,063.4 | kept |
+| double buffering | S3 2,728.5 < 1.03 × 3,063.4 = 3,155.3; the f32 thread cap drops from 768 to 576 | reverted |
+| row padding | median min(f16, f32) 2,685.1 vs 2,606.1, +3.03%, within run-to-run noise | kept, harmless |
+| band swizzle | −1.5%; the f32 thread cap drops to 704 | reverted |
+
+Measured in the host DB (run 2, commit `b7a680e`), n=4096, 2n³ / `gpu_ms`, in GFLOPS:
+
+| kernel | f16 | f32 |
+|---|---|---|
+| `metal-simdgroup` | 3,654.0 (68.8% of peak) | 3,088.6 (58.2%) |
+| `metal-tiled` | 879.8 | 558.0 |
+| `mps` | 3,769.3 | 3,861.6 |
+
+The bar (≥ 2,654 at both precisions) is met. The stretch (≥ 0.9 × `mps`) is met at f16 (0.97×) and not at f32 (0.80×).
 
 ### Rust (`benchmark/src/kernels/metal/shader.rs`)
 
@@ -145,7 +176,7 @@ After the re-tune, a performance review padded every staged row by 16 bytes, as 
 
 Write the tests first, and see them fail.
 
-1. **`shader_matches_naive` helper (`benchmark/src/kernels/mod.rs`):** sizes `[7, 37]` → `[7, 37, 100]`. n=100 spans two blocks per side with a ragged second block for either candidate block size, and ends the k-loop on a partial step for either `BK`. The helper also covers `metal-naive` and `metal-tiled`.
+1. **`shader_matches_naive` helper (`benchmark/src/kernels/mod.rs`):** sizes `[7, 37]` → `[7, 37, 100, 132]`. n=100 spans two blocks per side with a ragged second block for either candidate block size, and ends the k-loop on a partial step for either `BK`. n=132 is a multiple of 4 that puts interior blocks at nonzero block offsets on the vector-load path, with a ragged 4-wide edge. The helper also covers `metal-naive` and `metal-tiled`.
 2. **`metal_simdgroup_matches_naive_at_f16_and_f32`:** runs the helper at both precisions.
 3. **`metal_simdgroup_has_no_kernel_for_integers`:** asserts `ShaderGemm::new(Shader::Simdgroup)` is `Ok(None)` at `i32` and `i64`.
 4. **`metal_shaders_record_their_threadgroups`:** adds the simdgroup kernel's params at n=100, with the frozen constants.
@@ -161,7 +192,7 @@ If f16 at n=100 exceeds 8ε, measure the drift and report it before touching the
 2. The hpc-specialist agent reviews the shader and its dispatch before the measurement run.
 3. Once the kernel is committed, so the run records a clean `commit_id`, run one benchmark into the host DB:
    `just bench --kernel metal-tiled,metal-simdgroup,mps --precision f16,f32` at the default sizes. Re-measuring `metal-tiled` and `mps` puts all three under the same conditions; the latest run of a cell wins in the dashboard views, so their cells refresh too.
-4. Check the success bar. **If it fails, do not commit the DB.** Report the numbers and decide on double buffering.
+4. Check the success bar. **If it fails, do not commit the DB.** Report the numbers. (The next lever, double buffering, was tried in Second Round and reverted; see Outcome.)
 5. `just validate`, then commit the DB on its own.
 6. `just check && just test`, then open a PR.
 
@@ -169,12 +200,12 @@ If f16 at n=100 exceeds 8ε, measure the drift and report it before touching the
 
 | Check | Pass |
 |---|---|
-| `cargo test` on macOS | all pass, including n ∈ {7, 37, 100} at f16 and f32 |
-| Tuning, 4 candidates, `/tmp` only | winner by `gpu_ms` at n=4096 frozen as `fixed` params |
+| `cargo test` on macOS | all pass, including n ∈ {7, 37, 100, 132} at f16 and f32 |
+| Tuning, 4 candidates, `/tmp` only | winner by the tuning rule frozen as `fixed` params |
 | `metal-simdgroup` n=4096, 2n³ / `gpu_ms` | ≥ 2,654 GFLOPS at both f16 and f32. Stretch: ≥ 0.9 × `mps` in the same run |
 | Harness accuracy check (4√N·ε against `ikj`) | passes at every size of the host-DB run |
 | `just check && just test` | clean |
-| `cargo clippy --target aarch64-unknown-linux-gnu --all-targets -- -D warnings` | clean (the non-macOS shape) |
+| `cargo clippy --target aarch64-unknown-linux-gnu --all-targets -- -D warnings` | not runnable on macOS (rusqlite's bundled C needs a Linux cross compiler; swift-rs's build script rejects the target); CI's Linux clippy gates the non-macOS shape |
 | `just validate` | clean |
 | Palette validator | the pinned slot clears the floors against its legend neighbours and the reference inks |
 
@@ -194,6 +225,4 @@ If f16 at n=100 exceeds 8ε, measure the drift and report it before touching the
 - **8-element staging groups** instead of 4.
 - **GPU counter capture** to confirm f32's occupancy.
 - **Smaller blocks for n ≤ 512**, where 64×64 blocks leave too few threadgroups to fill the GPU.
-
-f32 is register-limited to 768 threads per threadgroup (6 resident threadgroups per core), so any lever that keeps more values live across the MMAs must be checked with a thread-cap probe first.
 - **GPU timestamps** (`GPUStartTime` / `GPUEndTime`) for `gpu_ms`, which would remove submission latency at small n. This changes what a stored column means, so it is a schema-level decision.
