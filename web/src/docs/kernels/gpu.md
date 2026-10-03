@@ -60,20 +60,20 @@ C[i][j] = acc
 
 ## `metal-simdgroup`
 
-The same shader file, rebuilt around Metal's `simdgroup_matrix`: an 8 × 8 matrix spread across the 32 threads of a SIMD group (a simdgroup), multiplied by all 32 together in one call. Each group of 128 GPU threads (4 simdgroups) owns a 32 × 32 block of C. Every step it loads a strip of A and one of B into threadgroup memory, and each simdgroup multiplies 8 × 8 pieces of them into the 16 × 16 part of the block it keeps in registers. Each value loaded now feeds many multiply-adds instead of one.
+The same shader file, rebuilt around Metal's `simdgroup_matrix`: an 8 × 8 matrix spread across the 32 threads of a SIMD group (a simdgroup), multiplied by all 32 together in one call. Each group of 128 GPU threads (4 simdgroups) owns a 64 × 64 block of C. Every step it loads a strip of A and one of B into threadgroup memory, and each simdgroup multiplies 8 × 8 pieces of them into the 32 × 32 part of the block it keeps in registers. Each value read from threadgroup memory now feeds many multiply-adds instead of one.
 
 ```text
-# 128 GPU threads per 32 × 32 block of C; each simdgroup holds 16 × 16 of it as 2 × 2 pieces
-acc[2][2] = 0
+# 128 GPU threads per 64 × 64 block of C; each simdgroup holds 32 × 32 of it as 4 × 4 pieces
+acc[4][4] = 0
 for t in 0..N step 16:
   stageA = A[block rows][t .. t+16];  stageB = B[t .. t+16][block cols]   # zeros past the edge
   barrier                             # the group's loads are done
   for kk in 0..16 step 8:
-    a[i] = 8 × 8 piece of stageA, i in 0..2
-    b[j] = 8 × 8 piece of stageB, j in 0..2
+    a[i] = 8 × 8 piece of stageA, i in 0..4
+    b[j] = 8 × 8 piece of stageB, j in 0..4
     acc[i][j] += a[i] × b[j]          # simdgroup_multiply_accumulate
   barrier                             # the group's reads are done
-C[block] = acc                        # through threadgroup memory, skipping past the edge
+C[block] = acc                        # straight from registers; pieces that cross the edge go through threadgroup memory
 ```
 
 - **Runs via:** The same as `metal-naive`.

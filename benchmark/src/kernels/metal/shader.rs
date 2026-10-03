@@ -29,8 +29,8 @@ const TILE: usize = 16;
 // `gemm_simdgroup`'s block of C per threadgroup, the depth of each staged
 // step, and its simdgroups (2×2); must equal `BM`, `BN`, `BK` and `SG` in
 // `gemm.metal`.
-const BLOCK_ROWS: usize = 32;
-const BLOCK_COLS: usize = 32;
+const BLOCK_ROWS: usize = 64;
+const BLOCK_COLS: usize = 64;
 const DEPTH_STEP: usize = 16;
 const SIMDGROUPS: usize = 4;
 /// `gemm_simdgroup`'s threads per threadgroup: every Apple GPU's simdgroup is
