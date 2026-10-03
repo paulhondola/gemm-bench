@@ -129,7 +129,7 @@ Write the tests first, and see them fail.
 
 1. **`shader_matches_naive` helper (`benchmark/src/kernels/mod.rs`):** sizes `[7, 37]` → `[7, 37, 100]`. n=100 spans two blocks per side with a ragged second block for either candidate block size, and ends the k-loop on a partial step for either `BK`. The helper also covers `metal-naive` and `metal-tiled`.
 2. **`metal_simdgroup_matches_naive_at_f16_and_f32`:** runs the helper at both precisions.
-3. **`metal_shaders_have_no_kernel_for_f64`:** also asserts `ShaderGemm::<i32>::new(Shader::Simdgroup)` is `Ok(None)`.
+3. **`metal_simdgroup_has_no_kernel_for_integers`:** asserts `ShaderGemm::new(Shader::Simdgroup)` is `Ok(None)` at `i32` and `i64`.
 4. **`metal_shaders_record_their_threadgroups`:** adds the simdgroup kernel's params at n=100, with the frozen constants.
 5. **`a_named_kernel_at_a_precision_it_lacks_is_rejected_before_running` (`cli.rs`):** adds `("metal-simdgroup", "i32")`.
 6. **`kernel.rs` tests:** the count (14 → 15) and the backend test's metal arm.
