@@ -22,8 +22,8 @@ import {
  * The CPU family each GPU kernel is measured against at equal engineering
  * effort: vendor library against vendor library (mps against Accelerate on
  * the matrix unit), hand-written against hand-written (the shaders against the parallel
- * CPU kernels). Nothing in the data marks mps as a vendor library, since all
- * three GPU kernels are backend "metal", so like BASELINE_KERNEL this is keyed
+ * CPU kernels). Nothing in the data marks mps as a vendor library, since every
+ * GPU kernel is backend "metal", so like BASELINE_KERNEL this is keyed
  * by name. A Map, not an object literal: kernel names come from host
  * databases, and "constructor" must not resolve to a prototype member.
  */
@@ -98,8 +98,8 @@ export const gpuKernels: ChartSpec = (rows, _f, ctx) => {
 	const sizes = log2Ticks(points.map((p) => p.n));
 	if (sizes.length < 2) return null;
 
-	// The validated legend order: GPU kernels (metal-naive, metal-tiled, mps
-	// sort that way), then the references.
+	// The validated legend order: GPU kernels (metal-naive, metal-simdgroup,
+	// metal-tiled, mps sort that way), then the references.
 	const kernels = [...new Set(kernelPoints.map((p) => p.series))].sort();
 	const references = referenceRows.filter(({ label }) =>
 		referencePoints.some((p) => p.series === label),

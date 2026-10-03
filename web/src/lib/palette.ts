@@ -78,10 +78,14 @@ type Group = "host" | "gpu";
  * adjacent slots (adjacent pairs are the validated worst case). Host: the
  * original order, except that mps moved to the GPU group and packed took its
  * slot 8 (red); rayon-packed has slot 10, the last, validated against every
- * slot. GPU: validated in legend order metal-naive, metal-tiled, mps, then
- * the AMX and parallel references (dark, #15181b):
- * worst adjacent CVD ΔE 19.2, normal-vision 22.5 over all five; 19.5 / 22.5
- * for the three kernels alone; all ≥ 3:1. Maps, not object literals: kernel
+ * slot. GPU: validated in legend order metal-naive, metal-simdgroup,
+ * metal-tiled, mps, then the AMX and parallel references (dark, #15181b):
+ * worst adjacent CVD ΔE 13.1, normal-vision 18.5 (metal-simdgroup ↔
+ * metal-tiled), all ≥ 3:1. metal-simdgroup has slot 10 (indigo), the only
+ * free slot that clears the floors against every ink in the GPU chart, not
+ * just its legend neighbours: CVD ΔE ≥ 10.2, normal-vision ΔE ≥ 15.3 (both
+ * nearest: the AMX reference blue). Aqua, the slot it would get unpinned,
+ * fails normal vision against the parallel reference's green (11.9). Maps, not object literals: kernel
  * names come from host databases, and "constructor" must not resolve.
  */
 const SLOT_OF: Record<Group, Map<string, number>> = {
@@ -99,6 +103,7 @@ const SLOT_OF: Record<Group, Map<string, number>> = {
 	]),
 	gpu: new Map([
 		["metal-naive", 1],
+		["metal-simdgroup", 9],
 		["metal-tiled", 6],
 		["mps", 7],
 	]),
