@@ -88,11 +88,15 @@ constant constexpr uint SM = BM / 2;  // rows of C per simdgroup
 constant constexpr uint SN = BN / 2;  // columns of C per simdgroup
 constant constexpr uint FM = SM / 8;  // 8×8 fragments per simdgroup, down
 constant constexpr uint FN = SN / 8;  // and across
+static_assert(SG == 4 && BM % 16 == 0 && BN % 16 == 0 && BK % 8 == 0,
+              "the 2×2 simdgroup grid needs 8×8-fragment-aligned blocks");
 // A's strip then B's, per staged step.
 constant constexpr uint STRIPS = BM * BK + BK * BN;
 // 4-element groups of A's and B's strips each thread stages per step.
 constant constexpr uint A_GROUPS = BM * BK / (THREADS * 4);
 constant constexpr uint B_GROUPS = BK * BN / (THREADS * 4);
+static_assert(BM * BK % (THREADS * 4) == 0 && BK * BN % (THREADS * 4) == 0,
+              "every thread stages whole 4-element groups");
 
 // This thread's share of one step's strips, held in registers.
 template <typename T>
@@ -106,8 +110,8 @@ struct Strips {
 template <typename T>
 inline Strips<T> load_strips(device const T* a, device const T* b, uint n,
                              uint row0, uint col0, uint t, ushort tid) {
-    // Both strips wholly inside n×n, and every row 16-byte aligned: one
-    // vector load per group instead of four guarded scalar loads.
+    // Both strips wholly inside n×n, and every row aligned for a `vec<T, 4>`
+    // load: one vector load per group instead of four guarded scalar loads.
     const bool inside = n % 4 == 0 && row0 + BM <= n && col0 + BN <= n && t + BK <= n;
     Strips<T> s;
     #pragma clang loop unroll(full)
