@@ -264,8 +264,10 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn shader_matches_naive<T: Element>(shader: super::Shader) {
         // 100 spans two blocks per side for metal-simdgroup, the second ragged,
-        // and ends its k-loop on a partial step.
-        for n in [7, 37, 100] {
+        // and ends its k-loop on a partial step. 132 is a multiple of 4 that
+        // puts interior blocks at nonzero row0/col0 on the vector path, with a
+        // ragged 4-wide edge.
+        for n in [7, 37, 100, 132] {
             let (lhs, rhs) = inputs::<T>(n);
             let mut expected = Matrix::zeros(n, n);
             NaiveGemm.compute(&lhs, &rhs, &mut expected);
