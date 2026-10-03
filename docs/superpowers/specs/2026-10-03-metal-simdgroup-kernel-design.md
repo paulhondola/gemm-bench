@@ -38,7 +38,7 @@ A simdgroup fragment is spread across 32 lanes, and the operand copies each lane
 - **Changing `metal-tiled`.** A committed host DB freezes each kernel's `KernelInfo`, and its committed rows must keep describing the kernel that produced them. A new strategy ships under a new label.
 - **Integer precisions.** MSL's `simdgroup_matrix` has `half` and `float` only (bfloat on newer GPU families).
 - **A swept knob.** The block shape is tuned during development and frozen as `fixed` params, the way `metal-tiled` records its 16×16.
-- **`simdgroup_async_copy` and threadgroup padding.** `simdgroup_async_copy` is undocumented and not public API, so it is out of scope entirely. Padding against bank conflicts stays a follow-up. (Double buffering, vectorized device loads and a direct store were non-goals until the first tuning round missed the bar; see Second Round.)
+- **`simdgroup_async_copy` and threadgroup padding.** `simdgroup_async_copy` is undocumented and not public API, so it is out of scope entirely. (Double buffering, vectorized device loads and a direct store were non-goals until the first tuning round missed the bar, and padding until the performance review; see Second Round.)
 - **Mixed-precision accumulation.** f16 sums in half, like every other kernel.
 - **Changing what `gpu_ms` measures.** It stays the CPU-clocked `commit` → `waitUntilCompleted` window.
 
@@ -104,6 +104,8 @@ The user approved three levers, tried one at a time in this order:
 3. **Double buffering:** two stages take turns. The next step's strips are read into registers before the current step's multiplies and stored into the other stage after them, leaving one barrier per step instead of two.
 
 Rule: score S = the higher, over the 64-k16 and 32-k16 shapes, of min(f16, f32) GFLOPS by `gpu_ms` at n=4096. The refactor's measurement sets the baseline. A lever is kept only if S improves by more than 3% (the noise level) over the best S so far; otherwise it is reverted. If no lever is kept and the refactor itself cost more than 3% against the first round's S (1,531), the refactor is reverted too. After the levers, all four shapes are re-measured and the winner re-picked by the first round's rule. A shape whose pipeline cannot be built (64-k32 with double buffering at f32 needs exactly 32 KB) is dropped. The 50% bar is unchanged.
+
+After the re-tune, a performance review padded every staged row by 16 bytes, as MLX's steel GEMM does (A's row stride `BK + 16/sizeof(T)`, B's `BN + 16/sizeof(T)`, each group one vector store), kept at +3.0% on the median of min(f16, f32) at n=4096 over three interleaved baseline/variant runs each.
 
 ### Rust (`benchmark/src/kernels/metal/shader.rs`)
 
@@ -187,5 +189,11 @@ If f16 at n=100 exceeds 8ε, measure the drift and report it before touching the
 ## Follow-ups
 
 - **Any second-round lever that was not kept**, if a GPU profile later points at it.
-- **Threadgroup padding** against bank conflicts, if a GPU profile points there.
+- **Threadgroup swizzle** into bands of 8 block-rows, so B's strips stay in the system-level cache at n=4096: rejected. It dropped f32's thread cap from 768 to 704 and measured −1.5% (median min(f16, f32) 2,975 vs 3,020 GFLOPS at n=4096).
+- **Per-precision depth step:** `BK`=32 at f16, which keeps the 1,024-thread cap.
+- **8-element staging groups** instead of 4.
+- **GPU counter capture** to confirm f32's occupancy.
+- **Smaller blocks for n ≤ 512**, where 64×64 blocks leave too few threadgroups to fill the GPU.
+
+f32 is register-limited to 768 threads per threadgroup (6 resident threadgroups per core), so any lever that keeps more values live across the MMAs must be checked with a thread-cap probe first.
 - **GPU timestamps** (`GPUStartTime` / `GPUEndTime`) for `gpu_ms`, which would remove submission latency at small n. This changes what a stored column means, so it is a schema-level decision.
