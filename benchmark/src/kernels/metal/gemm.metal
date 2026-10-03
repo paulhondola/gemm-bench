@@ -106,21 +106,32 @@ struct Strips {
 template <typename T>
 inline Strips<T> load_strips(device const T* a, device const T* b, uint n,
                              uint row0, uint col0, uint t, ushort tid) {
+    // Both strips wholly inside n×n, and every row 16-byte aligned: one
+    // vector load per group instead of four guarded scalar loads.
+    const bool inside = n % 4 == 0 && row0 + BM <= n && col0 + BN <= n && t + BK <= n;
     Strips<T> s;
     #pragma clang loop unroll(full)
     for (uint q = 0; q < A_GROUPS; ++q) {
         const uint e = (tid + q * THREADS) * 4;
         const uint row = row0 + e / BK, col = t + e % BK;
-        for (uint r = 0; r < 4; ++r) {
-            s.a[q][r] = (row < n && col + r < n) ? a[row * n + col + r] : T(0);
+        if (inside) {
+            s.a[q] = *reinterpret_cast<device const vec<T, 4>*>(a + row * n + col);
+        } else {
+            for (uint r = 0; r < 4; ++r) {
+                s.a[q][r] = (row < n && col + r < n) ? a[row * n + col + r] : T(0);
+            }
         }
     }
     #pragma clang loop unroll(full)
     for (uint q = 0; q < B_GROUPS; ++q) {
         const uint e = (tid + q * THREADS) * 4;
         const uint row = t + e / BN, col = col0 + e % BN;
-        for (uint r = 0; r < 4; ++r) {
-            s.b[q][r] = (row < n && col + r < n) ? b[row * n + col + r] : T(0);
+        if (inside) {
+            s.b[q] = *reinterpret_cast<device const vec<T, 4>*>(b + row * n + col);
+        } else {
+            for (uint r = 0; r < 4; ++r) {
+                s.b[q][r] = (row < n && col + r < n) ? b[row * n + col + r] : T(0);
+            }
         }
     }
     return s;
