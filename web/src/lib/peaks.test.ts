@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import peaksCsv from "../../../data/peaks.csv?raw";
+import { openDb, type Peak, readRows } from "./db";
 import { PEAKS_HEADER, parseCsv, parsePeaks } from "./peaks";
+import { SQL } from "./testdb";
 
 test("parseCsv keeps quoted commas and doubled quotes inside one field", () => {
 	expect(parseCsv('a,"b, ""c""",d\n')).toEqual([["a", 'b, "c"', "d"]]);
@@ -147,4 +149,58 @@ test("parsePeaks types every row", () => {
 	expect(peaks.every((p) => Number.isInteger(p.cores) && p.gflops > 0)).toBe(
 		true,
 	);
+});
+
+const hostKey = (r: { device: string; backend: string; precision: string }) =>
+	`${r.device}\u0000${r.backend}\u0000${r.precision}`;
+
+/** The ceilings no host row matches, named by device/backend/precision/cores. */
+function unmatched(peaks: Peak[], seen: Set<string>): string[] {
+	return peaks
+		.filter((p) => !seen.has(hostKey(p)))
+		.map((p) => `${p.device}/${p.backend}/${p.precision}/${p.cores}`);
+}
+
+test("every ceiling matches a host's device, backend and precision", async () => {
+	// A typo in any of the three would silently draw no ceiling.
+	const repo = new URL("../../../", import.meta.url).pathname;
+	const seen = new Set<string>();
+	for await (const path of new Bun.Glob("data/db/*/*.sqlite").scan({
+		cwd: repo,
+	})) {
+		const bytes = new Uint8Array(
+			await Bun.file(`${repo}${path}`).arrayBuffer(),
+		);
+		const db = openDb(SQL, bytes);
+		for (const r of readRows(db)) seen.add(hostKey(r));
+		db.close();
+	}
+	expect(unmatched(parsePeaks(peaksCsv), seen)).toEqual([]);
+});
+
+test("a ceiling whose device, backend or precision no host row has goes unmatched", () => {
+	const peak = (over: Partial<Peak>): Peak => ({
+		device: "Test CPU",
+		backend: "cpu",
+		precision: "f32",
+		cores: 8,
+		gflops: 100.5,
+		source: "a cited source",
+		...over,
+	});
+	const seen = new Set([hostKey(peak({}))]);
+	expect(unmatched([peak({})], seen)).toEqual([]);
+	for (const typo of [
+		{ device: "Test CPU " },
+		{ backend: "metal" },
+		{ precision: "f16" },
+	]) {
+		expect(unmatched([peak(typo)], seen)).toEqual([
+			`${typo.device ?? "Test CPU"}/${typo.backend ?? "cpu"}/${typo.precision ?? "f32"}/8`,
+		]);
+	}
+	// Any host's row will do, and only the typo'd ceiling is named.
+	expect(unmatched([peak({}), peak({ precision: "f64" })], seen)).toEqual([
+		"Test CPU/cpu/f64/8",
+	]);
 });
