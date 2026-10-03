@@ -90,8 +90,12 @@ constant constexpr uint FM = SM / 8;  // 8×8 fragments per simdgroup, down
 constant constexpr uint FN = SN / 8;  // and across
 static_assert(SG == 4 && BM % 16 == 0 && BN % 16 == 0 && BK % 8 == 0,
               "the 2×2 simdgroup grid needs 8×8-fragment-aligned blocks");
+// Staged rows are padded by 16 bytes, as MLX's steel GEMM does, so the 8 rows
+// of a fragment don't all start on the same threadgroup-memory banks.
+template <typename T> constant constexpr uint LDA = BK + 16 / sizeof(T);  // A's staged row stride
+template <typename T> constant constexpr uint LDB = BN + 16 / sizeof(T);  // B's
 // A's strip then B's, per staged step.
-constant constexpr uint STRIPS = BM * BK + BK * BN;
+template <typename T> constant constexpr uint STRIPS = BM * LDA<T> + BK * LDB<T>;
 // 4-element groups of A's and B's strips each thread stages per step.
 constant constexpr uint A_GROUPS = BM * BK / (THREADS * 4);
 constant constexpr uint B_GROUPS = BK * BN / (THREADS * 4);
@@ -141,22 +145,20 @@ inline Strips<T> load_strips(device const T* a, device const T* b, uint n,
     return s;
 }
 
-// Writes this thread's share of the strips into a stage: A as [BM][BK], then B as [BK][BN].
+// Writes this thread's share of the strips into a 16-byte-aligned stage: A as
+// [BM][LDA], then B as [BK][LDB]. Every group's offset is a multiple of its own
+// size (16 bytes at float, 8 at half), so each is one aligned vector store.
 template <typename T>
 inline void store_strips(thread const Strips<T>& s, threadgroup T* stage, ushort tid) {
     #pragma clang loop unroll(full)
     for (uint q = 0; q < A_GROUPS; ++q) {
         const uint e = (tid + q * THREADS) * 4;
-        for (uint r = 0; r < 4; ++r) {
-            stage[e + r] = s.a[q][r];
-        }
+        *reinterpret_cast<threadgroup vec<T, 4>*>(stage + e / BK * LDA<T> + e % BK) = s.a[q];
     }
     #pragma clang loop unroll(full)
     for (uint q = 0; q < B_GROUPS; ++q) {
-        const uint e = BM * BK + (tid + q * THREADS) * 4;
-        for (uint r = 0; r < 4; ++r) {
-            stage[e + r] = s.b[q][r];
-        }
+        const uint e = (tid + q * THREADS) * 4;
+        *reinterpret_cast<threadgroup vec<T, 4>*>(stage + BM * LDA<T> + e / BN * LDB<T> + e % BN) = s.b[q];
     }
 }
 
@@ -174,9 +176,9 @@ kernel void gemm_simdgroup(device const T* a [[buffer(0)]],
                            ushort tid [[thread_index_in_threadgroup]],
                            ushort sg [[simdgroup_index_in_threadgroup]],
                            ushort lane [[thread_index_in_simdgroup]]) {
-    threadgroup T stage[STRIPS];
-    threadgroup T* a_stage = stage;            // [BM][BK]
-    threadgroup T* b_stage = stage + BM * BK;  // [BK][BN]
+    alignas(16) threadgroup T stage[STRIPS<T>];
+    threadgroup T* a_stage = stage;                // [BM][LDA]
+    threadgroup T* b_stage = stage + BM * LDA<T>;  // [BK][LDB]
     const uint row0 = group.y * BM;
     const uint col0 = group.x * BN;
     const uint sg_row = (sg / 2) * SM;
@@ -202,11 +204,11 @@ kernel void gemm_simdgroup(device const T* a [[buffer(0)]],
             simdgroup_matrix<T, 8, 8> b_frag[FN];
             #pragma clang loop unroll(full)
             for (uint i = 0; i < FM; ++i) {
-                simdgroup_load(a_frag[i], a_stage + (sg_row + i * 8) * BK + kk, BK);
+                simdgroup_load(a_frag[i], a_stage + (sg_row + i * 8) * LDA<T> + kk, LDA<T>);
             }
             #pragma clang loop unroll(full)
             for (uint j = 0; j < FN; ++j) {
-                simdgroup_load(b_frag[j], b_stage + kk * BN + sg_col + j * 8, BN);
+                simdgroup_load(b_frag[j], b_stage + kk * LDB<T> + sg_col + j * 8, LDB<T>);
             }
             #pragma clang loop unroll(full)
             for (uint i = 0; i < FM; ++i) {
