@@ -57,3 +57,27 @@ C[i][j] = acc
 - **Precisions:** `f16`, `f32`, `i32`, `i64`.
 - **Watch for:** At `i64` it runs slower than `metal-naive`. The emulated 64-bit multiplies make the work compute-bound, so tiling saves no memory traffic that matters, while each step still pays for two barriers.
 - **Source:** [`benchmark/src/kernels/metal/gemm.metal`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/metal/gemm.metal)
+
+## `metal-simdgroup`
+
+The same shader file, rebuilt around Metal's `simdgroup_matrix`: an 8 × 8 matrix spread across the 32 threads of a SIMD group (a simdgroup), multiplied by all 32 together in one call. Each group of 128 GPU threads (4 simdgroups) owns a 64 × 64 block of C. Every step it loads a strip of A and one of B into threadgroup memory, and each simdgroup multiplies 8 × 8 pieces of them into the 32 × 32 part of the block it keeps in registers. Each value read from threadgroup memory now feeds many multiply-adds instead of one.
+
+```text
+# 128 GPU threads per 64 × 64 block of C; each simdgroup holds 32 × 32 of it as 4 × 4 pieces
+acc[4][4] = 0
+for t in 0..N step 16:
+  stageA = A[block rows][t .. t+16];  stageB = B[t .. t+16][block cols]   # zeros past the edge
+  barrier                             # the group's loads are done
+  for kk in 0..16 step 8:
+    a[i] = 8 × 8 piece of stageA, i in 0..4
+    b[j] = 8 × 8 piece of stageB, j in 0..4
+    acc[i][j] += a[i] × b[j]          # simdgroup_multiply_accumulate
+  barrier                             # the group's reads are done
+C[block] = acc                        # straight from registers; pieces that cross the edge go through threadgroup memory
+```
+
+- **Runs via:** The same as `metal-naive`.
+- **Tunes:** Nothing: the block shape is fixed, so no knob applies.
+- **Precisions:** `f16`, `f32`. `simdgroup_matrix` has no integer types.
+- **Watch for:** The M1's GPU has no matrix hardware: the 8 × 8 multiplies run on the same ALUs as every other shader, and the gain comes from feeding them from registers. It adds up in the element type, like the other shaders. At small N there are too few blocks to fill the GPU, and launching the work costs more than the work itself.
+- **Source:** [`benchmark/src/kernels/metal/gemm.metal`](https://github.com/paulhondola/gemm-bench/blob/main/benchmark/src/kernels/metal/gemm.metal)

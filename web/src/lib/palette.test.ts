@@ -22,7 +22,7 @@ const all = [
 	"static-tiled",
 	"tiled",
 ];
-const gpuKernels = ["metal-naive", "metal-tiled", "mps"];
+const gpuKernels = ["metal-naive", "metal-simdgroup", "metal-tiled", "mps"];
 const none = new Map<string, Family>();
 
 test("known kernels take their documented slot", () => {
@@ -36,6 +36,7 @@ test("known kernels take their documented slot", () => {
 	expect(p.get("mps")).toBe("#e66767");
 	expect(p.get("metal-naive")).toBe("#d95926");
 	expect(p.get("metal-tiled")).toBe("#9085e9");
+	expect(p.get("metal-simdgroup")).toBe("#4f44ff");
 });
 
 test("the naive-ijk baseline is neutral ink, outside the categorical slots", () => {
@@ -49,7 +50,7 @@ test("the naive-ijk baseline is neutral ink, outside the categorical slots", () 
 test("GPU kernels reuse host slots but never collide within their group", () => {
 	const p = paletteFor([...all, ...gpuKernels], none);
 	expect(p.get("metal-naive")).toBe(p.get("ikj"));
-	expect(new Set(gpuKernels.map((k) => p.get(k))).size).toBe(3);
+	expect(new Set(gpuKernels.map((k) => p.get(k))).size).toBe(4);
 });
 
 test("a survivor keeps its colour when another kernel is filtered out", () => {
@@ -74,13 +75,13 @@ test("an unknown kernel takes a free slot, never an occupied one", () => {
 
 test("an unknown GPU kernel skips the other families' ink", () => {
 	const p = paletteFor(
-		[...gpuKernels, "metal-simdgroup"],
-		new Map<string, Family>([["metal-simdgroup", "gpu"]]),
+		[...gpuKernels, "metal-future"],
+		new Map<string, Family>([["metal-future", "gpu"]]),
 	);
 	// Slots 0 (AMX blue), 5 (parallel green) and 8 (serial purple) are the
 	// reference inks drawn beside GPU kernels; slot 1 is metal-naive's. The
 	// first free GPU slot is 2.
-	expect(p.get("metal-simdgroup")).toBe("#199e70");
+	expect(p.get("metal-future")).toBe("#199e70");
 });
 
 test("a group that runs out of slots caps rather than generating a hue", () => {

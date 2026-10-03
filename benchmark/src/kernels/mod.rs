@@ -259,11 +259,15 @@ mod tests {
         assert!(samples.setup > std::time::Duration::ZERO);
     }
 
-    /// Checks a shader against `NaiveGemm` at n = 7 and at n = 37, which is
-    /// not a multiple of `metal-tiled`'s 16-wide tile, so edge tiles are partial.
+    /// Checks a shader against `NaiveGemm` at n = 7, 37, 100 and 132, none a
+    /// multiple of `metal-tiled`'s 16-wide tile, so edge tiles are partial.
     #[cfg(target_os = "macos")]
     fn shader_matches_naive<T: Element>(shader: super::Shader) {
-        for n in [7, 37] {
+        // 100 spans two blocks per side for metal-simdgroup, the second ragged,
+        // and ends its k-loop on a partial step. 132 is a multiple of 4 that
+        // puts interior blocks at nonzero row0/col0 on the vector path, with a
+        // ragged 4-wide edge.
+        for n in [7, 37, 100, 132] {
             let (lhs, rhs) = inputs::<T>(n);
             let mut expected = Matrix::zeros(n, n);
             NaiveGemm.compute(&lhs, &rhs, &mut expected);
@@ -294,6 +298,25 @@ mod tests {
         shader_matches_naive::<f32>(Tiled);
         shader_matches_naive::<i32>(Tiled);
         shader_matches_naive::<i64>(Tiled);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn metal_simdgroup_matches_naive_at_f16_and_f32() {
+        use super::Shader::Simdgroup;
+        shader_matches_naive::<f16>(Simdgroup);
+        shader_matches_naive::<f32>(Simdgroup);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn metal_simdgroup_has_no_kernel_for_integers() {
+        use super::{Shader::Simdgroup, ShaderGemm};
+        let int = ShaderGemm::<i32>::new(Simdgroup)
+            .expect("an unsupported precision is not a compile error");
+        let long = ShaderGemm::<i64>::new(Simdgroup)
+            .expect("an unsupported precision is not a compile error");
+        assert!(int.is_none() && long.is_none());
     }
 
     #[cfg(target_os = "macos")]
@@ -403,6 +426,19 @@ mod tests {
                 Param::fixed("threadgroup_height", 16),
                 Param::fixed("depth_step", 16),
                 Param::derived("threadgroups", 49),
+            ]
+        );
+        let simdgroup = ShaderGemm::<f32>::new(Shader::Simdgroup)
+            .expect("gemm.metal compiles")
+            .expect("a Metal device");
+        assert_eq!(
+            GemmKernel::<f32>::params(&simdgroup, 100),
+            [
+                Param::fixed("block_rows", 64),
+                Param::fixed("block_cols", 64),
+                Param::fixed("depth_step", 16),
+                Param::fixed("simdgroups", 4),
+                Param::derived("threadgroups", 4),
             ]
         );
         let naive = ShaderGemm::<f32>::new(Shader::Naive)

@@ -268,13 +268,26 @@ fn measure<T: Element>(
                 params,
             )
         }
+        #[cfg(target_os = "macos")]
+        KernelChoice::MetalSimdgroup => {
+            let kernel = ShaderGemm::<T>::new(Shader::Simdgroup)?
+                .expect("metal-simdgroup needs a Metal device and f16 or f32");
+            let built = setup_start.elapsed();
+            let params = GemmKernel::<T>::params(&kernel, lhs.rows());
+            on_gpu(
+                built,
+                kernel.benchmark(lhs, rhs, io.2, repetitions)?,
+                params,
+            )
+        }
         // `value(skip)` keeps these out of every plan off macOS.
         #[cfg(not(target_os = "macos"))]
         KernelChoice::AccelerateBlas
         | KernelChoice::AccelerateBnns
         | KernelChoice::Mps
         | KernelChoice::MetalNaive
-        | KernelChoice::MetalTiled => unreachable!("{} runs only on macOS", choice.label()),
+        | KernelChoice::MetalTiled
+        | KernelChoice::MetalSimdgroup => unreachable!("{} runs only on macOS", choice.label()),
     })
 }
 
