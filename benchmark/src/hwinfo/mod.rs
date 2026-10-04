@@ -10,14 +10,17 @@ use crate::context::UNKNOWN;
 
 mod linux;
 mod macos;
+mod windows;
 
 #[cfg(target_os = "linux")]
 use linux as native;
 #[cfg(target_os = "macos")]
 use macos as native;
+#[cfg(target_os = "windows")]
+use windows as native;
 
 /// Targets with no module record only what std and the compiler know.
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod native {
     use super::{Cache, CoreTier};
 
@@ -228,5 +231,26 @@ mod tests {
         assert!(machine.gpu.is_some(), "{machine:?}");
         #[cfg(target_os = "linux")]
         assert!(!machine.tiers.is_empty(), "{machine:?}");
+        #[cfg(target_os = "windows")]
+        {
+            assert!(
+                machine.os.starts_with("Windows ") && machine.cpu != crate::context::UNKNOWN,
+                "{machine:?}"
+            );
+            assert!(
+                !machine.tiers.is_empty() && !machine.caches.is_empty(),
+                "{machine:?}"
+            );
+            // Checks the record offsets against the real API: every logical CPU lands in a tier.
+            assert_eq!(
+                machine
+                    .tiers
+                    .iter()
+                    .map(|tier| tier.logical_cpus)
+                    .sum::<usize>(),
+                machine.available_parallelism,
+                "{machine:?}"
+            );
+        }
     }
 }
