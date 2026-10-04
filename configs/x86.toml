@@ -1,0 +1,4 @@
+# The full sweep on x86, minus f16; run x86-f16.toml for that half. Without
+# AVX-512 FP16, packed and rayon-packed f16 split every fused multiply-add into
+# scalar ones and took half of a full sweep's time on a Ryzen 5 7535HS.
+precision = ["f32", "f64", "i32", "i64"]

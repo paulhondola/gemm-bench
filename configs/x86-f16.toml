@@ -1,0 +1,4 @@
+# The f16 half of the x86 sweep (see x86.toml): every CPU kernel but packed and
+# rayon-packed. A fixed list, so a kernel added later must be added here.
+precision = ["f16"]
+kernel = ["naive", "ikj", "tiled", "rayon-ikj", "rayon-tiled", "static-ikj", "static-tiled"]
