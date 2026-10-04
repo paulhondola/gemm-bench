@@ -25,7 +25,7 @@ pub(super) fn cpu() -> Option<String> {
         .ok()
         .and_then(|cpuinfo| parse_cpu_model(&cpuinfo))
         // ARM kernels leave `model name` out; lscpu decodes the part number.
-        .or_else(|| command_output("lscpu", &[]).and_then(|text| parse_lscpu_model(&text)))
+        .or_else(|| command_output("lscpu", &[]).and_then(|text| parse_lscpu_name(&text)))
 }
 
 /// The first display device `lspci` lists. `None` without `pciutils` (as in
@@ -65,15 +65,25 @@ fn parse_cpu_model(cpuinfo: &str) -> Option<String> {
         .filter(|name| !name.is_empty())
 }
 
-/// lscpu's `Model name`, e.g. `Neoverse-V1` on an ARM server, unless blank.
-fn parse_lscpu_model(lscpu: &str) -> Option<String> {
+/// One lscpu field, unless blank or the `-` it prints when a VM gives no value.
+fn lscpu_field(lscpu: &str, field: &str) -> Option<String> {
     lscpu
         .lines()
         .find_map(|line| {
             let (key, value) = line.split_once(':')?;
-            (key.trim() == "Model name").then(|| value.trim().to_owned())
+            (key.trim() == field).then(|| value.trim().to_owned())
         })
-        .filter(|name| !name.is_empty())
+        .filter(|value| !value.is_empty() && value != "-")
+}
+
+/// lscpu's `Model name`, e.g. `Neoverse-V1` on an ARM server.
+fn parse_lscpu_model(lscpu: &str) -> Option<String> {
+    lscpu_field(lscpu, "Model name")
+}
+
+/// The model name, or the `Vendor ID` (`Apple`) when a VM leaves the model out.
+fn parse_lscpu_name(lscpu: &str) -> Option<String> {
+    parse_lscpu_model(lscpu).or_else(|| lscpu_field(lscpu, "Vendor ID"))
 }
 
 /// The first display device in `lspci -mm`, whose lines read
@@ -231,7 +241,7 @@ mod tests {
 
     use super::{
         Cache, CacheKind, CoreTier, linux_topology, parse_cpu_list, parse_cpu_model,
-        parse_lscpu_model, parse_lspci_gpu, parse_size,
+        parse_lscpu_model, parse_lscpu_name, parse_lspci_gpu, parse_size,
     };
 
     #[test]
@@ -435,6 +445,24 @@ mod tests {
     fn a_blank_model_name_counts_as_missing() {
         assert_eq!(parse_cpu_model("model name\t: \nprocessor\t: 0\n"), None);
         assert_eq!(parse_lscpu_model("Model name:   \t\n"), None);
+    }
+
+    /// lscpu prints `-` when a VM's firmware gives no model name.
+    #[test]
+    fn a_dash_model_name_counts_as_missing() {
+        assert_eq!(
+            parse_lscpu_model("Vendor ID:  Apple\nModel name:  -\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn lscpu_vendor_stands_in_when_the_model_is_missing() {
+        let lscpu = "Vendor ID:  Apple\nModel name:  -\n";
+        assert_eq!(parse_lscpu_name(lscpu).as_deref(), Some("Apple"));
+        let named = "Vendor ID:  ARM\nModel name:  Neoverse-V1\n";
+        assert_eq!(parse_lscpu_name(named).as_deref(), Some("Neoverse-V1"));
+        assert_eq!(parse_lscpu_name("Architecture: aarch64\n"), None);
     }
 
     #[test]

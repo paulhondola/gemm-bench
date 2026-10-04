@@ -128,6 +128,89 @@ impl Machine {
     }
 }
 
+impl Machine {
+    /// The block printed before a run: what this machine is, and what it
+    /// didn't report.
+    pub(crate) fn summary(&self) -> String {
+        let mut out = format!(
+            "Machine\n  OS        {} ({})\n  CPU       {}, {} logical CPUs available\n",
+            self.os, self.arch, self.cpu, self.available_parallelism
+        );
+        if self.tiers.is_empty() {
+            out.push_str("    cores not reported\n");
+        }
+        for tier in &self.tiers {
+            let name = tier
+                .name
+                .as_deref()
+                .map_or_else(String::new, |n| format!(" {n}"));
+            out.push_str(&format!(
+                "    tier {}{name}: {} core{}, {} thread{}\n",
+                tier.tier,
+                tier.cores,
+                plural(tier.cores),
+                tier.logical_cpus,
+                plural(tier.logical_cpus)
+            ));
+            self.push_caches(&mut out, "      ", Some(tier.tier));
+        }
+        if self.caches.is_empty() {
+            out.push_str("    caches not reported\n");
+        }
+        self.push_caches(&mut out, "    all tiers: ", None);
+        out.push_str(&match (&self.gpu, self.gpu_cores) {
+            (Some(name), Some(cores)) => format!("  GPU       {name}, {cores} cores\n"),
+            (Some(name), None) => format!("  GPU       {name}\n"),
+            (None, _) => "  GPU       not detected\n".to_owned(),
+        });
+        out.push_str(&format!("  Features  {}\n", self.target_features));
+        out
+    }
+
+    /// One line of the caches serving `tier` (`None`: shared across tiers), if any.
+    fn push_caches(&self, out: &mut String, prefix: &str, tier: Option<usize>) {
+        let caches: Vec<String> = self
+            .caches
+            .iter()
+            .filter(|cache| cache.tier == tier)
+            .map(|cache| {
+                let kind = match cache.kind {
+                    CacheKind::Data => "d",
+                    CacheKind::Instruction => "i",
+                    CacheKind::Unified => "",
+                };
+                let shared = if cache.shared_by > 1 {
+                    format!(" (shared by {})", cache.shared_by)
+                } else {
+                    String::new()
+                };
+                format!(
+                    "L{}{kind} {} x{}{shared}",
+                    cache.level,
+                    byte_size(cache.size_bytes),
+                    cache.instances
+                )
+            })
+            .collect();
+        if !caches.is_empty() {
+            out.push_str(&format!("{prefix}{}\n", caches.join(", ")));
+        }
+    }
+}
+
+fn plural(count: usize) -> &'static str {
+    if count == 1 { "" } else { "s" }
+}
+
+/// `131072` → `128 KiB`; sizes that aren't a whole KiB stay in bytes.
+fn byte_size(bytes: usize) -> String {
+    match bytes {
+        b if b % (1 << 20) == 0 => format!("{} MiB", b >> 20),
+        b if b % (1 << 10) == 0 => format!("{} KiB", b >> 10),
+        b => format!("{b} B"),
+    }
+}
+
 /// The enabled subset of the features that change how the kernels compile,
 /// sorted. Only names rustc knows: an unknown one trips `unexpected_cfgs`.
 fn target_features() -> String {
@@ -197,7 +280,7 @@ fn group_caches(seen: CacheMap, tier_of: &HashMap<usize, usize>) -> Vec<Cache> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Machine, target_features};
+    use super::{Cache, CacheKind, CoreTier, Machine, target_features};
 
     #[test]
     fn target_features_are_sorted_and_name_the_build() {
@@ -211,6 +294,106 @@ mod tests {
         assert_eq!(names, sorted);
         #[cfg(target_arch = "aarch64")]
         assert!(names.contains(&"neon"), "{features}");
+    }
+
+    fn machine(
+        tiers: Vec<CoreTier>,
+        caches: Vec<Cache>,
+        gpu: Option<(&str, Option<usize>)>,
+    ) -> Machine {
+        Machine {
+            os: "macOS 27.0.1".to_owned(),
+            arch: "aarch64",
+            target_features: "dotprod fp16 neon".to_owned(),
+            rustc_version: "rustc 1.99.0-nightly",
+            cpu: "Apple M1 Pro".to_owned(),
+            available_parallelism: 10,
+            gpu: gpu.map(|(name, _)| name.to_owned()),
+            gpu_cores: gpu.and_then(|(_, cores)| cores),
+            tiers,
+            caches,
+        }
+    }
+
+    fn cache(
+        tier: Option<usize>,
+        level: usize,
+        kind: CacheKind,
+        size_bytes: usize,
+        shared_by: usize,
+        instances: usize,
+    ) -> Cache {
+        Cache {
+            tier,
+            level,
+            kind,
+            size_bytes,
+            line_bytes: Some(128),
+            shared_by,
+            instances,
+        }
+    }
+
+    #[test]
+    fn summary_lists_cpu_tiers_caches_gpu_and_features() {
+        let tiers = vec![
+            CoreTier {
+                tier: 0,
+                name: Some("Performance".to_owned()),
+                cores: 8,
+                logical_cpus: 8,
+            },
+            CoreTier {
+                tier: 1,
+                name: None,
+                cores: 2,
+                logical_cpus: 2,
+            },
+        ];
+        let caches = vec![
+            cache(None, 3, CacheKind::Unified, 24 << 20, 10, 1),
+            cache(Some(0), 1, CacheKind::Data, 128 << 10, 1, 8),
+            cache(Some(0), 2, CacheKind::Unified, 12 << 20, 4, 2),
+            cache(Some(1), 1, CacheKind::Instruction, 1000, 1, 2),
+        ];
+        let summary = machine(tiers, caches, Some(("Apple M1 Pro", Some(16)))).summary();
+        assert_eq!(
+            summary,
+            "\
+Machine
+  OS        macOS 27.0.1 (aarch64)
+  CPU       Apple M1 Pro, 10 logical CPUs available
+    tier 0 Performance: 8 cores, 8 threads
+      L1d 128 KiB x8, L2 12 MiB x2 (shared by 4)
+    tier 1: 2 cores, 2 threads
+      L1i 1000 B x2
+    all tiers: L3 24 MiB x1 (shared by 10)
+  GPU       Apple M1 Pro, 16 cores
+  Features  dotprod fp16 neon
+"
+        );
+    }
+
+    #[test]
+    fn summary_says_what_the_machine_did_not_report() {
+        let summary = machine(Vec::new(), Vec::new(), None).summary();
+        assert_eq!(
+            summary,
+            "\
+Machine
+  OS        macOS 27.0.1 (aarch64)
+  CPU       Apple M1 Pro, 10 logical CPUs available
+    cores not reported
+    caches not reported
+  GPU       not detected
+  Features  dotprod fp16 neon
+"
+        );
+        let named_gpu = machine(Vec::new(), Vec::new(), Some(("Intel Iris", None))).summary();
+        assert!(
+            named_gpu.contains("  GPU       Intel Iris\n"),
+            "{named_gpu}"
+        );
     }
 
     #[test]
