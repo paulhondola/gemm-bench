@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use rusqlite::Connection;
 
 use crate::context::RunContext;
+use crate::hwinfo::Machine;
 use crate::kernel::{KernelChoice, Knob, Precision};
-use crate::machine::Machine;
 
 /// Fully resolved configuration used by the benchmark runner.
 #[derive(Debug)]

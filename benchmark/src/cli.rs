@@ -6,7 +6,7 @@ use crate::config::ConfigFile;
 use crate::context;
 use crate::kernel::{KernelChoice, Knob, Precision};
 use crate::plan::BenchmarkPlan;
-use crate::{db, host, machine::Machine};
+use crate::{db, host, hwinfo::Machine};
 
 const DEFAULT_SIZES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 const DEFAULT_REPETITIONS: usize = 5;
