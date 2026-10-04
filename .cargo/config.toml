@@ -1,0 +1,3 @@
+[build]
+# Benchmarks run on the build machine; enable its native CPU instructions.
+rustflags = ["-C", "target-cpu=native"]
