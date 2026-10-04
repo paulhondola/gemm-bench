@@ -26,6 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let mut plan = cli.into_plan()?;
+    println!("{}", plan.machine.summary());
     for notice in &plan.skipped {
         eprintln!("{notice}");
     }

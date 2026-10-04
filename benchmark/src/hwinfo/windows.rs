@@ -36,17 +36,27 @@ pub(super) fn cpu() -> Option<String> {
 /// registry's display class also keeps removed ones.
 #[cfg(target_os = "windows")]
 pub(super) fn gpu() -> Option<(String, Option<usize>)> {
-    command_output(
-        "powershell",
-        &[
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "(Get-CimInstance Win32_VideoController).Name",
-        ],
-    )
-    .and_then(|text| parse_cim_gpu(&text))
-    .map(|name| (name, None))
+    // Windows PowerShell's fixed install path first, since some hosts have it
+    // off PATH; then whatever PATH offers.
+    let installed = std::env::var("SystemRoot")
+        .map(|root| format!(r"{root}\System32\WindowsPowerShell\v1.0\powershell.exe"))
+        .unwrap_or_default();
+    [installed.as_str(), "powershell", "pwsh"]
+        .into_iter()
+        .filter(|program| !program.is_empty())
+        .find_map(|program| {
+            command_output(
+                program,
+                &[
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "(Get-CimInstance Win32_VideoController).Name",
+                ],
+            )
+        })
+        .and_then(|text| parse_cim_gpu(&text))
+        .map(|name| (name, None))
 }
 
 #[cfg(target_os = "windows")]
