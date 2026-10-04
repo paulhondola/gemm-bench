@@ -28,6 +28,8 @@ pub(crate) enum KernelChoice {
     MetalNaive,
     #[cfg_attr(not(target_os = "macos"), value(skip))]
     MetalTiled,
+    #[cfg_attr(not(target_os = "macos"), value(skip))]
+    MetalSimdgroup,
 }
 
 /// A knob swept from the command line besides `--threads`: one flag, one
@@ -118,7 +120,7 @@ impl KernelInfo {
 
 impl KernelChoice {
     /// Every kernel, including those `value(skip)` hides off macOS.
-    pub(crate) const ALL: [Self; 14] = [
+    pub(crate) const ALL: [Self; 15] = [
         Self::Naive,
         Self::Ikj,
         Self::Tiled,
@@ -133,6 +135,7 @@ impl KernelChoice {
         Self::Mps,
         Self::MetalNaive,
         Self::MetalTiled,
+        Self::MetalSimdgroup,
     ];
 
     fn info(self) -> KernelInfo {
@@ -212,6 +215,14 @@ impl KernelChoice {
                 derived: &["threadgroups"],
                 fixed: &["threadgroup_width", "threadgroup_height", "depth_step"],
                 ..serial("metal-tiled")
+            },
+            // simdgroup_matrix has half and float only.
+            Self::MetalSimdgroup => KernelInfo {
+                backend: "metal",
+                precisions: &[F16, F32],
+                derived: &["threadgroups"],
+                fixed: &["block_cols", "block_rows", "depth_step", "simdgroups"],
+                ..serial("metal-simdgroup")
             },
         }
     }
@@ -298,7 +309,10 @@ mod tests {
     fn every_kernel_names_its_backend() {
         for kernel in KernelChoice::ALL {
             let expected = match kernel {
-                KernelChoice::Mps | KernelChoice::MetalNaive | KernelChoice::MetalTiled => "metal",
+                KernelChoice::Mps
+                | KernelChoice::MetalNaive
+                | KernelChoice::MetalTiled
+                | KernelChoice::MetalSimdgroup => "metal",
                 KernelChoice::AccelerateBlas | KernelChoice::AccelerateBnns => "matrix",
                 _ => "cpu",
             };
@@ -308,7 +322,7 @@ mod tests {
 
     #[test]
     fn all_kernels_are_known_everywhere_but_offered_only_where_they_run() {
-        assert_eq!(KernelChoice::ALL.len(), 14);
+        assert_eq!(KernelChoice::ALL.len(), 15);
         let offered = KernelChoice::value_variants();
         if cfg!(target_os = "macos") {
             assert_eq!(offered, &KernelChoice::ALL[..]);

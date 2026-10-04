@@ -1,5 +1,6 @@
 //! Hand-written GEMM compute shaders (`gemm.metal`), compiled from source at
-//! runtime: the GPU counterparts of the CPU naive and tiled kernels.
+//! runtime: the GPU counterparts of the CPU naive and tiled kernels, and a
+//! `simdgroup_matrix` kernel that multiplies 8×8 fragments.
 
 use std::any::TypeId;
 use std::marker::PhantomData;
@@ -25,6 +26,17 @@ const SOURCE: &str = include_str!("gemm.metal");
 /// `gemm.metal`. 16×16 = 256 threads, inside every Apple GPU's 1024 limit.
 const TILE: usize = 16;
 
+// `gemm_simdgroup`'s block of C per threadgroup, the depth of each staged
+// step, and its simdgroups (2×2); must equal `BM`, `BN`, `BK` and `SG` in
+// `gemm.metal`.
+const BLOCK_ROWS: usize = 64;
+const BLOCK_COLS: usize = 64;
+const DEPTH_STEP: usize = 16;
+const SIMDGROUPS: usize = 4;
+/// `gemm_simdgroup`'s threads per threadgroup: every Apple GPU's simdgroup is
+/// 32 threads wide.
+const SIMDGROUP_THREADS: usize = SIMDGROUPS * 32;
+
 /// Which `gemm.metal` kernel to run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Shader {
@@ -32,6 +44,9 @@ pub enum Shader {
     Naive,
     /// Threadgroup-memory tiling with a fixed `TILE`×`TILE` tile.
     Tiled,
+    /// 8×8 `simdgroup_matrix` fragments multiplied out of a threadgroup-staged
+    /// block, `f16` and `f32` only.
+    Simdgroup,
 }
 
 impl Shader {
@@ -39,6 +54,7 @@ impl Shader {
         match self {
             Self::Naive => "naive",
             Self::Tiled => "tiled",
+            Self::Simdgroup => "simdgroup",
         }
     }
 }
@@ -67,12 +83,18 @@ pub struct ShaderGemm<T: Element> {
 
 impl<T: Element> ShaderGemm<T> {
     /// Compiles `gemm.metal` and builds the pipeline for `shader` at `T`.
-    /// `Ok(None)` without a Metal device or for a precision MSL can't express
-    /// (`f64`); `Err` with the compiler's message if compilation fails.
+    /// `Ok(None)` without a Metal device or for a precision the shader can't
+    /// express (`f64`, and integers for `Simdgroup`); `Err` with the
+    /// compiler's message if compilation fails, or if the pipeline can't run
+    /// `Simdgroup`'s threadgroup.
     pub fn new(shader: Shader) -> Result<Option<Self>, String> {
         let Some(msl_type) = msl_type::<T>() else {
             return Ok(None);
         };
+        // simdgroup_matrix has half and float only.
+        if shader == Shader::Simdgroup && !matches!(msl_type, "half" | "float") {
+            return Ok(None);
+        }
         let Some(context) = MetalContext::new() else {
             return Ok(None);
         };
@@ -93,6 +115,12 @@ impl<T: Element> ShaderGemm<T> {
             .device
             .newComputePipelineStateWithFunction_error(&function)
             .map_err(|error| format!("{name} pipeline failed: {}", error.localizedDescription()))?;
+        let max_threads = pipeline.maxTotalThreadsPerThreadgroup();
+        if shader == Shader::Simdgroup && max_threads < SIMDGROUP_THREADS {
+            return Err(format!(
+                "{name} allows {max_threads} threads per threadgroup but needs {SIMDGROUP_THREADS}"
+            ));
+        }
         Ok(Some(Self {
             context,
             pipeline,
@@ -167,6 +195,19 @@ impl<T: Element> GpuDispatch<T> for ShaderGemm<T> {
                 square(operands.n.div_ceil(TILE)),
                 square(TILE),
             ),
+            // Whole threadgroups for the same reason; x walks columns, y rows.
+            Shader::Simdgroup => encoder.dispatchThreadgroups_threadsPerThreadgroup(
+                MTLSize {
+                    width: operands.n.div_ceil(BLOCK_COLS),
+                    height: operands.n.div_ceil(BLOCK_ROWS),
+                    depth: 1,
+                },
+                MTLSize {
+                    width: SIMDGROUP_THREADS,
+                    height: 1,
+                    depth: 1,
+                },
+            ),
         }
         encoder.endEncoding();
         Ok(())
@@ -196,6 +237,36 @@ impl<T: Element> GemmKernel<T> for ShaderGemm<T> {
                 Param::fixed("depth_step", TILE),
                 Param::derived("threadgroups", n.div_ceil(TILE).pow(2)),
             ],
+            Shader::Simdgroup => vec![
+                Param::fixed("block_rows", BLOCK_ROWS),
+                Param::fixed("block_cols", BLOCK_COLS),
+                Param::fixed("depth_step", DEPTH_STEP),
+                Param::fixed("simdgroups", SIMDGROUPS),
+                Param::derived(
+                    "threadgroups",
+                    n.div_ceil(BLOCK_ROWS) * n.div_ceil(BLOCK_COLS),
+                ),
+            ],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BLOCK_COLS, BLOCK_ROWS, DEPTH_STEP, SIMDGROUPS, SOURCE};
+
+    /// The params a run records come from these constants, the shader from
+    /// `gemm.metal`'s; a mismatch would store the wrong shape in a host DB.
+    #[test]
+    fn simdgroup_constants_match_the_shader() {
+        for (name, value) in [
+            ("BM", BLOCK_ROWS),
+            ("BN", BLOCK_COLS),
+            ("BK", DEPTH_STEP),
+            ("SG", SIMDGROUPS),
+        ] {
+            let line = format!("constant constexpr uint {name} = {value};");
+            assert!(SOURCE.contains(&line), "gemm.metal lacks `{line}`");
         }
     }
 }
