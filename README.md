@@ -255,4 +255,4 @@ After `lefthook install`, each commit runs checks scoped to the files it touches
 | **Rust Nightly** | `cargo fmt --check`, `cargo clippy --all-targets --all-features -D warnings`, `cargo test` (all against `benchmark/Cargo.toml`), `gemm-bench validate` on every committed database, and on pull requests a check that only `data/db/<author>/` changed |
 | **Web (Lint, Typecheck, Test, Build)** | `bun install --frozen-lockfile`, `biome check src`, `bun run typecheck`, `bun test`, `bun run build` |
 
-CI runs on Linux, so the macOS-only Metal kernels (`mps`, `metal-naive`, `metal-tiled`, `metal-simdgroup`) are compiled and tested only locally. Run `just check` and `just test` before pushing to catch what CI will.
+CI runs on Linux and Windows, so the macOS-only Metal kernels (`mps`, `metal-naive`, `metal-tiled`, `metal-simdgroup`) are compiled and tested only locally. Run `just check` and `just test` before pushing to catch what CI will.

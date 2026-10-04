@@ -61,6 +61,28 @@ jobs:
             exit 1
           fi
 
+  rust-windows:
+    name: Rust Nightly on Windows (Clippy, Test)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: benchmark
+
+      - name: Run Clippy
+        run: cargo clippy --manifest-path benchmark/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Run Tests
+        run: cargo test --manifest-path benchmark/Cargo.toml
+
   web:
     name: Web (Lint, Typecheck, Test, Build)
     runs-on: ubuntu-latest
