@@ -1,4 +1,4 @@
-//! Linux: `uname`, `/proc/cpuinfo` and `lscpu`, and sysfs. Only the four
+//! Linux: `uname`, `/proc/cpuinfo` and `lscpu`, sysfs, and `lspci`. Only the four
 //! lookups are Linux-only; the parsers compile everywhere, so their tests run
 //! on every platform.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -28,10 +28,14 @@ pub(super) fn cpu() -> Option<String> {
         .or_else(|| command_output("lscpu", &[]).and_then(|text| parse_lscpu_model(&text)))
 }
 
-/// No GPU lookup yet.
+/// The first display device `lspci` lists. `None` without `pciutils` (as in
+/// minimal containers) or without a PCI GPU (most ARM boards). Linux reports
+/// no core count.
 #[cfg(target_os = "linux")]
 pub(super) fn gpu() -> Option<(String, Option<usize>)> {
-    None
+    command_output("lspci", &["-mm"])
+        .and_then(|text| parse_lspci_gpu(&text))
+        .map(|name| (name, None))
 }
 
 #[cfg(target_os = "linux")]
@@ -70,6 +74,24 @@ fn parse_lscpu_model(lscpu: &str) -> Option<String> {
             (key.trim() == "Model name").then(|| value.trim().to_owned())
         })
         .filter(|name| !name.is_empty())
+}
+
+/// The first display device in `lspci -mm`, whose lines read
+/// `<slot> "<class>" "<vendor>" "<device>" -r.. "<subsystem vendor>" ...`, as
+/// `<vendor> <device>`. "First" is PCI bus order.
+fn parse_lspci_gpu(lspci: &str) -> Option<String> {
+    const DISPLAY: [&str; 3] = [
+        "VGA compatible controller",
+        "3D controller",
+        "Display controller",
+    ];
+    lspci.lines().find_map(|line| {
+        let mut quoted = line.split('"').skip(1).step_by(2);
+        let (class, vendor, device) = (quoted.next()?, quoted.next()?, quoted.next()?);
+        DISPLAY
+            .contains(&class)
+            .then(|| format!("{vendor} {device}"))
+    })
 }
 
 /// A sysfs CPU list: `0-3,8,10-11` → `[0, 1, 2, 3, 8, 10, 11]`.
@@ -209,7 +231,7 @@ mod tests {
 
     use super::{
         Cache, CacheKind, CoreTier, linux_topology, parse_cpu_list, parse_cpu_model,
-        parse_lscpu_model, parse_size,
+        parse_lscpu_model, parse_lspci_gpu, parse_size,
     };
 
     #[test]
@@ -420,5 +442,43 @@ mod tests {
         let lscpu = "Architecture:  aarch64\nVendor ID:     ARM\nModel name:    Neoverse-V1\n";
         assert_eq!(parse_lscpu_model(lscpu).as_deref(), Some("Neoverse-V1"));
         assert_eq!(parse_lscpu_model("Architecture: aarch64\n"), None);
+    }
+
+    /// `lspci -mm` on a laptop with an Intel iGPU and an NVIDIA dGPU, after a
+    /// non-display device.
+    const LSPCI: &str = "\
+00:00.0 \"Host bridge\" \"Intel Corporation\" \"Device 4621\" -r02 \"Lenovo\" \"Device 3803\"
+00:02.0 \"VGA compatible controller\" \"Intel Corporation\" \"Alder Lake-P GT2 [Iris Xe Graphics]\" -r0c -p00 \"Lenovo\" \"Device 3803\"
+01:00.0 \"3D controller\" \"NVIDIA Corporation\" \"AD107M [GeForce RTX 4060 Max-Q / Mobile]\" -ra1 \"Lenovo\" \"Device 3803\"
+";
+
+    #[test]
+    fn lspci_names_the_first_display_device() {
+        assert_eq!(
+            parse_lspci_gpu(LSPCI).as_deref(),
+            Some("Intel Corporation Alder Lake-P GT2 [Iris Xe Graphics]")
+        );
+        let without_vga: String = LSPCI
+            .lines()
+            .filter(|line| !line.contains("VGA"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            parse_lspci_gpu(&without_vga).as_deref(),
+            Some("NVIDIA Corporation AD107M [GeForce RTX 4060 Max-Q / Mobile]")
+        );
+    }
+
+    #[test]
+    fn lspci_without_a_display_device_names_no_gpu() {
+        assert_eq!(
+            parse_lspci_gpu(LSPCI.lines().next().unwrap_or_default()),
+            None
+        );
+        assert_eq!(parse_lspci_gpu(""), None);
+        assert_eq!(
+            parse_lspci_gpu("00:02.0 \"VGA compatible controller\""),
+            None
+        );
     }
 }
