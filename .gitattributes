@@ -1,0 +1,3 @@
+# LF everywhere: db.rs embeds data/schema.sql byte for byte, so a CRLF
+# checkout writes host databases that validate rejects.
+* text=auto eol=lf
