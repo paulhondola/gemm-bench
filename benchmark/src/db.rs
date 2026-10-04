@@ -5,7 +5,7 @@ use std::{ffi::OsStr, fs, path::Path};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::{benchmark::BenchmarkRecord, context::RunContext, machine::Machine};
+use crate::{benchmark::BenchmarkRecord, context::RunContext, hwinfo::Machine};
 
 /// Schema v1, the only version: see the spec before changing it.
 pub(crate) const SCHEMA: &str = include_str!("../../data/schema.sql");
@@ -214,7 +214,7 @@ pub(crate) mod fixtures {
     use crate::{
         benchmark::BenchmarkRecord,
         context::RunContext,
-        machine::{Cache, CacheKind, CoreTier, Machine},
+        hwinfo::{Cache, CacheKind, CoreTier, Machine},
     };
 
     pub(crate) fn machine() -> Machine {

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Branch `feat/hwinfo`, which already holds the spec commit. **Start only after the quick PR (`docs/superpowers/plans/2026-10-04-windows-host-support.md`) has merged**, because its `windows-latest` CI job is the only place the Windows-only code compiles.
+- Branch `feat/hwinfo-modules`, from `origin/main`, already created. The quick PR (`docs/superpowers/plans/2026-10-04-windows-host-support.md`) merged as #29 (`bfcfebb`), together with this plan and its spec, so `main` already has the `windows-latest` CI job. That job is the only place the Windows-only code compiles. Don't reuse `feat/hwinfo`: it is #29's merged branch.
 - No new dependencies. The Win32 call is a hand-declared `unsafe extern "system"` block with `#[link(name = "kernel32")]`.
 - Approach A from the spec:
   - In each platform module, only the four interface functions (`os`, `cpu`, `gpu`, `topology`) and the OS calls behind them carry `#[cfg(target_os = "<platform>")]`.
@@ -26,6 +26,11 @@
 - Run `just lint` (auto-fixes rustfmt) before every commit, and `just check && just test` before every push. The code here compiles and passes clippy, but may not be rustfmt-exact.
 - Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Windows-only code compiles only in CI. After each push, the `Rust Nightly on Windows (Clippy, Test)` job must pass before the next task starts.
+- Windows clippy sees a different shape of the crate than macOS clippy. In #29 it rejected two things macOS accepted (`d9e739f`):
+  - `let x: Option<String> = None; x.unwrap_or_else(…)` (`clippy::unnecessary_literal_unwrap`);
+  - an unused import of a helper only macOS and Linux call.
+
+  So never bind a literal `None` and unwrap it, and gate every import that only OS-specific code uses with the same `#[cfg(target_os = …)]` as that code. This plan's code follows both rules: fallbacks are function calls such as `native::cpu().unwrap_or_else(…)`, and each module's `command_output` import is gated.
 
 ## File Map
 
@@ -61,15 +66,17 @@ No behavior change. Steps 2 and 9 prove it.
     - `pub(super) fn gpu() -> Option<(String, Option<usize>)>`
     - `pub(super) fn topology() -> (Vec<CoreTier>, Vec<Cache>)`
 
-- [ ] **Step 1: Rebase onto the merged quick PR**
+- [ ] **Step 1: Switch to the branch and catch up with `main`**
+
+The branch already exists. It was created from `origin/main` (`bfcfebb`) and holds this plan's refresh commit.
 
 ```bash
-git switch feat/hwinfo
 git fetch origin
+git switch feat/hwinfo-modules
 git rebase origin/main
 ```
 
-Expected: `.github/workflows/ci.yml` has a `rust-windows` job, and `justfile` starts with `set positional-arguments`. If either is missing, the quick PR hasn't merged: stop.
+Expected: `.github/workflows/ci.yml` has a `rust-windows` job, `justfile` starts with `set positional-arguments`, and `benchmark/src/machine.rs` still exists. If any of these is wrong, `main` isn't where this plan expects it: stop.
 
 - [ ] **Step 2: Record the "before" capture and test count (on a Mac)**
 
@@ -427,7 +434,7 @@ group_caches. No behavior change: a quick run records identical runs,
 core_tiers and caches rows before and after.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-git push -u origin feat/hwinfo
+git push -u origin feat/hwinfo-modules
 ```
 
 ```bash

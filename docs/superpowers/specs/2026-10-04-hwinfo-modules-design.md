@@ -1,8 +1,8 @@
 # `hwinfo`: Per-Platform Hardware Capture
 
 **Date:** 2026-10-04
-**Status:** Design approved in conversation; awaiting spec review.
-**Ships after:** the quick PR in `docs/superpowers/plans/2026-10-04-windows-host-support.md` (Windows CI job, `just bench` argument fix, x86 presets). Its Windows CI job is what exercises this design's Windows module.
+**Status:** Approved; plan in `docs/superpowers/plans/2026-10-04-hwinfo-modules.md`.
+**Ships after:** the quick PR in `docs/superpowers/plans/2026-10-04-windows-host-support.md` (Windows CI job, `just bench` argument fix, x86 presets), merged as #29. Its Windows CI job is what exercises this design's Windows module.
 
 ## Problem
 
@@ -210,7 +210,7 @@ GPU presence isn't asserted on Linux or Windows: CI runners may have none.
 
 ## Migration
 
-One PR on `feat/hwinfo`, rebased onto `main` after the quick PR merges. Four commits:
+One PR on `feat/hwinfo-modules`, branched from `main` after #29. Four commits:
 
 1. **Pure move.**
    - `machine.rs` becomes `hwinfo/{mod,macos,linux}.rs`.
