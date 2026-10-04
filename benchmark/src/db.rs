@@ -294,7 +294,7 @@ mod tests {
     use rusqlite::Connection;
 
     use super::{
-        APPLICATION_ID, SCHEMA_VERSION, fixtures, open_for_run, validate_db_path, write_run,
+        APPLICATION_ID, SCHEMA, SCHEMA_VERSION, fixtures, open_for_run, validate_db_path, write_run,
     };
     use crate::benchmark::BenchmarkRecord;
 
@@ -333,6 +333,16 @@ mod tests {
             )
             .expect("count");
         assert_eq!(commented, 0, "schema.sql comments belong above each CREATE");
+    }
+
+    /// A CRLF checkout of schema.sql would store `\r` in every CREATE, which
+    /// CI's LF copy then rejects, so fail here before a run is spent on it.
+    #[test]
+    fn the_schema_has_lf_line_endings() {
+        assert!(
+            !SCHEMA.contains('\r'),
+            "data/schema.sql has CRLF line endings; check out with .gitattributes' eol=lf"
+        );
     }
 
     #[test]

@@ -32,6 +32,8 @@ The `mps`, `metal-naive`, `metal-tiled` and `metal-simdgroup` GPU kernels and th
 
 ## Quick Start
 
+Cargo uses [`.cargo/config.toml`](.cargo/config.toml) to compile for the local CPU (`-C target-cpu=native`), including when invoked through `just`. Build on each machine you benchmark: the resulting binary can require instructions unavailable on other CPUs. Run Cargo from the repository root or `benchmark/` so it discovers this configuration. An explicit `RUSTFLAGS` or `CARGO_ENCODED_RUSTFLAGS` environment variable overrides this setting.
+
 ```sh
 git clone https://github.com/paulhondola/gemm-bench.git
 cd gemm-bench
