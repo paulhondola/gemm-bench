@@ -1,8 +1,12 @@
+set positional-arguments
+
 default:
     @just --list
 
-bench *args='':
-    cargo run --release --manifest-path benchmark/Cargo.toml -- {{args}}
+# "$@" passes each argument as typed: {{args}} would let sh strip Windows
+# backslashes (.\configs\x.toml) and split paths at spaces.
+bench *args:
+    cargo run --release --manifest-path benchmark/Cargo.toml -- "$@"
 
 # Names this machine for `just bench`, once: <github-login>/<machine>, e.g. octocat/m1pro.
 init id:

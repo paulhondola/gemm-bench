@@ -23,7 +23,7 @@ Examples:
   gemm-bench --config configs/default.toml --sizes 1024
   gemm-bench --sweep
 
-Presets in configs/: default, quick, precisions, knobs.";
+Presets in configs/: default, quick, precisions, knobs, x86, x86-f16.";
 
 #[derive(Debug, Parser)]
 #[command(

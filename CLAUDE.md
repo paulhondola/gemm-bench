@@ -14,7 +14,7 @@ Everything goes through `just` (run from the repo root):
 ## Gotchas
 
 - Rust is **nightly** (`#![feature(f16)]`), pinned by `rust-toolchain.toml`.
-- Metal kernels (`mps`, `metal-naive`, `metal-tiled`, all under `kernels/metal/`) are macOS/Apple Silicon only and compiled only locally (CI is Linux). `mps` runs `f16`/`f32`; the shaders also run `i32`/`i64`. `gemm.metal` is compiled from source at runtime, so shader errors show up in `cargo test`, not `cargo build`. Gate new macOS code with `#[cfg(target_os = "macos")]` and check `cargo clippy` still passes for the non-macOS shape.
+- Metal kernels (`mps`, `metal-naive`, `metal-tiled`, all under `kernels/metal/`) are macOS/Apple Silicon only and compiled only locally (CI runs Linux and Windows). `mps` runs `f16`/`f32`; the shaders also run `i32`/`i64`. `gemm.metal` is compiled from source at runtime, so shader errors show up in `cargo test`, not `cargo build`. Gate new macOS code with `#[cfg(target_os = "macos")]` and check `cargo clippy` still passes for the non-macOS shape.
 - `data/db/<login>/<machine>.sqlite` files are committed data, written only by the tool: `just bench` adds a run to yours by default, so pass `--output /tmp/x.sqlite` for throwaway runs. Never hand-edit one. A PR may only touch its author's folder (CI checks), and `gemm-bench validate` gates every file.
 - `data/schema.sql` is version 1 and the only version: there is no migration path yet (see the spec's Follow-ups), so a schema change is a design decision, not an edit. It may only use SQLite features sql.js (3.49.1) has.
 - The dashboard's SQL views live in `web/src/lib/views.sql` as `TEMP` views, never in the databases. The latest run of each cell wins.

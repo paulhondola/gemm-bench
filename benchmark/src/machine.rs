@@ -10,7 +10,9 @@ use std::{
     path::Path,
 };
 
-use crate::context::{command_output, cpu_name};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::context::command_output;
+use crate::context::cpu_name;
 
 /// What the `runs`, `core_tiers` and `caches` tables record about the machine.
 #[derive(Debug)]
@@ -122,12 +124,21 @@ impl Machine {
 
 fn os() -> String {
     #[cfg(target_os = "macos")]
-    let version = command_output("sw_vers", &["-productVersion"]).map(|v| format!("macOS {v}"));
+    {
+        command_output("sw_vers", &["-productVersion"])
+            .map(|v| format!("macOS {v}"))
+            .unwrap_or_else(|| std::env::consts::OS.to_owned())
+    }
     #[cfg(target_os = "linux")]
-    let version = command_output("uname", &["-r"]).map(|v| format!("Linux {v}"));
+    {
+        command_output("uname", &["-r"])
+            .map(|v| format!("Linux {v}"))
+            .unwrap_or_else(|| std::env::consts::OS.to_owned())
+    }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    let version: Option<String> = None;
-    version.unwrap_or_else(|| std::env::consts::OS.to_owned())
+    {
+        std::env::consts::OS.to_owned()
+    }
 }
 
 /// The enabled subset of the features that change how the kernels compile,

@@ -118,6 +118,10 @@ just bench --config configs/default.toml --sizes 1024  # a flag replaces its key
 | `quick.toml` | sizes `64,256`, `f32`, tile `64`, depth block `256`, 3 repetitions | Sanity check |
 | `precisions.toml` | size `1024`, `ikj,rayon-ikj,mps` | Precision comparison (`mps` is macOS-only) |
 | `knobs.toml` | sizes `512,1024,2048`, `f32`, the tiled and packed kernels | Every tile size and depth block |
+| `x86.toml` | precisions `f32,f64,i32,i64` | Full sweep on x86, with `x86-f16.toml` |
+| `x86-f16.toml` | `f16`, every CPU kernel but `packed` and `rayon-packed` | The f16 half of the x86 sweep |
+
+On x86 CPUs without AVX-512 FP16, `packed` and `rayon-packed` run `f16` dozens of times slower than `f32`, which took half of a full sweep's time on a Ryzen 5 7535HS. Sweep those hosts with `just bench --config configs/x86.toml`, then `just bench --config configs/x86-f16.toml`.
 
 ### Targeted Sweeps
 
@@ -255,4 +259,4 @@ After `lefthook install`, each commit runs checks scoped to the files it touches
 | **Rust Nightly** | `cargo fmt --check`, `cargo clippy --all-targets --all-features -D warnings`, `cargo test` (all against `benchmark/Cargo.toml`), `gemm-bench validate` on every committed database, and on pull requests a check that only `data/db/<author>/` changed |
 | **Web (Lint, Typecheck, Test, Build)** | `bun install --frozen-lockfile`, `biome check src`, `bun run typecheck`, `bun test`, `bun run build` |
 
-CI runs on Linux, so the macOS-only Metal kernels (`mps`, `metal-naive`, `metal-tiled`, `metal-simdgroup`) are compiled and tested only locally. Run `just check` and `just test` before pushing to catch what CI will.
+CI runs on Linux and Windows, so the macOS-only Metal kernels (`mps`, `metal-naive`, `metal-tiled`, `metal-simdgroup`) are compiled and tested only locally. Run `just check` and `just test` before pushing to catch what CI will.

@@ -1,0 +1,5 @@
+# Quick smoke test trial
+sizes = [256]
+tile-size = [64]
+depth-block = [256]
+repetitions = 1

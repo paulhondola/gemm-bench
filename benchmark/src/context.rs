@@ -59,17 +59,24 @@ fn utc_fields(secs: u64) -> [u64; 6] {
 /// The CPU model, e.g. `Apple M1 Pro` or `AMD Ryzen 9 7950X 16-Core Processor`.
 pub(crate) fn cpu_name() -> String {
     #[cfg(target_os = "macos")]
-    let name = command_output("sysctl", &["-n", "machdep.cpu.brand_string"]);
+    {
+        command_output("sysctl", &["-n", "machdep.cpu.brand_string"])
+            .unwrap_or_else(|| UNKNOWN.to_owned())
+    }
     #[cfg(target_os = "linux")]
-    let name = std::fs::read_to_string("/proc/cpuinfo")
-        .ok()
-        .and_then(|cpuinfo| parse_cpu_model(&cpuinfo))
-        // ARM kernels leave `model name` out; lscpu decodes the part number.
-        .or_else(|| command_output("lscpu", &[]).and_then(|text| parse_lscpu_model(&text)));
+    {
+        std::fs::read_to_string("/proc/cpuinfo")
+            .ok()
+            .and_then(|cpuinfo| parse_cpu_model(&cpuinfo))
+            // ARM kernels leave `model name` out; lscpu decodes the part number.
+            .or_else(|| command_output("lscpu", &[]).and_then(|text| parse_lscpu_model(&text)))
+            .unwrap_or_else(|| UNKNOWN.to_owned())
+    }
     // ponytail: Windows and other targets report `unknown`; use `sysinfo` once a contributor needs them.
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    let name: Option<String> = None;
-    name.unwrap_or_else(|| UNKNOWN.to_owned())
+    {
+        UNKNOWN.to_owned()
+    }
 }
 
 /// The first `model name` line of `/proc/cpuinfo`, unless blank. ARM kernels
