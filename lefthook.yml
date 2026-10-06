@@ -39,4 +39,4 @@ pre-commit:
 
     host-db-validate:
       glob: "data/db/*/*.sqlite"
-      run: cargo run --quiet --manifest-path benchmark/Cargo.toml -- validate {staged_files}
+      run: '[ -z "{staged_files}" ] || cargo run --quiet --manifest-path benchmark/Cargo.toml -- validate {staged_files}'
