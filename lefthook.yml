@@ -6,26 +6,37 @@ pre-commit:
       glob: "*.rs"
       run: cargo fmt --manifest-path Cargo.toml
       stage_fixed: true
+
     benchmark-clippy:
       root: "benchmark/"
       glob: "*.rs"
       run: cargo clippy --manifest-path Cargo.toml --all-targets --all-features -- -D warnings
+
     benchmark-test:
       root: "benchmark/"
       glob: "*.rs"
       run: cargo test --manifest-path Cargo.toml
+
+    benchmark-smoke:
+      root: "benchmark/"
+      glob: "*.rs"
+      run: cargo run --release --manifest-path Cargo.toml -- --config ../configs/smoke.toml --output smoke_trial.sqlite && rm -f smoke_trial.sqlite
+
     frontend-lint:
       root: "web/"
       glob: "*.{ts,tsx,js,jsx,json,svelte}"
       run: bunx @biomejs/biome check --write {staged_files}
       stage_fixed: true
+
     frontend-typecheck:
       root: "web/"
       glob: "*.{ts,tsx,svelte}"
       run: bun run typecheck
+
     peaks-test:
       glob: "data/peaks.csv"
       run: cd web && bun test src/lib/peaks.test.ts
+
     host-db-validate:
       glob: "data/db/*/*.sqlite"
       run: cargo run --quiet --manifest-path benchmark/Cargo.toml -- validate {staged_files}
