@@ -3,6 +3,7 @@
 // compiled Core ML models, and `BNNSMatMul` is deprecated.
 
 import Accelerate
+import Foundation
 
 /// One compiled row-major `n`×`n` matmul. Runs `c = a * b` on raw buffers of
 /// the element type the graph was built for.
@@ -17,7 +18,10 @@ final class Graph {
 /// Retained `Graph` as an opaque pointer, or nil before macOS 26 or if BNNS
 /// can't compile the graph.
 private func make<T: BNNSScalar>(_: T.Type, _ n: Int) -> UnsafeMutableRawPointer? {
+    let env = ProcessInfo.processInfo.environment
+    guard env["CI"] == nil, env["GEMM_BENCH_DISABLE_AMX"] == nil else { return nil }
     guard #available(macOS 26, *) else { return nil }
+    guard n > 0 else { return nil }
     guard let context = try? BNNSGraph.makeContext({ builder in
         let a = builder.argument(name: "a", dataType: T.self, shape: [n, n])
         let b = builder.argument(name: "b", dataType: T.self, shape: [n, n])

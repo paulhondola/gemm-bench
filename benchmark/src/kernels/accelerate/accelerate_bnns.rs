@@ -56,6 +56,10 @@ impl<T: Element> AccelerateBnnsGemm<T> {
     /// `None` before macOS 26 or for a precision other than `f16`/`f32`.
     #[must_use]
     pub fn new(n: usize) -> Option<Self> {
+        if std::env::var_os("CI").is_some() || std::env::var_os("GEMM_BENCH_DISABLE_AMX").is_some()
+        {
+            return None;
+        }
         let size = isize::try_from(n).ok()?;
         // SAFETY: plain calls taking an integer; null signals failure.
         let graph = unsafe {

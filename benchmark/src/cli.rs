@@ -732,6 +732,9 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn accelerate_bnns_runs_f16_and_f32_on_one_caller_thread() {
+        if gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none() {
+            return;
+        }
         let plan = plan_for(
             "accelerate-bnns",
             &["--kernel", "accelerate-bnns", "--threads", "1,4"],
