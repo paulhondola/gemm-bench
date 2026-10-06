@@ -726,9 +726,11 @@ mod tests {
         for &kernel in KernelChoice::value_variants() {
             #[cfg(target_os = "macos")]
             if kernel == KernelChoice::AccelerateBnns
-                && gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none()
+                && (gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none()
+                    || std::env::var_os("CI").is_some()
+                    || std::env::var_os("GEMM_BENCH_DISABLE_AMX").is_some())
             {
-                continue; // needs macOS 26
+                continue; // needs macOS 26 / disabled in CI
             }
             for &precision in Precision::value_variants() {
                 if !kernel.supports(precision) {

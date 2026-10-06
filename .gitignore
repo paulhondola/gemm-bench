@@ -1,10 +1,12 @@
 /target
 /.host
+/.mcp.json
 
 # SQLite's journals: only the .sqlite file is committed
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+smoke*.sqlite
 
 # MacOS
 .DS_Store

@@ -8,13 +8,17 @@ on:
 
 jobs:
   rust:
-    name: Rust Nightly (Clippy, Format, Test)
-    runs-on: ubuntu-latest
+    name: Rust Nightly (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
         with:
           # The ownership check diffs the PR against its base branch.
-          fetch-depth: 0
+          fetch-depth: ${{ (matrix.os == 'ubuntu-latest' && github.event_name == 'pull_request') && '0' || '1' }}
 
       - name: Install Rust nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -27,6 +31,7 @@ jobs:
           workspaces: benchmark
 
       - name: Check Formatting
+        if: matrix.os == 'ubuntu-latest'
         run: cargo fmt --manifest-path benchmark/Cargo.toml -- --check
 
       - name: Run Clippy
@@ -35,7 +40,11 @@ jobs:
       - name: Run Tests
         run: cargo test --manifest-path benchmark/Cargo.toml
 
+      - name: Benchmark Smoke Test
+        run: cargo run --release --manifest-path benchmark/Cargo.toml -- --config configs/smoke.toml --output "${{ runner.temp }}/smoke.sqlite"
+
       - name: Validate Host Databases
+        shell: bash
         run: |
           shopt -s nullglob
           dbs=(data/db/*/*.sqlite)
@@ -46,7 +55,8 @@ jobs:
       # A contributed database is binary, so review can't see what changed:
       # a PR may only touch data/db/<its author's login>/.
       - name: Host Databases Belong to the PR Author
-        if: github.event_name == 'pull_request'
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'pull_request'
+        shell: bash
         env:
           AUTHOR: ${{ github.event.pull_request.user.login }}
           BASE: ${{ github.base_ref }}
@@ -60,28 +70,6 @@ jobs:
             echo "$foreign"
             exit 1
           fi
-
-  rust-windows:
-    name: Rust Nightly on Windows (Clippy, Test)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust nightly toolchain
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: clippy
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: benchmark
-
-      - name: Run Clippy
-        run: cargo clippy --manifest-path benchmark/Cargo.toml --all-targets --all-features -- -D warnings
-
-      - name: Run Tests
-        run: cargo test --manifest-path benchmark/Cargo.toml
 
   web:
     name: Web (Lint, Typecheck, Test, Build)

@@ -43,6 +43,10 @@ test-bench:
 test-web:
     cd web && bun test
 
+# Quick benchmark trial with throwaway output.
+smoke:
+    cargo run --release --manifest-path benchmark/Cargo.toml -- --config configs/smoke.toml --output smoke_trial.sqlite && rm -f smoke_trial.sqlite
+
 lint: lint-bench lint-web
 
 lint-bench:
