@@ -10,6 +10,9 @@ jobs:
   rust:
     name: Rust Nightly (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: ""   # drop target-cpu=native in CI; cached deps are reused across runner CPUs
+
     strategy:
       fail-fast: false
       matrix:
