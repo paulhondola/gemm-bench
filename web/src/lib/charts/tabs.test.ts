@@ -8,8 +8,9 @@ import { initialFilters, precisionsForTab } from "../state/filters";
 import { pointsOf, row } from "../test/fixtures";
 import { type FixtureMeasurement, fixtureDb, SQL } from "../test/testdb";
 import { gpuKernels } from "./gpu";
-import { rowsForTab, TABS } from "./index";
-import { type Ctx, type Filters, makeCtx } from "./types";
+import { rowsForTab } from "./scope";
+import { type Ctx, type Filters, makeCtx } from "./spec";
+import { TABS } from "./tabs";
 
 const f: Filters = {
 	precision: "f32",
@@ -487,7 +488,7 @@ test("a host DB read through the views draws every panel", () => {
 			},
 		]),
 	);
-	// The app's own path: state.svelte.ts, then App.svelte.
+	// The app's own path: state/store.svelte.ts, then App.svelte.
 	const { rows } = partitionPlottable(readRows(db));
 	expect(readMachine(db)?.tiers).toHaveLength(1);
 	db.close();

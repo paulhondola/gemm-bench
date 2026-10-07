@@ -1,5 +1,5 @@
 import peaksCsv from "../../../../data/peaks.csv?raw";
-import type { Filters } from "../charts/types";
+import type { Filters } from "../charts/spec";
 import {
 	type Machine,
 	openDb,

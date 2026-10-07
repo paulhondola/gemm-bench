@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../data/db";
 import { legendOf, plotted, row } from "../test/fixtures";
+import { type Filters, makeCtx } from "./spec";
 import {
 	canShowScaling,
 	parallelEfficiency,
 	throughputVsThreads,
 } from "./threading";
-import { type Filters, makeCtx } from "./types";
 
 const f: Filters = {
 	precision: "f16",

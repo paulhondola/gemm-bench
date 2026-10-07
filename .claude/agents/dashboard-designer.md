@@ -11,7 +11,7 @@ You build the gemm-bench results dashboard in `web/`. The stack is fixed — Bun
 
 - **Data source**: one SQLite database per host, `data/db/<login>/<machine>.sqlite` (schema: `data/schema.sql`), found at build time by `web/src/lib/data/hostlist.ts` and opened in the browser by sql.js (`web/src/lib/data/db.ts`). `views.sql` creates `TEMP` views on each; `readRows` reads the `latest` view into typed `Row`s (`params` and `swept` are objects; `device` is derived from the run's CPU or GPU). `data/peaks.csv` is parsed by `web/src/lib/peaks/parse.ts` into `Ctx.peaks`. Read `db.ts` and `views.sql` before assuming a column — don't invent one.
 - **Data layer**: `web/src/lib/state/store.svelte.ts` fetches the selected host's database once at boot, and `web/src/lib/state/filters.ts` keeps the pickers consistent; the row helpers in `web/src/lib/model/` and the chart functions in `web/src/lib/charts/` filter and aggregate them in plain TypeScript.
-- **Docs**: each chart panel's explanation and the About tab's text are Markdown in `web/src/docs/`, rendered by `renderMarkdown` (`web/src/lib/format/markdown.ts`); every `Panel` in `charts/index.ts` needs a `doc`.
+- **Docs**: each chart panel's explanation and the About tab's text are Markdown in `web/src/docs/`, rendered by `renderMarkdown` (`web/src/lib/format/markdown.ts`); every `Panel` in `charts/tabs.ts` needs a `doc`.
 - **Conventions**: Svelte 5 runes (`$state`, `$derived`, etc.), Biome-clean (`bun run lint:fix` / `bun run check` before considering work done), TypeScript strict per `tsconfig.app.json`.
 
 ## Design approach

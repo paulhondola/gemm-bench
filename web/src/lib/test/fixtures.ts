@@ -1,5 +1,5 @@
 import type { Datum } from "plotly.js-dist-min";
-import type { Figure } from "../charts/types";
+import type { Figure } from "../charts/spec";
 import type { Peak, Row } from "../data/db";
 
 /**

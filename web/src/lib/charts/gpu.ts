@@ -2,22 +2,17 @@ import type { Row } from "../data/db";
 import { bestPerFamily, bestPerKernel } from "../model/best";
 import { type Family, familyOf } from "../model/family";
 import { FAMILY_INK, REFERENCE_INK } from "../palette";
+import { type Ceiling, ceilingOf, ceilingShape, pctOfPeak } from "./ceiling";
 import {
 	AXIS,
 	BASE_LAYOUT,
-	type Ceiling,
-	type ChartSpec,
-	type Ctx,
-	ceilingOf,
-	ceilingShape,
 	LABEL_INK,
 	LABELLED_MARGIN,
-	lineTraces,
 	log2Axis,
 	log2Ticks,
-	pctOfPeak,
-	type SeriesPoint,
-} from "./types";
+} from "./layout";
+import type { ChartSpec, Ctx } from "./spec";
+import { lineTraces, type SeriesPoint } from "./traces";
 
 /**
  * The CPU family each GPU kernel is measured against at equal engineering

@@ -6,25 +6,18 @@ import { BASELINE_KERNEL } from "../model/defaults";
 import { type Family, familyOf } from "../model/family";
 import { hasKernel } from "../model/rows";
 import { BASELINE_INK, FAMILY_INK, FAMILY_ORDER } from "../palette";
+import { type Ceiling, ceilingOf, ceilingShape, pctOfPeak } from "./ceiling";
 import {
 	AXIS,
 	BASE_LAYOUT,
-	type Ceiling,
-	type ChartSpec,
-	type Ctx,
-	ceilingOf,
-	ceilingShape,
-	type Figure,
 	LABEL_INK,
 	LABELLED_MARGIN,
-	lineTraces,
 	log2Axis,
 	log2Ticks,
 	MARGIN,
-	pctOfPeak,
-	type SeriesPoint,
-	uidOf,
-} from "./types";
+} from "./layout";
+import type { ChartSpec, Ctx, Figure } from "./spec";
+import { lineTraces, type SeriesPoint, uidOf } from "./traces";
 
 /** Without a naive-ijk row there is no denominator, so the toggle is hidden. */
 export function canShowSpeedup(rows: Row[]): boolean {

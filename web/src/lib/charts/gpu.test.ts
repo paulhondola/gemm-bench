@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { Row } from "../data/db";
 import { legendOf, peak, plotted, pointsOf, row } from "../test/fixtures";
 import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
-import { type Filters, makeCtx } from "./types";
+import { type Filters, makeCtx } from "./spec";
 
 const f: Filters = {
 	precision: "f32",

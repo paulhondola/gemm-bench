@@ -3,12 +3,12 @@ import { knobLabel } from "../model/knobs";
 import {
 	AXIS,
 	BASE_LAYOUT,
-	type ChartSpec,
 	LABELLED_MARGIN,
-	lineTraces,
 	log2Axis,
 	log2Ticks,
-} from "./types";
+} from "./layout";
+import type { ChartSpec } from "./spec";
+import { lineTraces } from "./traces";
 
 type KnobPoint = { value: number; kernel: string; gops: number };
 

@@ -1,8 +1,9 @@
 <script lang="ts">
 import About from "./lib/About.svelte";
 import Chart from "./lib/Chart.svelte";
-import { rowsForTab, TABS } from "./lib/charts/index";
-import { makeCtx } from "./lib/charts/types";
+import { rowsForTab } from "./lib/charts/scope";
+import { makeCtx } from "./lib/charts/spec";
+import { TABS } from "./lib/charts/tabs";
 import type { Row } from "./lib/data/db";
 import { machineLabel } from "./lib/format/machine";
 import { formatParams } from "./lib/format/numbers";

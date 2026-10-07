@@ -3,7 +3,8 @@ import type { ScatterData } from "plotly.js-dist-min";
 import type { Row } from "../data/db";
 import { legendOf, plotted, pointsOf, row } from "../test/fixtures";
 import { accuracyVsThroughput, throughputByPrecision } from "./precision";
-import { type Filters, makeCtx, uidOf } from "./types";
+import { type Filters, makeCtx } from "./spec";
+import { uidOf } from "./traces";
 
 const f: Filters = {
 	precision: "f32",

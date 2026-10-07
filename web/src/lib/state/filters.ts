@@ -1,5 +1,6 @@
-import { rowsForTab, type Tab } from "../charts/index";
-import type { Ctx, Filters } from "../charts/types";
+import { rowsForTab } from "../charts/scope";
+import type { Ctx, Filters } from "../charts/spec";
+import type { Tab } from "../charts/tabs";
 import type { Row } from "../data/db";
 import {
 	defaultParallelKernel,

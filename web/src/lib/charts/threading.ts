@@ -1,15 +1,9 @@
 import type { Row } from "../data/db";
 import { hasSingleThreadBaseline } from "../model/rows";
 import { REFERENCE_INK, sequentialRamp } from "../palette";
-import {
-	AXIS,
-	BASE_LAYOUT,
-	type ChartSpec,
-	type Ctx,
-	LABELLED_MARGIN,
-	lineTraces,
-	type SeriesPoint,
-} from "./types";
+import { AXIS, BASE_LAYOUT, LABELLED_MARGIN } from "./layout";
+import type { ChartSpec, Ctx } from "./spec";
+import { lineTraces, type SeriesPoint } from "./traces";
 
 /** Speedup is relative to one thread, so a 1-thread row must exist. */
 export function canShowScaling(rows: Row[]): boolean {
