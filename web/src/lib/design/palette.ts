@@ -1,5 +1,5 @@
-import { BASELINE_KERNEL } from "./model/defaults";
-import type { Family } from "./model/family";
+import { BASELINE_KERNEL } from "../model/defaults";
+import type { Family } from "../model/family";
 
 /**
  * The ten validated categorical slots for the dark surface (#15181b).

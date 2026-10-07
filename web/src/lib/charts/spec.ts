@@ -1,9 +1,9 @@
 import type { BarData, Layout, ScatterData } from "plotly.js-dist-min";
 import type { Peak, Row } from "../data/db";
+import { paletteFor } from "../design/palette";
 import { type Family, families } from "../model/family";
 import { singleValueKernels } from "../model/knobs";
 import { kernels } from "../model/rows";
-import { paletteFor } from "../palette";
 
 /** Every chart draws scatter lines or bars. */
 export type Trace = Partial<ScatterData> | Partial<BarData>;

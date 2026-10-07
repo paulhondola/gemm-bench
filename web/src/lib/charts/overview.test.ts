@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../data/db";
-import { BASELINE_INK, FAMILY_INK } from "../palette";
+import { BASELINE_INK, FAMILY_INK } from "../design/palette";
 import { legendOf, peak, plotted, pointsOf, row } from "../test/fixtures";
 import { escapeLabels } from "./escape";
 import {

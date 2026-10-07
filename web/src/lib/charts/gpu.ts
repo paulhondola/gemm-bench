@@ -1,7 +1,7 @@
 import type { Row } from "../data/db";
+import { FAMILY_INK, REFERENCE_INK } from "../design/palette";
 import { bestPerFamily, bestPerKernel } from "../model/best";
 import { type Family, familyOf } from "../model/family";
-import { FAMILY_INK, REFERENCE_INK } from "../palette";
 import { type Ceiling, ceilingOf, ceilingShape, pctOfPeak } from "./ceiling";
 import {
 	AXIS,

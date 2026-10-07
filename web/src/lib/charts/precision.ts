@@ -1,6 +1,6 @@
+import { FAMILY_INK, FAMILY_ORDER } from "../design/palette";
 import { bestPerFamily, bestPerKernel } from "../model/best";
 import { familyOf } from "../model/family";
-import { FAMILY_INK, FAMILY_ORDER } from "../palette";
 import { AXIS, BASE_LAYOUT } from "./layout";
 import type { ChartSpec } from "./spec";
 import { uidOf } from "./traces";

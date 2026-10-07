@@ -2,9 +2,9 @@
 import about from "../../../docs/about.md?raw";
 import hardware from "../../../docs/hardware.md?raw";
 import type { Machine, Peak, Row } from "../../data/db";
+import { FAMILY_INK } from "../../design/palette";
 import { renderMarkdown } from "../../format/markdown";
 import type { Family } from "../../model/family";
-import { FAMILY_INK } from "../../palette";
 import HardwareTable from "./HardwareTable.svelte";
 import { KERNEL_DOCS } from "./kernelDocs";
 import MachineTable from "./MachineTable.svelte";

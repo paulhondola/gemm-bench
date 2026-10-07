@@ -1,6 +1,6 @@
 import type { Row } from "../data/db";
+import { REFERENCE_INK, sequentialRamp } from "../design/palette";
 import { hasSingleThreadBaseline } from "../model/rows";
-import { REFERENCE_INK, sequentialRamp } from "../palette";
 import { AXIS, BASE_LAYOUT, LABELLED_MARGIN } from "./layout";
 import type { ChartSpec, Ctx } from "./spec";
 import { lineTraces, type SeriesPoint } from "./traces";

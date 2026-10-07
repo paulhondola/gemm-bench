@@ -1,7 +1,7 @@
 import type { Peak, Row } from "../data/db";
+import { FAMILY_ORDER } from "../design/palette";
 import { bestBy } from "../model/best";
 import { type Family, familyOf } from "../model/family";
-import { FAMILY_ORDER } from "../palette";
 import { familyPeak } from "./lookup";
 
 /** Peaks exist only for the float precisions, so the table covers only them. */

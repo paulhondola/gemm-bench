@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { FAMILY_ORDER } from "../../palette";
+import { FAMILY_ORDER } from "../../design/palette";
 import { KERNEL_DOCS } from "./kernelDocs";
 
 /** One section per kernel, headed "## `<label>`". */

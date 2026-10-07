@@ -1,8 +1,8 @@
 import type { Shape } from "plotly.js-dist-min";
 import type { Row } from "../data/db";
+import { FAMILY_INK } from "../design/palette";
 import { percentOfPeak } from "../format/numbers";
 import type { Family } from "../model/family";
-import { FAMILY_INK } from "../palette";
 import { familyPeak } from "../peaks/lookup";
 import { LABEL_INK } from "./layout";
 import type { Ctx } from "./spec";
