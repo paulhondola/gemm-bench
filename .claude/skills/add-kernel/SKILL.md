@@ -22,17 +22,17 @@ Add a `KernelChoice` variant and its row in `KernelChoice::info()`: the `label` 
 
 A committed host DB freezes its kernels' rows (label, backend, precisions, workers, declared params and sources): change an existing kernel's row only together with a schema migration. A new strategy, such as BLIS MC/NC blocking for `packed`, ships under a new kernel label.
 
-## 3. Wire the harness (`benchmark/src/benchmark.rs`)
+## 3. Wire the harness (`benchmark/src/benchmark/measure.rs`)
 
 Add the import and a one-line `measure` arm: `sample(&MyGemm::new(..)?, setup_start, io)`. `sample` runs the untimed warm-up and the timed repetitions; build any pool or setup in the arm, before it, so it is timed as `setup_ms`. Rayon-style kernels go through `InPool::new(threads, kernel)?`, which keeps `pool.install` inside each timed run.
 
 ## 4. Test
 
-Add it to the kernel list in `every_kernel_matches_naive` (`kernels/mod.rs` tests). That test runs all five precisions on a non-tile-aligned n=7, so it catches remainder-handling bugs. If it takes a thread count, loop `1..=n` as the static kernels do. `every_kernel_records_exactly_the_params_it_declares` (`benchmark.rs`) then checks its `params` against its `KernelInfo` row at every precision it supports, once step 3's `measure` arm exists. The harness separately enforces the `4√N·ε` bound against `ikj` at run time.
+Add it to the kernel list in `every_kernel_matches_naive` (`benchmark/tests/kernel_correctness.rs`). That test runs all five precisions on a non-tile-aligned n=7, so it catches remainder-handling bugs. If it takes a thread count, loop `1..=n` as the static kernels do. `every_kernel_records_exactly_the_params_it_declares` (`benchmark/src/benchmark/tests.rs`) then checks its `params` against its `KernelInfo` row at every precision it supports, once step 3's `measure` arm exists. The harness separately enforces the `4√N·ε` bound against `ikj` at run time.
 
 ## 5. Docs
 
-Add a row to the CPU kernel table and the `--kernel` list in `README.md`, and a "## `<label>`" section to its family's file in `web/src/docs/kernels/`, which the dashboard's About tab renders. Follow the other sections: what it does, a short pseudo-code sketch, and **Runs via**, **Tunes**, **Precisions**, **Watch for** (if it applies) and **Source**. `web/src/lib/docs.test.ts` fails until it's there.
+Add a row to the CPU kernel table and the `--kernel` list in `README.md`, and a "## `<label>`" section to its family's file in `web/src/docs/kernels/`, which the dashboard's About tab renders. Follow the other sections: what it does, a short pseudo-code sketch, and **Runs via**, **Tunes**, **Precisions**, **Watch for** (if it applies) and **Source**. `web/src/lib/components/about/kernelDocs.test.ts` fails until it's there.
 
 ## 6. Verify
 

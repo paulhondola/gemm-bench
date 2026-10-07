@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import type { Row } from "../db";
-import { legendOf, peak, plotted, pointsOf, row } from "../fixtures";
-import { BASELINE_INK, FAMILY_INK } from "../palette";
+import type { Row } from "../data/db";
+import { BASELINE_INK, FAMILY_INK } from "../design/palette";
+import { legendOf, peak, plotted, pointsOf, row } from "../test/fixtures";
+import { escapeLabels } from "./escape";
 import {
 	canShowSpeedup,
 	fastestPerSize,
@@ -10,7 +11,7 @@ import {
 	throughputByFamily,
 	throughputVsSize,
 } from "./overview";
-import { escapeLabels, type Filters, makeCtx } from "./types";
+import { type Filters, makeCtx } from "./spec";
 
 const f: Filters = {
 	precision: "f32",

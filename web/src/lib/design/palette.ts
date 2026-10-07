@@ -1,0 +1,193 @@
+import { BASELINE_KERNEL } from "../model/defaults";
+import type { Family } from "../model/family";
+
+/**
+ * The ten validated categorical slots for the dark surface (#15181b).
+ * Worst adjacent CVD ΔE 8.4, worst adjacent normal-vision ΔE 17.3, all ten
+ * at or above 3:1 contrast. Do not substitute or re-step these values, and
+ * never extend the list with a hue picked by eye: a further series folds into
+ * a family view or reuses a slot in another colour group (see SLOT_OF). The
+ * baseline kernel sits outside the slots in BASELINE_INK, which is what makes
+ * room for eleven kernels.
+ *
+ * Slot 9 (accelerate-bnns) was searched over OKLCH, not generated: of every
+ * in-band, in-gamut candidate it best clears the floors against ALL eight
+ * slots and BASELINE_INK, not just its neighbour: CVD ΔE ≥ 10.2 (nearest:
+ * magenta), normal-vision ΔE ≥ 16.2 (nearest: violet), contrast 3.02:1. Its
+ * contrast margin is thin, so re-validate if the surface changes.
+ *
+ * Slot 10 (rayon-packed) was searched the same way, over every sRGB hex, with
+ * the same floors against ALL nine slots and BASELINE_INK. Only 414 hexes
+ * pass, all a saturated indigo on the gamut's blue edge; this one maximises
+ * the worst of its three margins: CVD ΔE ≥ 10.2 and normal-vision ΔE ≥ 15.3
+ * (both nearest: blue), contrast 3.06:1. Nothing is left to search: an
+ * eleventh slot has no candidate, so the next kernel folds or reuses a slot.
+ */
+const SLOTS = [
+	"#3987e5", // 1 blue
+	"#d95926", // 2 orange
+	"#199e70", // 3 aqua
+	"#c98500", // 4 yellow
+	"#d55181", // 5 magenta
+	"#008300", // 6 green
+	"#9085e9", // 7 violet
+	"#e66767", // 8 red
+	"#844da2", // 9 purple
+	"#4f44ff", // 10 indigo
+] as const;
+
+export const MAX_SERIES = SLOTS.length;
+
+/** Muted ink for the ideal-linear and ratio=1.0 reference rules. */
+export const REFERENCE_INK = "#5b636b";
+
+/**
+ * Neutral ink for naive-ijk, the reference every "× vs naive-ijk" view divides
+ * by. Lighter than every slot on purpose: mid grays collide with the aqua,
+ * magenta and red slots under CVD. Validated pairwise against all ten: CVD
+ * ΔE ≥ 8 and normal-vision ΔE ≥ 15 each, ≥ 3:1 contrast.
+ */
+export const BASELINE_INK = "#b4bac0";
+
+/**
+ * Family ink for charts that cross families (Overview, Precision, the GPU
+ * tab's CPU references), in legend order serial → parallel → AMX → GPU. Any
+ * two families can sit side by side (the fastest-per-size winner can change
+ * at every size), so this set is validated on ALL pairs, not just adjacent
+ * ones (validate_palette.js --pairs all, dark, #15181b): worst CVD ΔE 8.6,
+ * normal-vision 17.8, all ≥ 3:1. It is the only all-pairs-passing set of four
+ * slots that keeps GPU on red. In legend order the worst adjacent pair is
+ * 19.2 / 29.0.
+ */
+export const FAMILY_ORDER: Family[] = ["serial", "parallel", "matrix", "gpu"];
+export const FAMILY_INK: Record<Family, string> = {
+	serial: SLOTS[8], // purple
+	parallel: SLOTS[5], // green
+	matrix: SLOTS[0], // blue
+	gpu: SLOTS[7], // red
+};
+
+/**
+ * Kernel colour groups. No chart draws kernels from both groups (a view that
+ * crosses them draws families instead), so a slot need only be unique within
+ * its group, and the GPU group reuses host slots.
+ */
+type Group = "host" | "gpu";
+
+/**
+ * Documented slots per group, arranged so the most-compared pairs land on
+ * adjacent slots (adjacent pairs are the validated worst case). Host: the
+ * original order, except that mps moved to the GPU group and packed took its
+ * slot 8 (red); rayon-packed has slot 10, the last, validated against every
+ * slot. GPU: validated in legend order metal-naive, metal-simdgroup,
+ * metal-tiled, mps, then the AMX and parallel references (dark, #15181b):
+ * worst adjacent CVD ΔE 13.1, normal-vision 18.5 (metal-simdgroup ↔
+ * metal-tiled), all ≥ 3:1. metal-simdgroup has slot 10 (indigo), the only
+ * free slot that clears the floors against every ink in the GPU chart, not
+ * just its legend neighbours: CVD ΔE ≥ 10.2, normal-vision ΔE ≥ 15.3 (both
+ * nearest: the AMX reference blue). Aqua, the slot it would get unpinned,
+ * fails normal vision against the parallel reference's green (11.9). Maps,
+ * not object literals: kernel names come from host databases, and
+ * "constructor" must not resolve.
+ */
+const SLOT_OF: Record<Group, Map<string, number>> = {
+	host: new Map([
+		["accelerate-blas", 0],
+		["ikj", 1],
+		["tiled", 2],
+		["rayon-ikj", 3],
+		["static-ikj", 4],
+		["rayon-tiled", 5],
+		["static-tiled", 6],
+		["packed", 7],
+		["accelerate-bnns", 8],
+		["rayon-packed", 9],
+	]),
+	gpu: new Map([
+		["metal-naive", 1],
+		["metal-simdgroup", 9],
+		["metal-tiled", 6],
+		["mps", 7],
+	]),
+};
+
+/**
+ * Slots a group never hands to an unknown kernel. GPU kernels are drawn beside
+ * the other families' reference lines, so the GPU group keeps clear of their
+ * ink (serial purple, parallel green, AMX blue).
+ */
+const RESERVED: Record<Group, number[]> = { host: [], gpu: [8, 5, 0] };
+
+/**
+ * Pass the kernels of the WHOLE dataset, not the filtered subset, and the
+ * family map built from the same rows. Colour follows the entity, so a legend
+ * toggle must never repaint the survivors.
+ */
+export function paletteFor(
+	allKernels: string[],
+	family: Map<string, Family>,
+): Map<string, string> {
+	const present = [...new Set(allKernels)];
+	const out = new Map<string, string>();
+	const held: Record<Group, Set<number>> = {
+		host: new Set(RESERVED.host),
+		gpu: new Set(RESERVED.gpu),
+	};
+
+	// A documented kernel takes its slot whatever else is present, so filtering
+	// the dataset can never repaint a kernel that survives.
+	for (const kernel of present) {
+		for (const group of ["host", "gpu"] as const) {
+			const slot = SLOT_OF[group].get(kernel);
+			if (slot === undefined) continue;
+			out.set(kernel, SLOTS[slot]);
+			held[group].add(slot);
+		}
+	}
+	if (present.includes(BASELINE_KERNEL)) out.set(BASELINE_KERNEL, BASELINE_INK);
+
+	// Unknown kernels fill only their own group's free slots, in sorted order,
+	// and never receive a generated hue once those run out.
+	for (const kernel of present.filter((k) => !out.has(k)).sort()) {
+		const group: Group = family.get(kernel) === "gpu" ? "gpu" : "host";
+		const slot = SLOTS.findIndex((_, i) => !held[group].has(i));
+		if (slot === -1) continue;
+		out.set(kernel, SLOTS[slot]);
+		held[group].add(slot);
+	}
+	return out;
+}
+
+/**
+ * ColorBrewer YlGnBu, d3.schemeYlGnBu[9]. The efficiency chart colours matrix
+ * sizes along it: N is ordinal, not a kernel identity, so a sequential ramp
+ * and not the categorical slots.
+ */
+const YLGNBU = [
+	"#ffffd9",
+	"#edf8b1",
+	"#c7e9b4",
+	"#7fcdbb",
+	"#41b6c4",
+	"#1d91c0",
+	"#225ea8",
+	"#253494",
+	"#081d58",
+] as const;
+
+/**
+ * The legible part of YlGnBu on the dark surface (#15181b): the two darkest
+ * stops, #253494 and #081d58, all but vanish against it.
+ */
+const RAMP = YLGNBU.slice(0, 7);
+
+/** n colours spread evenly along RAMP, light (smallest N) to dark. */
+export function sequentialRamp(n: number): string[] {
+	if (n <= 1) return [RAMP[3]];
+	// ponytail: past seven sizes neighbours repeat a stop; interpolate in OKLab
+	// if the sweep ever grows that far.
+	return Array.from(
+		{ length: n },
+		(_, i) => RAMP[Math.round((i * (RAMP.length - 1)) / (n - 1))],
+	);
+}

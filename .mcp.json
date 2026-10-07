@@ -1,0 +1,7 @@
+{
+    "mcpServers": {
+        "dbx": {
+            "command": "/Users/paulhondola/.dbx/bin/dbx-mcp"
+        }
+    }
+}

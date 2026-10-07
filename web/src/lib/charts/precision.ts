@@ -1,6 +1,9 @@
-import { bestPerFamily, bestPerKernel, familyOf } from "../derive";
-import { FAMILY_INK, FAMILY_ORDER } from "../palette";
-import { AXIS, BASE_LAYOUT, type ChartSpec, uidOf } from "./types";
+import { FAMILY_INK, FAMILY_ORDER } from "../design/palette";
+import { bestPerFamily, bestPerKernel } from "../model/best";
+import { familyOf } from "../model/family";
+import { AXIS, BASE_LAYOUT } from "./layout";
+import type { ChartSpec } from "./spec";
+import { uidOf } from "./traces";
 
 type Bar = { precision: string; family: string; kernel: string; gops: number };
 

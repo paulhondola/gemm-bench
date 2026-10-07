@@ -1,13 +1,14 @@
-import { knobLabel } from "../derive";
+import { bestBy } from "../model/best";
+import { knobLabel } from "../model/knobs";
 import {
 	AXIS,
 	BASE_LAYOUT,
-	type ChartSpec,
 	LABELLED_MARGIN,
-	lineTraces,
 	log2Axis,
 	log2Ticks,
-} from "./types";
+} from "./layout";
+import type { ChartSpec } from "./spec";
+import { lineTraces } from "./traces";
 
 type KnobPoint = { value: number; kernel: string; gops: number };
 
@@ -27,15 +28,16 @@ export function knobSweep(name: string): ChartSpec {
 				ctx.palette.has(r.kernel) &&
 				!ctx.singleKnob.get(name)?.has(r.kernel),
 		);
-		const best = new Map<string, KnobPoint>();
-		for (const r of atSize) {
-			const value = r.swept[name];
-			const key = `${r.kernel}\u0000${value}`;
-			const current = best.get(key);
-			if (!current || r.gops > current.gops)
-				best.set(key, { value, kernel: r.kernel, gops: r.gops });
-		}
-		const points = [...best.values()];
+		const best = bestBy(
+			atSize,
+			(r) => `${r.kernel}\u0000${r.swept[name]}`,
+			(r) => r.gops,
+		);
+		const points: KnobPoint[] = [...best.values()].map((r) => ({
+			value: r.swept[name],
+			kernel: r.kernel,
+			gops: r.gops,
+		}));
 		const xs = log2Ticks(points.map((p) => p.value));
 		if (xs.length < 2) return null;
 

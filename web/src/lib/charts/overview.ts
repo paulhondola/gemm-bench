@@ -1,33 +1,23 @@
 import type { ScatterData } from "plotly.js-dist-min";
-import type { Row } from "../db";
-import {
-	BASELINE_KERNEL,
-	bestPerFamily,
-	bestPerKernel,
-	type Family,
-	familyOf,
-	hasKernel,
-} from "../derive";
-import { BASELINE_INK, FAMILY_INK, FAMILY_ORDER } from "../palette";
+import type { Row } from "../data/db";
+import { BASELINE_INK, FAMILY_INK, FAMILY_ORDER } from "../design/palette";
+import { fmtGops } from "../format/numbers";
+import { bestPerFamily, bestPerKernel } from "../model/best";
+import { BASELINE_KERNEL } from "../model/defaults";
+import { type Family, familyOf } from "../model/family";
+import { hasKernel } from "../model/rows";
+import { type Ceiling, ceilingOf, ceilingShape, pctOfPeak } from "./ceiling";
 import {
 	AXIS,
 	BASE_LAYOUT,
-	type Ceiling,
-	type ChartSpec,
-	type Ctx,
-	ceilingOf,
-	ceilingShape,
-	type Figure,
 	LABEL_INK,
 	LABELLED_MARGIN,
-	lineTraces,
 	log2Axis,
 	log2Ticks,
 	MARGIN,
-	pctOfPeak,
-	type SeriesPoint,
-	uidOf,
-} from "./types";
+} from "./layout";
+import type { ChartSpec, Ctx, Figure } from "./spec";
+import { lineTraces, type SeriesPoint, uidOf } from "./traces";
 
 /** Without a naive-ijk row there is no denominator, so the toggle is hidden. */
 export function canShowSpeedup(rows: Row[]): boolean {
@@ -336,12 +326,6 @@ const RUNGS: { label: string; family: Family | null }[] = [
 	{ label: "matrix", family: "matrix" },
 	{ label: "gpu", family: "gpu" },
 ];
-
-/** 3 significant figures below 100, whole numbers with separators above. */
-export const fmtGops = (v: number) =>
-	v >= 100
-		? Math.round(v).toLocaleString("en-US")
-		: String(Number(v.toPrecision(3)));
 
 /** A multiplier to 2 significant figures: 0.86, 6.3, 49, 6,600. */
 const fmtX = (r: number) => Number(r.toPrecision(2)).toLocaleString("en-US");
