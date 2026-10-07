@@ -1,13 +1,13 @@
 <script lang="ts">
-import about from "../docs/about.md?raw";
-import hardware from "../docs/hardware.md?raw";
-import type { Machine, Peak, Row } from "./data/db";
-import { KERNEL_DOCS } from "./docs";
-import { renderMarkdown } from "./format/markdown";
+import about from "../../../docs/about.md?raw";
+import hardware from "../../../docs/hardware.md?raw";
+import type { Machine, Peak, Row } from "../../data/db";
+import { renderMarkdown } from "../../format/markdown";
+import type { Family } from "../../model/family";
+import { FAMILY_INK } from "../../palette";
 import HardwareTable from "./HardwareTable.svelte";
+import { KERNEL_DOCS } from "./kernelDocs";
 import MachineTable from "./MachineTable.svelte";
-import type { Family } from "./model/family";
-import { FAMILY_INK } from "./palette";
 
 const {
 	rows,
@@ -65,8 +65,8 @@ const families = KERNEL_DOCS.map((g) => ({
 		max-width: 72ch;
 	}
 	.panel {
-		background: #15181b;
-		border: 1px solid #24292e;
+		background: var(--surface);
+		border: 1px solid var(--rule);
 		border-radius: 10px;
 		padding: 20px 24px;
 	}
@@ -100,7 +100,7 @@ const families = KERNEL_DOCS.map((g) => ({
 	/* A family file opens with its blurb. */
 	.family > :global(p:first-child) {
 		margin-top: 0;
-		color: #9aa1a8;
+		color: var(--muted);
 	}
 	.prose :global(p) {
 		margin: 8px 0;
@@ -114,8 +114,8 @@ const families = KERNEL_DOCS.map((g) => ({
 		margin: 8px 0;
 		padding: 10px 14px;
 		overflow-x: auto;
-		background: #0e1012;
-		border: 1px solid #24292e;
+		background: var(--bg);
+		border: 1px solid var(--rule);
 		border-radius: 6px;
 		line-height: 1.45;
 	}
@@ -124,7 +124,7 @@ const families = KERNEL_DOCS.map((g) => ({
 		padding-left: 20px;
 	}
 	.prose :global(a) {
-		color: #e6e3dc;
+		color: var(--ink);
 	}
 	.prose :global(table) {
 		margin: 12px 0;
@@ -136,10 +136,10 @@ const families = KERNEL_DOCS.map((g) => ({
 		padding: 6px 12px 6px 0;
 		text-align: left;
 		vertical-align: top;
-		border-bottom: 1px solid #24292e;
+		border-bottom: 1px solid var(--rule);
 	}
 	.prose :global(th) {
-		color: #9aa1a8;
+		color: var(--muted);
 		font-weight: 500;
 	}
 </style>

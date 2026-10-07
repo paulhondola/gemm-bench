@@ -1,9 +1,9 @@
 <script lang="ts">
 import type { Config, PlotlyHTMLElement, Shape } from "plotly.js-dist-min";
 import Plotly from "plotly.js-dist-min";
-import { escapeLabels } from "./charts/escape";
-import { type Figure, type Trace } from "./charts/spec";
-import { renderMarkdown } from "./format/markdown";
+import { escapeLabels } from "../charts/escape";
+import { type Figure, type Trace } from "../charts/spec";
+import { renderMarkdown } from "../format/markdown";
 
 let {
 	spec,
@@ -123,8 +123,8 @@ $effect(() => {
 
 <style>
 	.panel {
-		background: #15181b;
-		border: 1px solid #24292e;
+		background: var(--surface);
+		border: 1px solid var(--rule);
 		border-radius: 10px;
 		padding: 20px 24px 16px;
 		display: flex;
@@ -135,17 +135,17 @@ $effect(() => {
 		margin: 0;
 		font-size: 17px;
 		font-weight: 600;
-		color: #e6e3dc;
+		color: var(--ink);
 	}
 	.note {
 		margin: 4px 0 0;
 		font-size: 13px;
-		color: #9aa1a8;
+		color: var(--muted);
 	}
 	.doc summary {
 		cursor: pointer;
 		font-size: 13px;
-		color: #9aa1a8;
+		color: var(--muted);
 	}
 	.prose {
 		max-width: 72ch;
@@ -164,7 +164,7 @@ $effect(() => {
 		margin: 0;
 		padding: 32px 0;
 		text-align: center;
-		color: #9aa1a8;
+		color: var(--muted);
 		font-size: 13px;
 	}
 </style>

@@ -32,7 +32,7 @@ Add it to the kernel list in `every_kernel_matches_naive` (`benchmark/tests/kern
 
 ## 5. Docs
 
-Add a row to the CPU kernel table and the `--kernel` list in `README.md`, and a "## `<label>`" section to its family's file in `web/src/docs/kernels/`, which the dashboard's About tab renders. Follow the other sections: what it does, a short pseudo-code sketch, and **Runs via**, **Tunes**, **Precisions**, **Watch for** (if it applies) and **Source**. `web/src/lib/docs.test.ts` fails until it's there.
+Add a row to the CPU kernel table and the `--kernel` list in `README.md`, and a "## `<label>`" section to its family's file in `web/src/docs/kernels/`, which the dashboard's About tab renders. Follow the other sections: what it does, a short pseudo-code sketch, and **Runs via**, **Tunes**, **Precisions**, **Watch for** (if it applies) and **Source**. `web/src/lib/components/about/kernelDocs.test.ts` fails until it's there.
 
 ## 6. Verify
 

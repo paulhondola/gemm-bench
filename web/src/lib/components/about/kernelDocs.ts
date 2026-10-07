@@ -1,8 +1,8 @@
-import gpu from "../docs/kernels/gpu.md?raw";
-import matrix from "../docs/kernels/matrix.md?raw";
-import parallel from "../docs/kernels/parallel.md?raw";
-import serial from "../docs/kernels/serial.md?raw";
-import type { Family } from "./model/family";
+import gpu from "../../../docs/kernels/gpu.md?raw";
+import matrix from "../../../docs/kernels/matrix.md?raw";
+import parallel from "../../../docs/kernels/parallel.md?raw";
+import serial from "../../../docs/kernels/serial.md?raw";
+import type { Family } from "../../model/family";
 
 export interface FamilyDoc {
 	family: Family;
@@ -18,7 +18,7 @@ export interface FamilyDoc {
 /**
  * The About tab's kernel catalogue, in FAMILY_ORDER. The family is written
  * here rather than read off the data with families(), so the catalogue is the
- * same whatever the data holds. docs.test.ts checks the sections against the
+ * same whatever the data holds. kernelDocs.test.ts checks the sections against the
  * kernel registry in benchmark/src/kernel.rs.
  */
 export const KERNEL_DOCS: FamilyDoc[] = [

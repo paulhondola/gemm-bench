@@ -37,8 +37,8 @@ const {
 		display: flex;
 		gap: 6px;
 		padding: 3px;
-		background: #15181b;
-		border: 1px solid #24292e;
+		background: var(--surface);
+		border: 1px solid var(--rule);
 		border-radius: 8px;
 	}
 	.group button {
@@ -47,14 +47,14 @@ const {
 		border: none;
 		border-radius: 6px;
 		background: transparent;
-		color: #9aa1a8;
+		color: var(--muted);
 		font-family: "IBM Plex Mono", monospace;
 		font-size: 13px;
 		cursor: pointer;
 	}
 	.group button.on {
-		background: #e6e3dc;
-		color: #0e1012;
+		background: var(--ink);
+		color: var(--bg);
 	}
 	.group button:disabled {
 		opacity: 0.35;

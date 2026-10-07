@@ -1,8 +1,8 @@
 <script lang="ts">
-import type { Peak, Row } from "./data/db";
-import { fmtGops, percentOfPeak } from "./format/numbers";
-import type { Family } from "./model/family";
-import { engineRows } from "./peaks/engines";
+import type { Peak, Row } from "../../data/db";
+import { fmtGops, percentOfPeak } from "../../format/numbers";
+import type { Family } from "../../model/family";
+import { engineRows } from "../../peaks/engines";
 
 const {
 	rows,
@@ -94,11 +94,11 @@ const devices = $derived.by(() => {
 	td {
 		padding: 6px 12px;
 		text-align: right;
-		border-bottom: 1px solid #24292e;
+		border-bottom: 1px solid var(--rule);
 		white-space: nowrap;
 	}
 	th {
-		color: #9aa1a8;
+		color: var(--muted);
 		font-weight: 500;
 	}
 	th:nth-child(-n + 2),
@@ -119,7 +119,7 @@ const devices = $derived.by(() => {
 	details {
 		margin-top: 12px;
 		font-size: 13px;
-		color: #9aa1a8;
+		color: var(--muted);
 	}
 	summary {
 		cursor: pointer;

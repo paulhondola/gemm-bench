@@ -1,22 +1,14 @@
 <script lang="ts">
-import About from "./lib/About.svelte";
-import Chart from "./lib/Chart.svelte";
 import { rowsForTab } from "./lib/charts/scope";
 import { makeCtx } from "./lib/charts/spec";
 import { TABS } from "./lib/charts/tabs";
-import type { Row } from "./lib/data/db";
-import { machineLabel } from "./lib/format/machine";
-import { formatParams } from "./lib/format/numbers";
-import {
-	knobLabel,
-	knobNames,
-	knobValues,
-	knobValuesFor,
-} from "./lib/model/knobs";
-import { allSizes, kernels, precisions, sizesFor } from "./lib/model/rows";
-import PickerGroup from "./lib/PickerGroup.svelte";
-import { atPrecision, precisionsForTab, withSize } from "./lib/state/filters";
-import { boot, setFilters, store } from "./lib/state/store.svelte";
+import About from "./lib/components/about/About.svelte";
+import Chart from "./lib/components/Chart.svelte";
+import Controls from "./lib/components/Controls.svelte";
+import DataTable from "./lib/components/DataTable.svelte";
+import HostPicker from "./lib/components/HostPicker.svelte";
+import { precisionsForTab } from "./lib/state/filters";
+import { boot, store } from "./lib/state/store.svelte";
 
 boot();
 
@@ -33,9 +25,6 @@ const about = $derived(store.tab === "about");
 const tab = $derived(TABS.find((t) => t.id === store.tab) ?? TABS[0]);
 const scoped = $derived(
 	rowsForTab(tab, store.rows, store.precision, store.knobs, ctx),
-);
-const columns = $derived(
-	scoped.length ? (Object.keys(scoped[0]) as (keyof Row)[]) : [],
 );
 // Precision is the x-axis of an inertPrecision tab, so it always charts.
 // Read without `relative`: the projection never decides whether a panel
@@ -59,34 +48,6 @@ const tabPrecisions = $derived(
 const charted = $derived(
 	Boolean(tab.inertPrecision) || tabPrecisions.includes(store.precision),
 );
-const available = $derived(sizesFor(store.rows, store.precision));
-// The kernel pill group is threading-tab-only and must offer only the
-// kernels that tab's chart can plot — parallel-family kernels — not every
-// kernel in scope.
-const parallelKernelList = $derived(
-	kernels(scoped).filter((k) => ctx.family.get(k) === "parallel"),
-);
-
-/** One data-view cell: params as name=value pairs, floats to 3 places. */
-function cell(value: Row[keyof Row]): string {
-	if (value !== null && typeof value === "object") return formatParams(value);
-	if (typeof value === "number" && !Number.isInteger(value))
-		return value.toFixed(3);
-	return String(value ?? "");
-}
-
-function pickPrecision(p: string) {
-	setFilters(atPrecision(store.rows, filters, p));
-}
-
-function pickSize(s: number) {
-	setFilters(withSize(store.rows, filters, s));
-}
-
-/** Loads another host as a fresh page: no picker state carries over from the last one. */
-function selectHost(id: string) {
-	location.search = new URLSearchParams({ host: id }).toString();
-}
 
 function selectTab(id: string) {
 	store.tab = id;
@@ -105,17 +66,7 @@ function selectTab(id: string) {
 				(non-finite or non-positive values)
 			</p>
 		{/if}
-		{#if store.hosts.length > 0}
-			<div class="host">
-				<label>
-					Host
-					<select value={store.host?.id} onchange={(e) => selectHost(e.currentTarget.value)}>
-						{#each store.hosts as h (h.id)}<option value={h.id}>{h.id}</option>{/each}
-					</select>
-				</label>
-				{#if store.machine}<span class="muted">{machineLabel(store.machine)}</span>{/if}
-			</div>
-		{/if}
+		{#if store.hosts.length > 0}<HostPicker />{/if}
 	</header>
 
 	{#if store.error}
@@ -150,65 +101,7 @@ function selectTab(id: string) {
 				family={ctx.family}
 				machine={store.machine} />
 		{:else}
-			<div class="controls">
-				{#if tab.controls.includes("precision") || tab.inertPrecision}
-					<PickerGroup
-						label="Precision"
-						items={precisions(store.rows)}
-						selected={store.precision}
-						disabled={(p) =>
-							Boolean(tab.inertPrecision) || !tabPrecisions.includes(p)}
-						title={(p) =>
-							tab.inertPrecision
-								? "Precision is this chart's x-axis"
-								: tabPrecisions.includes(p)
-									? ""
-									: `no ${tab.label} runs at ${p}`}
-						onSelect={pickPrecision} />
-				{/if}
-
-				{#if tab.controls.includes("n")}
-					<PickerGroup
-						label="Matrix size"
-						items={allSizes(store.rows)}
-						selected={store.n}
-						format={(s) => `N = ${s}`}
-						disabled={(s) => !available.includes(s)}
-						title={(s) =>
-							available.includes(s) ? "" : `no ${store.precision} runs at N = ${s}`}
-						onSelect={pickSize} />
-				{/if}
-
-				{#if tab.controls.includes("knobs")}
-					{#each knobNames(store.rows) as name (name)}
-						{@const here = knobValuesFor(store.rows, name, store.precision, store.n)}
-						<PickerGroup
-							label={knobLabel(name)}
-							items={knobValues(store.rows, name)}
-							format={(v) => `${knobLabel(name).toLowerCase()} ${v}`}
-							selected={store.knobs[name] ?? 0}
-							disabled={(v) => !here.includes(v)}
-							title={(v) =>
-								here.includes(v)
-									? ""
-									: `no ${store.precision} ${knobLabel(name).toLowerCase()} ${v} runs at N = ${store.n}`}
-							onSelect={(v) => (store.knobs = { ...store.knobs, [name]: v })} />
-					{/each}
-				{/if}
-
-				{#if tab.controls.includes("kernel")}
-					<PickerGroup
-						label="Kernel"
-						items={parallelKernelList}
-						selected={store.kernel}
-						onSelect={(k) => (store.kernel = k)} />
-				{/if}
-
-				<label class="toggle">
-					<input type="checkbox" bind:checked={store.relative} />
-					Relative
-				</label>
-			</div>
+			<Controls {tab} {tabPrecisions} {scoped} {filters} family={ctx.family} />
 
 			{#if !charted}
 				<p class="muted">
@@ -231,25 +124,7 @@ function selectTab(id: string) {
 				{/each}
 			</div>
 
-			<details class="table">
-				<summary>Data view ({scoped.length} rows)</summary>
-				<div class="scroll">
-					<table>
-						<thead>
-							<tr>
-								{#each columns as c}<th>{c}</th>{/each}
-							</tr>
-						</thead>
-						<tbody>
-							{#each scoped as row}
-								<tr>
-									{#each columns as c}<td>{cell(row[c])}</td>{/each}
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			</details>
+			<DataTable rows={scoped} />
 			{/if}
 		{/if}
 	{/if}
@@ -275,27 +150,15 @@ function selectTab(id: string) {
 	.muted {
 		margin: 6px 0 0;
 		font-size: 14px;
-		color: #9aa1a8;
+		color: var(--muted);
 	}
 	.error {
 		color: #e66767;
 	}
-	.host {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		margin-top: 10px;
-		font-size: 13px;
-		color: #9aa1a8;
-	}
-	.host select {
-		margin-left: 6px;
-		font: inherit;
-	}
 	nav {
 		display: flex;
 		gap: 4px;
-		border-bottom: 1px solid #24292e;
+		border-bottom: 1px solid var(--rule);
 	}
 	nav button {
 		min-height: 44px;
@@ -306,54 +169,16 @@ function selectTab(id: string) {
 		margin-bottom: -1px;
 		font-size: 14px;
 		font-weight: 500;
-		color: #9aa1a8;
+		color: var(--muted);
 		cursor: pointer;
 	}
 	nav button.current {
-		color: #e6e3dc;
-		border-bottom-color: #e8743b;
-	}
-	.controls {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 16px;
-	}
-	.toggle {
-		font-size: 13px;
-		color: #9aa1a8;
-		display: flex;
-		align-items: center;
-		gap: 6px;
+		color: var(--ink);
+		border-bottom-color: var(--accent);
 	}
 	.panels {
 		display: flex;
 		flex-direction: column;
 		gap: 20px;
-	}
-	.table summary {
-		cursor: pointer;
-		color: #9aa1a8;
-		font-size: 13px;
-	}
-	.scroll {
-		overflow-x: auto;
-		margin-top: 12px;
-	}
-	table {
-		border-collapse: collapse;
-		font-family: "IBM Plex Mono", monospace;
-		font-size: 12px;
-	}
-	th,
-	td {
-		padding: 6px 12px;
-		text-align: right;
-		border-bottom: 1px solid #24292e;
-		white-space: nowrap;
-	}
-	th {
-		color: #9aa1a8;
-		font-weight: 500;
 	}
 </style>

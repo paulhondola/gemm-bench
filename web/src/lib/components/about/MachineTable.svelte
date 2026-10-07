@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { Machine } from "./data/db";
-import { cacheLabel } from "./format/machine";
+import type { Machine } from "../../data/db";
+import { cacheLabel } from "../../format/machine";
 
 const { machine }: { machine: Machine } = $props();
 
@@ -41,10 +41,10 @@ const tierName = (tier: number | null) =>
 	td {
 		padding: 4px 12px 4px 0;
 		text-align: left;
-		border-bottom: 1px solid #24292e;
+		border-bottom: 1px solid var(--rule);
 	}
 	th {
-		color: #9aa1a8;
+		color: var(--muted);
 		font-weight: 500;
 		white-space: nowrap;
 	}

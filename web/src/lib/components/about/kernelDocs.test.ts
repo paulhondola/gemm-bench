@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { KERNEL_DOCS } from "./docs";
-import { FAMILY_ORDER } from "./palette";
+import { FAMILY_ORDER } from "../../palette";
+import { KERNEL_DOCS } from "./kernelDocs";
 
 /** One section per kernel, headed "## `<label>`". */
 const sections = KERNEL_DOCS.flatMap((g) =>
@@ -14,7 +14,7 @@ const documented = sections.map((s) => s.name);
 test("the catalogue documents exactly the kernels in kernel.rs", async () => {
 	// Every KernelInfo row in KernelChoice::info passes through serial("<label>").
 	const source = await Bun.file(
-		new URL("../../../benchmark/src/kernel.rs", import.meta.url),
+		new URL("../../../../../benchmark/src/kernel.rs", import.meta.url),
 	).text();
 	const labels = [...source.matchAll(/serial\("([^"]+)"\)/g)].map((m) => m[1]);
 	expect(labels.length).toBeGreaterThan(0);
