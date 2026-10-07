@@ -10,7 +10,6 @@ import {
 	defaultSize,
 	families,
 	familyOf,
-	formatParams,
 	hasKernel,
 	hasSingleThreadBaseline,
 	isPlottable,
@@ -178,13 +177,6 @@ test("isPlottable keeps a valid row with stddev_ms = 0", () => {
 	// Zero standard deviation is legitimate (a perfectly consistent
 	// measurement), not an error condition.
 	expect(isPlottable({ ...validRow, stddev_ms: 0 })).toBe(true);
-});
-
-test("formatParams lists name=value pairs", () => {
-	expect(formatParams({ depth_block: 256, register_cols: 12 })).toBe(
-		"depth_block=256 register_cols=12",
-	);
-	expect(formatParams({})).toBe("");
 });
 
 test("partitionPlottable reports the usable rows and the dropped count", () => {

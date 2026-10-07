@@ -1,4 +1,5 @@
-import type { Cache, CoreTier, Machine } from "./data/db";
+import type { Cache, CoreTier, Machine } from "../data/db";
+import { formatBytes } from "./numbers";
 
 /** "8P + 2E": each tier's cores, tagged with the initial of the OS's name for it. */
 export function tierSummary(tiers: CoreTier[]): string {
@@ -11,13 +12,6 @@ export function machineLabel(m: Machine): string {
 	return [m.cpu, tierSummary(m.tiers), gpu]
 		.filter((part) => part !== "")
 		.join(" · ");
-}
-
-/** 65536 → "64 KB", 12582912 → "12 MB": the largest unit that divides evenly. */
-export function formatBytes(n: number): string {
-	if (n >= 1 << 20 && n % (1 << 20) === 0) return `${n / (1 << 20)} MB`;
-	if (n >= 1 << 10 && n % (1 << 10) === 0) return `${n / (1 << 10)} KB`;
-	return `${n} B`;
 }
 
 /** "L2 unified · 12 MB · shared by 4 · ×2". */

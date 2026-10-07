@@ -4,9 +4,9 @@ import hardware from "../docs/hardware.md?raw";
 import type { Machine, Peak, Row } from "./data/db";
 import type { Family } from "./derive";
 import { KERNEL_DOCS } from "./docs";
+import { renderMarkdown } from "./format/markdown";
 import HardwareTable from "./HardwareTable.svelte";
 import MachineTable from "./MachineTable.svelte";
-import { renderMarkdown } from "./markdown";
 import { FAMILY_INK } from "./palette";
 
 const {

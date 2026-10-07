@@ -2,7 +2,7 @@
 import type { Config, PlotlyHTMLElement, Shape } from "plotly.js-dist-min";
 import Plotly from "plotly.js-dist-min";
 import { escapeLabels, type Figure, type Trace } from "./charts/types";
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown } from "./format/markdown";
 
 let {
 	spec,

@@ -7,6 +7,7 @@ import type {
 } from "plotly.js-dist-min";
 import type { Peak, Row } from "../data/db";
 import { type Family, families, kernels, singleValueKernels } from "../derive";
+import { percentOfPeak } from "../format/numbers";
 import { FAMILY_INK, paletteFor } from "../palette";
 import { familyPeak } from "../peaks/lookup";
 
@@ -182,15 +183,6 @@ export function ceilingShape(c: Ceiling, legendgroup?: string): Partial<Shape> {
 		},
 		...(legendgroup === undefined ? {} : { legendgroup }),
 	};
-}
-
-/**
- * The share of a peak reached, in percent, to 2 significant figures: the one
- * rule for the charts' hover and the About tab's hardware table. Number()
- * drops the exponent toPrecision gives past 100%: 105 reads 110, not 1.1e+2.
- */
-export function percentOfPeak(gops: number, gflops: number): number {
-	return Number(((100 * gops) / gflops).toPrecision(2));
 }
 
 /**

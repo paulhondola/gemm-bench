@@ -34,13 +34,6 @@ export function partitionPlottable(rows: Row[]): {
 	return { rows: usable, dropped: rows.length - usable.length };
 }
 
-/** A row's params for the data view: `depth_block=256 register_cols=12`. */
-export function formatParams(params: Record<string, number>): string {
-	return Object.entries(params)
-		.map(([name, value]) => `${name}=${value}`)
-		.join(" ");
-}
-
 export type Family = "serial" | "parallel" | "matrix" | "gpu";
 
 /**

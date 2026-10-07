@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { percentOfPeak } from "../charts/types";
 import type { Row } from "../data/db";
 import { families } from "../derive";
 import { peak, row } from "../test/fixtures";
@@ -95,10 +94,4 @@ test("rows run in family order, then precision order", () => {
 		.filter((e) => e.best)
 		.map((e) => `${e.family} ${e.precision}`);
 	expect(order).toEqual(["serial f16", "serial f64", "gpu f16"]);
-});
-
-test("percent of peak is rounded to 2 significant figures", () => {
-	expect(percentOfPeak(197, 777.216)).toBe(25);
-	expect(percentOfPeak(3436, 5308.416)).toBe(65);
-	expect(percentOfPeak(1050, 1000)).toBe(110);
 });

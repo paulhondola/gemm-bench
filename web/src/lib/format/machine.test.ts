@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { Machine } from "./data/db";
-import { cacheLabel, formatBytes, machineLabel, tierSummary } from "./machine";
+import type { Machine } from "../data/db";
+import { cacheLabel, machineLabel, tierSummary } from "./machine";
 
 const m1Pro: Machine = {
 	started_at: "2026-10-02T00:00:00Z",
@@ -32,13 +32,6 @@ test("machineLabel names the CPU, its tiers and the GPU", () => {
 	expect(
 		machineLabel({ ...m1Pro, gpu: null, gpu_cores: null, tiers: [] }),
 	).toBe("Apple M1 Pro");
-});
-
-test("formatBytes picks the largest whole unit", () => {
-	expect(formatBytes(65536)).toBe("64 KB");
-	expect(formatBytes(12582912)).toBe("12 MB");
-	expect(formatBytes(1310720)).toBe("1280 KB");
-	expect(formatBytes(100)).toBe("100 B");
 });
 
 test("cacheLabel reads like a spec sheet", () => {

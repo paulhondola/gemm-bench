@@ -11,7 +11,6 @@ import { makeCtx } from "./lib/charts/types";
 import type { Row } from "./lib/data/db";
 import {
 	allSizes,
-	formatParams,
 	kernels,
 	knobLabel,
 	knobNames,
@@ -21,7 +20,8 @@ import {
 	precisions,
 	sizesFor,
 } from "./lib/derive";
-import { machineLabel } from "./lib/machine";
+import { machineLabel } from "./lib/format/machine";
+import { formatParams } from "./lib/format/numbers";
 import PickerGroup from "./lib/PickerGroup.svelte";
 import { boot, store } from "./lib/state.svelte";
 

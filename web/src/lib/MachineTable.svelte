@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { Machine } from "./data/db";
-import { cacheLabel } from "./machine";
+import { cacheLabel } from "./format/machine";
 
 const { machine }: { machine: Machine } = $props();
 
