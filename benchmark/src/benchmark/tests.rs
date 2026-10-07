@@ -277,9 +277,7 @@ fn every_kernel_records_exactly_the_params_it_declares() {
     for &kernel in KernelChoice::value_variants() {
         #[cfg(target_os = "macos")]
         if kernel == KernelChoice::AccelerateBnns
-            && (gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none()
-                || std::env::var_os("CI").is_some()
-                || std::env::var_os("GEMM_BENCH_DISABLE_AMX").is_some())
+            && gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none()
         {
             continue; // needs macOS 26 / disabled in CI
         }

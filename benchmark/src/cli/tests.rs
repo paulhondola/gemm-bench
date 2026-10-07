@@ -4,7 +4,7 @@ use clap::{Parser, ValueEnum};
 
 use super::Cli;
 #[cfg(target_os = "macos")]
-use super::drop_unavailable_bnns;
+use super::validate::drop_unavailable_bnns;
 use crate::kernel::{KernelChoice, Precision};
 use crate::plan::BenchmarkPlan;
 
@@ -17,22 +17,30 @@ fn temp_output(name: &str) -> PathBuf {
     ))
 }
 
+/// Whether this machine can build the BNNSGraph kernel, as `into_plan` asks.
+#[cfg(target_os = "macos")]
+fn bnns_available() -> bool {
+    gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_some()
+}
+
+/// Every kernel, minus `accelerate-bnns` where `into_plan` drops it.
+fn default_kernels() -> Vec<KernelChoice> {
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+    let mut kernels = KernelChoice::value_variants().to_vec();
+    #[cfg(target_os = "macos")]
+    if !bnns_available() {
+        kernels.retain(|&k| k != KernelChoice::AccelerateBnns);
+    }
+    kernels
+}
+
 #[test]
 fn omitted_dimensions_sweep_every_value() {
     let plan = plan_for("defaults", &["--sweep"]).expect("the full sweep should be valid");
 
     assert_eq!(plan.sizes, [64, 128, 256, 512, 1024, 2048, 4096]);
     assert!(plan.threads.contains(&1));
-    #[cfg(not(target_os = "macos"))]
-    assert_eq!(plan.kernels, KernelChoice::value_variants());
-    #[cfg(target_os = "macos")]
-    {
-        let mut expected: Vec<_> = KernelChoice::value_variants().to_vec();
-        if gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none() {
-            expected.retain(|&k| k != KernelChoice::AccelerateBnns);
-        }
-        assert_eq!(plan.kernels, expected);
-    }
+    assert_eq!(plan.kernels, default_kernels());
     assert_eq!(plan.precisions, Precision::value_variants());
     assert_eq!(plan.tile_sizes, [16, 32, 64, 128, 256]);
     assert_eq!(plan.depth_blocks, [64, 128, 256, 512, 1024]);
@@ -67,16 +75,7 @@ fn precision_flag_accepts_integer_precisions() {
     let plan = plan_for("integers", &["--precision", "i32,i64"]).expect("plan should be valid");
 
     assert_eq!(plan.precisions, [Precision::I32, Precision::I64]);
-    #[cfg(not(target_os = "macos"))]
-    assert_eq!(plan.kernels, KernelChoice::value_variants());
-    #[cfg(target_os = "macos")]
-    {
-        let mut expected: Vec<_> = KernelChoice::value_variants().to_vec();
-        if gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none() {
-            expected.retain(|&k| k != KernelChoice::AccelerateBnns);
-        }
-        assert_eq!(plan.kernels, expected);
-    }
+    assert_eq!(plan.kernels, default_kernels());
     #[cfg(target_os = "macos")]
     assert!(plan.cells(KernelChoice::Mps, Precision::I32, 64).is_empty());
 }
@@ -143,7 +142,7 @@ fn default_kernels_skip_mps_at_precisions_it_lacks() {
     );
     assert!(plan.cells(KernelChoice::Mps, Precision::F64, 64).is_empty());
     let mut expected = Vec::new();
-    if gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_some() {
+    if bnns_available() {
         expected.push("skipping accelerate-bnns at f64 (unsupported precision)");
     }
     expected.extend([
@@ -152,7 +151,7 @@ fn default_kernels_skip_mps_at_precisions_it_lacks() {
         "skipping metal-tiled at f64 (unsupported precision)",
         "skipping metal-simdgroup at f64 (unsupported precision)",
     ]);
-    if gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none() {
+    if !bnns_available() {
         expected.push("skipping accelerate-bnns (needs macOS 26)");
     }
     assert_eq!(plan.skipped, expected);
@@ -314,7 +313,7 @@ fn default_kernels_skip_accelerate_blas_at_f16() {
         [(1, None)]
     );
     let mut expected = vec!["skipping accelerate-blas at f16 (unsupported precision)"];
-    if gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none() {
+    if !bnns_available() {
         expected.push("skipping accelerate-bnns (needs macOS 26)");
     }
     assert_eq!(plan.skipped, expected);
@@ -323,7 +322,7 @@ fn default_kernels_skip_accelerate_blas_at_f16() {
 #[cfg(target_os = "macos")]
 #[test]
 fn accelerate_bnns_runs_f16_and_f32_on_one_caller_thread() {
-    if gemm_bench::kernels::AccelerateBnnsGemm::<f32>::new(1).is_none() {
+    if !bnns_available() {
         return;
     }
     let plan = plan_for(

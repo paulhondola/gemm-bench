@@ -157,10 +157,7 @@ fn accelerate_bnns_matches_naive<T: Element>() {
 #[cfg(target_os = "macos")]
 #[test]
 fn accelerate_bnns_matches_naive_on_f16_and_f32() {
-    if std::env::var_os("CI").is_some()
-        || std::env::var_os("GEMM_BENCH_DISABLE_AMX").is_some()
-        || AccelerateBnnsGemm::<f32>::new(1).is_none()
-    {
+    if AccelerateBnnsGemm::<f32>::new(1).is_none() {
         return;
     }
     accelerate_bnns_matches_naive::<f16>();

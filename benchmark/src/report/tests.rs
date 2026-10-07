@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
-use super::render_results_table;
+use super::progress::{Ticker, until_next_second};
+use super::table::render_results_table;
 use crate::benchmark::BenchmarkRecord;
 use crate::kernel::Knob;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -60,7 +61,7 @@ fn terminal_table_uses_schema_headers_and_compact_float_precision() {
 
 #[test]
 fn ticker_waits_until_the_next_whole_second() {
-    let wait = |ms| super::until_next_second(Duration::from_millis(ms));
+    let wait = |ms| until_next_second(Duration::from_millis(ms));
     assert_eq!(wait(2_300), Duration::from_millis(700));
     assert_eq!(wait(5_000), Duration::from_secs(1));
     assert_eq!(wait(0), Duration::from_secs(1));
@@ -68,7 +69,7 @@ fn ticker_waits_until_the_next_whole_second() {
 
 #[test]
 fn dropping_the_ticker_stops_it_without_waiting_for_a_tick() {
-    let ticker = super::Ticker::spawn(ProgressBar::hidden());
+    let ticker = Ticker::spawn(ProgressBar::hidden());
     let start = Instant::now();
     drop(ticker);
     assert!(start.elapsed() < Duration::from_millis(500));

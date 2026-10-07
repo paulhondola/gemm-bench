@@ -11,7 +11,7 @@
 //!   against every row;
 //! - adds the rules that span rows, which no CHECK can express.
 
-mod fs;
+mod file;
 mod rules;
 mod schema;
 
@@ -19,13 +19,13 @@ mod schema;
 mod tests;
 
 use std::{
-    fs as std_fs,
+    fs,
     path::{Path, PathBuf},
 };
 
 use rusqlite::Connection;
 
-use self::fs::{MAX_BYTES, Scratch, check_header, check_unlinked};
+use self::file::{MAX_BYTES, Scratch, check_header, check_unlinked};
 use self::rules::{check_kernels, check_params, check_runs, check_text};
 use self::schema::{check_integrity, check_schema, check_stamps, sql};
 use crate::host;
@@ -61,12 +61,12 @@ pub(crate) fn validate(path: &Path) -> Result<(), String> {
     if size > MAX_BYTES {
         return Err(format!("{size} bytes is over the {MAX_BYTES}-byte limit"));
     }
-    let bytes = std_fs::read(path).map_err(|error| format!("cannot read it: {error}"))?;
+    let bytes = fs::read(path).map_err(|error| format!("cannot read it: {error}"))?;
     check_header(&bytes)?;
     // Declared before `db`, so the connection closes before the copy goes.
     let scratch = Scratch::new()?;
     let copy = scratch.0.join("copy.sqlite");
-    std_fs::write(&copy, &bytes).map_err(|error| format!("cannot copy it to scratch: {error}"))?;
+    fs::write(&copy, &bytes).map_err(|error| format!("cannot copy it to scratch: {error}"))?;
     let db = Connection::open(&copy).map_err(sql)?;
     check_stamps(&db)?;
     check_schema(&db)?;
