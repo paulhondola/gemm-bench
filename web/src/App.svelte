@@ -1,12 +1,7 @@
 <script lang="ts">
 import About from "./lib/About.svelte";
 import Chart from "./lib/Chart.svelte";
-import {
-	atPrecision,
-	precisionsForTab,
-	rowsForTab,
-	TABS,
-} from "./lib/charts/index";
+import { rowsForTab, TABS } from "./lib/charts/index";
 import { makeCtx } from "./lib/charts/types";
 import type { Row } from "./lib/data/db";
 import { machineLabel } from "./lib/format/machine";
@@ -16,11 +11,11 @@ import {
 	knobNames,
 	knobValues,
 	knobValuesFor,
-	pinKnobs,
 } from "./lib/model/knobs";
 import { allSizes, kernels, precisions, sizesFor } from "./lib/model/rows";
 import PickerGroup from "./lib/PickerGroup.svelte";
-import { boot, store } from "./lib/state.svelte";
+import { atPrecision, precisionsForTab, withSize } from "./lib/state/filters";
+import { boot, setFilters, store } from "./lib/state/store.svelte";
 
 boot();
 
@@ -80,16 +75,11 @@ function cell(value: Row[keyof Row]): string {
 }
 
 function pickPrecision(p: string) {
-	const at = atPrecision(store.rows, filters, p);
-	store.precision = at.precision;
-	store.n = at.n;
-	store.knobs = at.knobs;
-	store.kernel = at.kernel;
+	setFilters(atPrecision(store.rows, filters, p));
 }
 
 function pickSize(s: number) {
-	store.n = s;
-	store.knobs = pinKnobs(store.rows, store.precision, s, store.knobs);
+	setFilters(withSize(store.rows, filters, s));
 }
 
 /** Loads another host as a fresh page: no picker state carries over from the last one. */

@@ -1,4 +1,5 @@
-import peaksCsv from "../../../data/peaks.csv?raw";
+import peaksCsv from "../../../../data/peaks.csv?raw";
+import type { Filters } from "../charts/types";
 import {
 	type Machine,
 	openDb,
@@ -6,18 +7,13 @@ import {
 	type Row,
 	readMachine,
 	readRows,
-} from "./data/db";
-import { HOSTS } from "./data/hostlist";
-import { type Host, pickHost } from "./data/hosts";
-import { loadSql } from "./data/sqlite";
-import {
-	defaultParallelKernel,
-	defaultPrecision,
-	defaultSize,
-} from "./model/defaults";
-import { pinKnobs } from "./model/knobs";
-import { partitionPlottable } from "./model/rows";
-import { parsePeaks } from "./peaks/parse";
+} from "../data/db";
+import { HOSTS } from "../data/hostlist";
+import { type Host, pickHost } from "../data/hosts";
+import { loadSql } from "../data/sqlite";
+import { partitionPlottable } from "../model/rows";
+import { parsePeaks } from "../peaks/parse";
+import { initialFilters } from "./filters";
 
 export const store = $state({
 	rows: [] as Row[],
@@ -54,13 +50,18 @@ export async function boot(): Promise<void> {
 			db.close();
 			store.rows = rows;
 			store.dropped = dropped;
-			store.precision = defaultPrecision(rows);
-			store.n = defaultSize(rows, store.precision);
-			store.kernel = defaultParallelKernel(rows, store.precision);
-			store.knobs = pinKnobs(rows, store.precision, store.n, {});
+			setFilters(initialFilters(rows));
 		}
 		store.loaded = true;
 	} catch (e) {
 		store.error = host ? `${host.id}: ${e}` : String(e);
 	}
+}
+
+/** Applies a picker change (state/filters.ts); the Relative toggle is per-chart, not a filter rule. */
+export function setFilters(f: Filters): void {
+	store.precision = f.precision;
+	store.n = f.n;
+	store.kernel = f.kernel;
+	store.knobs = f.knobs;
 }

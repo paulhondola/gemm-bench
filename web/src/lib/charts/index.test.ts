@@ -2,18 +2,13 @@ import { expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import peaksCsv from "../../../../data/peaks.csv?raw";
 import { openDb, type Row, readMachine, readRows } from "../data/db";
-import {
-	defaultParallelKernel,
-	defaultPrecision,
-	defaultSize,
-} from "../model/defaults";
-import { pinKnobs } from "../model/knobs";
 import { partitionPlottable } from "../model/rows";
 import { parsePeaks } from "../peaks/parse";
+import { initialFilters, precisionsForTab } from "../state/filters";
 import { pointsOf, row } from "../test/fixtures";
 import { type FixtureMeasurement, fixtureDb, SQL } from "../test/testdb";
 import { gpuKernels } from "./gpu";
-import { precisionsForTab, rowsForTab, TABS } from "./index";
+import { rowsForTab, TABS } from "./index";
 import { type Ctx, type Filters, makeCtx } from "./types";
 
 const f: Filters = {
@@ -496,15 +491,8 @@ test("a host DB read through the views draws every panel", () => {
 	const { rows } = partitionPlottable(readRows(db));
 	expect(readMachine(db)?.tiers).toHaveLength(1);
 	db.close();
-	const precision = defaultPrecision(rows);
-	const n = defaultSize(rows, precision);
-	const f: Filters = {
-		precision,
-		n,
-		kernel: defaultParallelKernel(rows, precision),
-		knobs: pinKnobs(rows, precision, n, {}),
-		relative: false,
-	};
+	// The filters boot() lands on.
+	const f = initialFilters(rows);
 	const ctx = makeCtx(rows, parsePeaks(peaksCsv));
 
 	const blank = TABS.flatMap((tab) => {
