@@ -13,8 +13,8 @@ import { pointsOf, row } from "../fixtures";
 import { parsePeaks } from "../peaks";
 import { type FixtureMeasurement, fixtureDb, SQL } from "../testdb";
 import { gpuKernels } from "./gpu";
-import { rowsForTab, TABS, visibleTabs } from "./index";
-import { type Filters, makeCtx } from "./types";
+import { precisionsForTab, rowsForTab, TABS } from "./index";
+import { type Ctx, type Filters, makeCtx } from "./types";
 
 const f: Filters = {
 	precision: "f32",
@@ -73,17 +73,20 @@ test("every tab declares its own controls", () => {
 	expect(tab("knobs")?.inertKnobs).toBe(true);
 });
 
-test("the GPU tab is absent without metal rows", () => {
-	const ids = visibleTabs(cpuOnly, f, makeCtx(cpuOnly)).map((t) => t.id);
-	expect(ids).toContain("overview");
-	expect(ids).not.toContain("gpu");
+test("without metal rows the GPU tab charts nothing", () => {
+	const ctx = makeCtx(cpuOnly);
+	expect(precisionsForTab(tabById("overview"), cpuOnly, f, ctx)).toEqual([
+		"f32",
+	]);
+	expect(precisionsForTab(tabById("gpu"), cpuOnly, f, ctx)).toEqual([]);
 });
 
-test("no rows, no tabs", () => {
-	expect(visibleTabs([], f, makeCtx([]))).toEqual([]);
+test("no rows, nothing to chart on any tab", () => {
+	for (const t of TABS)
+		expect(precisionsForTab(t, [], f, makeCtx([]))).toEqual([]);
 });
 
-test("the GPU tab is absent for a precision the GPU never ran", () => {
+test("the GPU tab charts only the precisions the GPU ran", () => {
 	const withGpu: Row[] = [
 		...cpuOnly,
 		row({
@@ -122,13 +125,19 @@ test("the GPU tab is absent for a precision the GPU never ran", () => {
 		}),
 	];
 	const ctx = makeCtx(withGpu);
-	expect(
-		visibleTabs(withGpu, { ...f, precision: "f32" }, ctx).map((t) => t.id),
-	).toContain("gpu");
-	expect(
-		visibleTabs(withGpu, { ...f, precision: "f64" }, ctx).map((t) => t.id),
-	).not.toContain("gpu");
+	expect(precisionsForTab(tabById("gpu"), withGpu, f, ctx)).toEqual(["f32"]);
+	expect(precisionsForTab(tabById("overview"), withGpu, f, ctx)).toEqual([
+		"f32",
+		"f64",
+	]);
 });
+
+/** The tabs that chart something at the selected precision. */
+function charting(rows: Row[], f: Filters, ctx: Ctx) {
+	return TABS.filter((t) =>
+		precisionsForTab(t, rows, f, ctx).includes(f.precision),
+	);
+}
 
 /** A tab by id, failing the test if it's gone. */
 function tabById(id: string) {
@@ -213,7 +222,7 @@ test("the Tuning knobs tab is absent with one value per knob, present with two",
 		}),
 	];
 	const ids = (rows: Row[]) =>
-		visibleTabs(
+		charting(
 			rows,
 			{
 				...f,
@@ -275,7 +284,7 @@ test("the GPU tab ignores knob pins: it is a family view", () => {
 			swept: { tile_size: 32 },
 		}),
 	];
-	const ids = visibleTabs(
+	const ids = charting(
 		rows,
 		{ ...f, precision: "f32", knobs: { tile_size: 64 } },
 		makeCtx(rows),
@@ -505,7 +514,4 @@ test("a host DB read through the views draws every panel", () => {
 			.map((p) => p.title);
 	});
 	expect(blank).toEqual([]);
-	expect(visibleTabs(rows, f, ctx).map((t) => t.id)).toEqual(
-		TABS.map((t) => t.id),
-	);
 });

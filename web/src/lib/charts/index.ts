@@ -13,6 +13,14 @@ import throughputVsMatrixSizeDoc from "../../docs/charts/throughput-vs-matrix-si
 import throughputVsThreadCountDoc from "../../docs/charts/throughput-vs-thread-count.md?raw";
 import throughputVsTileSizeDoc from "../../docs/charts/throughput-vs-tile-size.md?raw";
 import type { Row } from "../db";
+import {
+	defaultParallelKernel,
+	defaultSize,
+	families,
+	pinKnobs,
+	precisions,
+	sizesFor,
+} from "../derive";
 import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
 import { knobSweep } from "./knobs";
 import {
@@ -217,12 +225,44 @@ export function rowsForTab(
 	);
 }
 
-/** A tab is present iff at least one of its panels can be built. */
-export function visibleTabs(rows: Row[], f: Filters, ctx: Ctx): Tab[] {
-	return TABS.filter((t) =>
-		t.panels.some(
-			(p) =>
-				p.spec(rowsForTab(t, rows, f.precision, f.knobs, ctx), f, ctx) !== null,
-		),
+/**
+ * The filters after picking precision `p`: the size, knob pins and kernel are
+ * kept where still measured at `p`, else fall back to that precision's
+ * defaults. The precision pills and precisionsForTab both go through this, so
+ * a pill is enabled iff clicking it renders a chart.
+ */
+export function atPrecision(rows: Row[], f: Filters, p: string): Filters {
+	const n = sizesFor(rows, p).includes(f.n) ? f.n : defaultSize(rows, p);
+	const family = families(rows);
+	const kernelStillValid = rows.some(
+		(r) =>
+			r.precision === p &&
+			r.kernel === f.kernel &&
+			family.get(String(r.kernel)) === "parallel",
 	);
+	return {
+		...f,
+		precision: p,
+		n,
+		knobs: pinKnobs(rows, p, n, f.knobs),
+		kernel: kernelStillValid ? f.kernel : defaultParallelKernel(rows, p),
+	};
+}
+
+/**
+ * The precisions at which at least one of the tab's panels can be built.
+ * Every tab is always shown; one that can't chart the current precision
+ * shows a message instead of its panels.
+ */
+export function precisionsForTab(
+	tab: Tab,
+	rows: Row[],
+	f: Filters,
+	ctx: Ctx,
+): string[] {
+	return precisions(rows).filter((p) => {
+		const at = atPrecision(rows, f, p);
+		const scoped = rowsForTab(tab, rows, p, at.knobs, ctx);
+		return tab.panels.some((panel) => panel.spec(scoped, at, ctx) !== null);
+	});
 }

@@ -1,14 +1,16 @@
 <script lang="ts">
 import About from "./lib/About.svelte";
 import Chart from "./lib/Chart.svelte";
-import { rowsForTab, visibleTabs } from "./lib/charts/index";
+import {
+	atPrecision,
+	precisionsForTab,
+	rowsForTab,
+	TABS,
+} from "./lib/charts/index";
 import { makeCtx } from "./lib/charts/types";
 import type { Row } from "./lib/db";
 import {
 	allSizes,
-	defaultParallelKernel,
-	defaultSize,
-	families,
 	formatParams,
 	kernels,
 	knobLabel,
@@ -16,6 +18,7 @@ import {
 	knobValues,
 	knobValuesFor,
 	pinKnobs,
+	precisions,
 	sizesFor,
 } from "./lib/derive";
 import { machineLabel } from "./lib/machine";
@@ -32,15 +35,19 @@ const filters = $derived({
 	knobs: store.knobs,
 	relative: store.relative,
 });
-const tabs = $derived(visibleTabs(store.rows, filters, ctx));
 // Not a TABS entry: it has no panels to make it visible and no controls.
 const about = $derived(store.tab === "about");
-const tab = $derived(tabs.find((t) => t.id === store.tab) ?? tabs[0]);
+const tab = $derived(TABS.find((t) => t.id === store.tab) ?? TABS[0]);
 const scoped = $derived(
-	tab ? rowsForTab(tab, store.rows, store.precision, store.knobs, ctx) : [],
+	rowsForTab(tab, store.rows, store.precision, store.knobs, ctx),
 );
 const columns = $derived(
 	scoped.length ? (Object.keys(scoped[0]) as (keyof Row)[]) : [],
+);
+// Precision is the x-axis of an inertPrecision tab, so it always charts.
+const tabPrecisions = $derived(precisionsForTab(tab, store.rows, filters, ctx));
+const charted = $derived(
+	Boolean(tab.inertPrecision) || tabPrecisions.includes(store.precision),
 );
 const available = $derived(sizesFor(store.rows, store.precision));
 // The kernel pill group is threading-tab-only and must offer only the
@@ -59,21 +66,11 @@ function cell(value: Row[keyof Row]): string {
 }
 
 function pickPrecision(p: string) {
-	store.precision = p;
-	if (!sizesFor(store.rows, p).includes(store.n)) {
-		store.n = defaultSize(store.rows, p);
-	}
-	store.knobs = pinKnobs(store.rows, p, store.n, store.knobs);
-	const family = families(store.rows);
-	const kernelStillValid = store.rows.some(
-		(r) =>
-			r.precision === p &&
-			r.kernel === store.kernel &&
-			family.get(String(r.kernel)) === "parallel",
-	);
-	if (!kernelStillValid) {
-		store.kernel = defaultParallelKernel(store.rows, p);
-	}
+	const at = atPrecision(store.rows, filters, p);
+	store.precision = at.precision;
+	store.n = at.n;
+	store.knobs = at.knobs;
+	store.kernel = at.kernel;
 }
 
 function pickSize(s: number) {
@@ -125,11 +122,11 @@ function selectTab(id: string) {
 			No host databases yet. Run <code>just init &lt;github-login&gt;/&lt;machine&gt;</code> once,
 			then <code>just bench</code>.
 		</p>
-	{:else if !tab}
+	{:else if store.rows.length === 0}
 		<p class="muted">{store.host.id} has no measurements to chart yet.</p>
 	{:else}
 		<nav>
-			{#each tabs as t}
+			{#each TABS as t}
 				<button
 					type="button"
 					class:current={!about && t.id === tab.id}
@@ -152,7 +149,7 @@ function selectTab(id: string) {
 				{#if tab.controls.includes("precision") || tab.inertPrecision}
 					<PickerGroup
 						label="Precision"
-						items={[...new Set(store.rows.map((r) => String(r.precision)))].sort()}
+						items={precisions(store.rows)}
 						selected={store.precision}
 						disabled={() => Boolean(tab.inertPrecision)}
 						title={() =>
@@ -203,6 +200,15 @@ function selectTab(id: string) {
 				</label>
 			</div>
 
+			{#if !charted}
+				<p class="muted">
+					{#if tabPrecisions.length === 0}
+						{store.host.id} has no {tab.label} runs.
+					{:else}
+						No {tab.label} runs at {store.precision}. Try {tabPrecisions.join(", ")}.
+					{/if}
+				</p>
+			{:else}
 			<div class="panels">
 				<!-- Keyed: one Chart per panel, so a panel never inherits another
 				     tab's chart state. -->
@@ -234,6 +240,7 @@ function selectTab(id: string) {
 					</table>
 				</div>
 			</details>
+			{/if}
 		{/if}
 	{/if}
 </main>
