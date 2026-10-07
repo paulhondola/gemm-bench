@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../data/db";
-import { families } from "../derive";
+import { families } from "../model/family";
 import { peak, row } from "../test/fixtures";
 import { engineRows } from "./engines";
 

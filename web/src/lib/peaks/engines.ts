@@ -1,5 +1,6 @@
 import type { Peak, Row } from "../data/db";
-import { type Family, familyOf } from "../derive";
+import { bestBy } from "../model/best";
+import { type Family, familyOf } from "../model/family";
 import { FAMILY_ORDER } from "../palette";
 import { familyPeak } from "./lookup";
 
@@ -37,8 +38,8 @@ function engineLabel(family: Family, peak: Peak | undefined): string {
  * Each engine's theoretical peak beside the fastest result it reached: one
  * row per (device, family, float precision) with a peak or a measurement, in
  * FAMILY_ORDER then precision order. The peak comes from familyPeak, so the
- * table and the charts' dashed ceilings always agree. A strict `>` keeps the
- * first row on a tie, so the result is stable.
+ * table and the charts' dashed ceilings always agree. Ties keep the first row
+ * (bestBy).
  */
 export function engineRows(
 	rows: Row[],
@@ -47,13 +48,11 @@ export function engineRows(
 ): EngineRow[] {
 	const key = (device: string, f: Family, precision: string) =>
 		`${device}\u0000${f}\u0000${precision}`;
-	const best = new Map<string, Row>();
-	for (const r of rows) {
-		if (!FLOATS.includes(String(r.precision))) continue;
-		const k = key(String(r.device), familyOf(r, family), String(r.precision));
-		const current = best.get(k);
-		if (!current || Number(r.gops) > Number(current.gops)) best.set(k, r);
-	}
+	const best = bestBy(
+		rows.filter((r) => FLOATS.includes(String(r.precision))),
+		(r) => key(String(r.device), familyOf(r, family), String(r.precision)),
+		(r) => Number(r.gops),
+	);
 
 	const devices = [
 		...new Set([

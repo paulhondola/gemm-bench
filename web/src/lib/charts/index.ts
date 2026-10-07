@@ -13,14 +13,10 @@ import throughputVsMatrixSizeDoc from "../../docs/charts/throughput-vs-matrix-si
 import throughputVsThreadCountDoc from "../../docs/charts/throughput-vs-thread-count.md?raw";
 import throughputVsTileSizeDoc from "../../docs/charts/throughput-vs-tile-size.md?raw";
 import type { Row } from "../data/db";
-import {
-	defaultParallelKernel,
-	defaultSize,
-	families,
-	pinKnobs,
-	precisions,
-	sizesFor,
-} from "../derive";
+import { defaultParallelKernel, defaultSize } from "../model/defaults";
+import { families } from "../model/family";
+import { pinKnobs } from "../model/knobs";
+import { precisions, sizesFor } from "../model/rows";
 import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
 import { knobSweep } from "./knobs";
 import {

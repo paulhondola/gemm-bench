@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Family } from "./derive";
+import type { Family } from "./model/family";
 import {
 	BASELINE_INK,
 	FAMILY_INK,

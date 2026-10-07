@@ -9,19 +9,16 @@ import {
 } from "./lib/charts/index";
 import { makeCtx } from "./lib/charts/types";
 import type { Row } from "./lib/data/db";
+import { machineLabel } from "./lib/format/machine";
+import { formatParams } from "./lib/format/numbers";
 import {
-	allSizes,
-	kernels,
 	knobLabel,
 	knobNames,
 	knobValues,
 	knobValuesFor,
 	pinKnobs,
-	precisions,
-	sizesFor,
-} from "./lib/derive";
-import { machineLabel } from "./lib/format/machine";
-import { formatParams } from "./lib/format/numbers";
+} from "./lib/model/knobs";
+import { allSizes, kernels, precisions, sizesFor } from "./lib/model/rows";
 import PickerGroup from "./lib/PickerGroup.svelte";
 import { boot, store } from "./lib/state.svelte";
 

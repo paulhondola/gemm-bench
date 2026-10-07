@@ -1,5 +1,6 @@
 import type { Row } from "../data/db";
-import { bestPerFamily, bestPerKernel, type Family, familyOf } from "../derive";
+import { bestPerFamily, bestPerKernel } from "../model/best";
+import { type Family, familyOf } from "../model/family";
 import { FAMILY_INK, REFERENCE_INK } from "../palette";
 import {
 	AXIS,

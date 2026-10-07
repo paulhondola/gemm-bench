@@ -14,9 +14,9 @@ import {
 	defaultParallelKernel,
 	defaultPrecision,
 	defaultSize,
-	partitionPlottable,
-	pinKnobs,
-} from "./derive";
+} from "./model/defaults";
+import { pinKnobs } from "./model/knobs";
+import { partitionPlottable } from "./model/rows";
 import { parsePeaks } from "./peaks/parse";
 
 export const store = $state({

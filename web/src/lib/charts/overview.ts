@@ -1,14 +1,10 @@
 import type { ScatterData } from "plotly.js-dist-min";
 import type { Row } from "../data/db";
-import {
-	BASELINE_KERNEL,
-	bestPerFamily,
-	bestPerKernel,
-	type Family,
-	familyOf,
-	hasKernel,
-} from "../derive";
 import { fmtGops } from "../format/numbers";
+import { bestPerFamily, bestPerKernel } from "../model/best";
+import { BASELINE_KERNEL } from "../model/defaults";
+import { type Family, familyOf } from "../model/family";
+import { hasKernel } from "../model/rows";
 import { BASELINE_INK, FAMILY_INK, FAMILY_ORDER } from "../palette";
 import {
 	AXIS,

@@ -6,9 +6,9 @@ import {
 	defaultParallelKernel,
 	defaultPrecision,
 	defaultSize,
-	partitionPlottable,
-	pinKnobs,
-} from "../derive";
+} from "../model/defaults";
+import { pinKnobs } from "../model/knobs";
+import { partitionPlottable } from "../model/rows";
 import { parsePeaks } from "../peaks/parse";
 import { pointsOf, row } from "../test/fixtures";
 import { type FixtureMeasurement, fixtureDb, SQL } from "../test/testdb";

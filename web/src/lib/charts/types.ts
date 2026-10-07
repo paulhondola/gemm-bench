@@ -6,8 +6,11 @@ import type {
 	Shape,
 } from "plotly.js-dist-min";
 import type { Peak, Row } from "../data/db";
-import { type Family, families, kernels, singleValueKernels } from "../derive";
 import { percentOfPeak } from "../format/numbers";
+import { bestBy } from "../model/best";
+import { type Family, families } from "../model/family";
+import { singleValueKernels } from "../model/knobs";
+import { kernels } from "../model/rows";
 import { FAMILY_INK, paletteFor } from "../palette";
 import { familyPeak } from "../peaks/lookup";
 
@@ -247,8 +250,8 @@ export interface LineOptions {
 
 /**
  * One lines+markers trace per series. Two points at one (series, x), such as
- * repeat runs, keep the higher y: the rule bestPerKernel applies everywhere
- * else. uid and legendgroup follow the series name, because Plotly matches a
+ * repeat runs, keep the higher y: bestBy, the rule every "best per" view
+ * follows. uid and legendgroup follow the series name, because Plotly matches a
  * hidden series across redraws by uid, and a band in the same legend group
  * hides with its line.
  */
@@ -257,12 +260,11 @@ export function lineTraces(
 	o: LineOptions,
 ): Partial<ScatterData>[] {
 	return o.order.map((series): Partial<ScatterData> => {
-		const at = new Map<number, SeriesPoint>();
-		for (const p of points) {
-			if (p.series !== series) continue;
-			const current = at.get(p.x);
-			if (!current || p.y > current.y) at.set(p.x, p);
-		}
+		const at = bestBy(
+			points.filter((p) => p.series === series),
+			(p) => p.x,
+			(p) => p.y,
+		);
 		const xs = o.xs ?? [...at.keys()].sort((a, b) => a - b);
 		const last = xs[xs.length - 1];
 		const color = o.color(series);

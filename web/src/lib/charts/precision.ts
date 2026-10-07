@@ -1,4 +1,5 @@
-import { bestPerFamily, bestPerKernel, familyOf } from "../derive";
+import { bestPerFamily, bestPerKernel } from "../model/best";
+import { familyOf } from "../model/family";
 import { FAMILY_INK, FAMILY_ORDER } from "../palette";
 import { AXIS, BASE_LAYOUT, type ChartSpec, uidOf } from "./types";
 

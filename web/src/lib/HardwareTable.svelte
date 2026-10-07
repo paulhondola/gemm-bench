@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Peak, Row } from "./data/db";
-import type { Family } from "./derive";
 import { fmtGops, percentOfPeak } from "./format/numbers";
+import type { Family } from "./model/family";
 import { engineRows } from "./peaks/engines";
 
 const {

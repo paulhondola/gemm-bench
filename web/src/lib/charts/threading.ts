@@ -1,5 +1,5 @@
 import type { Row } from "../data/db";
-import { hasSingleThreadBaseline } from "../derive";
+import { hasSingleThreadBaseline } from "../model/rows";
 import { REFERENCE_INK, sequentialRamp } from "../palette";
 import {
 	AXIS,

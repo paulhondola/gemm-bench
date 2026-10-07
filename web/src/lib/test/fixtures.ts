@@ -86,3 +86,21 @@ export function plotted(fig: Figure | null): (Point & { series: string })[] {
 			.map((p) => ({ ...p, series })),
 	);
 }
+
+/** Serial, parallel and GPU kernels over two f32 sizes, plus one i64 row. */
+export const mixed: Row[] = [
+	row({ kernel: "ikj", n: 64, gops: 10 }),
+	row({ kernel: "ikj", n: 128, gops: 12 }),
+	row({ kernel: "rayon-ikj", n: 64, gops: 10 }),
+	row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 38 }),
+	row({ kernel: "mps", n: 64, gops: 2, backend: "metal" }),
+	row({ kernel: "ikj", precision: "i64", n: 4096, gops: 6 }),
+];
+
+/** rayon-ikj at 1, 4 and 8 threads beside a serial ikj, all at N = 64. */
+export const threaded: Row[] = [
+	row({ kernel: "rayon-ikj", n: 64, gops: 10 }),
+	row({ kernel: "rayon-ikj", n: 64, threads: 4, gops: 38 }),
+	row({ kernel: "rayon-ikj", n: 64, threads: 8, gops: 31 }),
+	row({ kernel: "ikj", n: 64, gops: 12 }),
+];

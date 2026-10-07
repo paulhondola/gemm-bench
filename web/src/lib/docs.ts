@@ -2,7 +2,7 @@ import gpu from "../docs/kernels/gpu.md?raw";
 import matrix from "../docs/kernels/matrix.md?raw";
 import parallel from "../docs/kernels/parallel.md?raw";
 import serial from "../docs/kernels/serial.md?raw";
-import type { Family } from "./derive";
+import type { Family } from "./model/family";
 
 export interface FamilyDoc {
 	family: Family;
