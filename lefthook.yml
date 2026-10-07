@@ -35,7 +35,7 @@ pre-commit:
 
     peaks-test:
       glob: "data/peaks.csv"
-      run: cd web && bun test src/lib/peaks.test.ts
+      run: cd web && bun test src/lib/peaks/parse.test.ts
 
     host-db-validate:
       glob: "data/db/*/*.sqlite"

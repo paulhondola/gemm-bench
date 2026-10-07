@@ -17,7 +17,7 @@ import {
 	partitionPlottable,
 	pinKnobs,
 } from "./derive";
-import { parsePeaks } from "./peaks";
+import { parsePeaks } from "./peaks/parse";
 
 export const store = $state({
 	rows: [] as Row[],

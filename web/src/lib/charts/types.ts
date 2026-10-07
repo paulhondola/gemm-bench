@@ -6,14 +6,9 @@ import type {
 	Shape,
 } from "plotly.js-dist-min";
 import type { Peak, Row } from "../data/db";
-import {
-	type Family,
-	families,
-	familyPeak,
-	kernels,
-	singleValueKernels,
-} from "../derive";
+import { type Family, families, kernels, singleValueKernels } from "../derive";
 import { FAMILY_INK, paletteFor } from "../palette";
+import { familyPeak } from "../peaks/lookup";
 
 /** Every chart draws scatter lines or bars. */
 export type Trace = Partial<ScatterData> | Partial<BarData>;

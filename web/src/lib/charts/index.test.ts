@@ -9,7 +9,7 @@ import {
 	partitionPlottable,
 	pinKnobs,
 } from "../derive";
-import { parsePeaks } from "../peaks";
+import { parsePeaks } from "../peaks/parse";
 import { pointsOf, row } from "../test/fixtures";
 import { type FixtureMeasurement, fixtureDb, SQL } from "../test/testdb";
 import { gpuKernels } from "./gpu";

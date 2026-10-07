@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { percentOfPeak } from "./charts/types";
-import type { Row } from "./data/db";
-import { families } from "./derive";
-import { engineRows } from "./hardware";
-import { peak, row } from "./test/fixtures";
+import { percentOfPeak } from "../charts/types";
+import type { Row } from "../data/db";
+import { families } from "../derive";
+import { peak, row } from "../test/fixtures";
+import { engineRows } from "./engines";
 
 const PEAKS = [
 	peak({ cores: 1, gflops: 100 }),

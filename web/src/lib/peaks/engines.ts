@@ -1,6 +1,7 @@
-import type { Peak, Row } from "./data/db";
-import { type Family, familyOf, familyPeak } from "./derive";
-import { FAMILY_ORDER } from "./palette";
+import type { Peak, Row } from "../data/db";
+import { type Family, familyOf } from "../derive";
+import { FAMILY_ORDER } from "../palette";
+import { familyPeak } from "./lookup";
 
 /** Peaks exist only for the float precisions, so the table covers only them. */
 const FLOATS = ["f16", "f32", "f64"];

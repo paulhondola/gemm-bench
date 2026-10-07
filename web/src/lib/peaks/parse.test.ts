@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import peaksCsv from "../../../data/peaks.csv?raw";
-import { openDb, type Peak, readRows } from "./data/db";
-import { PEAKS_HEADER, parseCsv, parsePeaks } from "./peaks";
-import { SQL } from "./test/testdb";
+import peaksCsv from "../../../../data/peaks.csv?raw";
+import { openDb, type Peak, readRows } from "../data/db";
+import { SQL } from "../test/testdb";
+import { PEAKS_HEADER, parseCsv, parsePeaks } from "./parse";
 
 test("parseCsv keeps quoted commas and doubled quotes inside one field", () => {
 	expect(parseCsv('a,"b, ""c""",d\n')).toEqual([["a", 'b, "c"', "d"]]);
@@ -163,7 +163,7 @@ function unmatched(peaks: Peak[], seen: Set<string>): string[] {
 
 test("every ceiling matches a host's device, backend and precision", async () => {
 	// A typo in any of the three would silently draw no ceiling.
-	const repo = new URL("../../../", import.meta.url).pathname;
+	const repo = new URL("../../../../", import.meta.url).pathname;
 	const seen = new Set<string>();
 	for await (const path of new Bun.Glob("data/db/*/*.sqlite").scan({
 		cwd: repo,
