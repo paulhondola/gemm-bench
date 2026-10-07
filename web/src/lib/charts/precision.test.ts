@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ScatterData } from "plotly.js-dist-min";
 import type { Row } from "../db";
-import { legendOf, plotted, pointsOf, row } from "../fixtures";
+import { legendOf, plotted, pointsOf, row } from "../test/fixtures";
 import { accuracyVsThroughput, throughputByPrecision } from "./precision";
 import { type Filters, makeCtx, uidOf } from "./types";
 

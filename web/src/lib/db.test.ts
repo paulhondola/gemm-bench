@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { openDb, readMachine, readRows } from "./db";
-import { fixtureDb, SQL } from "./testdb";
+import { fixtureDb, SQL } from "./test/testdb";
 
 const PACKED_256: [string, number, "swept" | "derived" | "fixed"][] = [
 	["depth_block", 256, "swept"],

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { legendOf, peak, pointsOf, row } from "../fixtures";
+import { legendOf, peak, pointsOf, row } from "../test/fixtures";
 import {
 	type Ceiling,
 	ceilingOf,

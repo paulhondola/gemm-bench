@@ -24,7 +24,7 @@ import {
 	singleValueKernels,
 	sizesFor,
 } from "./derive";
-import { peak, row } from "./fixtures";
+import { peak, row } from "./test/fixtures";
 
 const rows: Row[] = [
 	row({ kernel: "ikj", n: 64, gops: 10 }),

@@ -9,9 +9,9 @@ import {
 	partitionPlottable,
 	pinKnobs,
 } from "../derive";
-import { pointsOf, row } from "../fixtures";
 import { parsePeaks } from "../peaks";
-import { type FixtureMeasurement, fixtureDb, SQL } from "../testdb";
+import { pointsOf, row } from "../test/fixtures";
+import { type FixtureMeasurement, fixtureDb, SQL } from "../test/testdb";
 import { gpuKernels } from "./gpu";
 import { precisionsForTab, rowsForTab, TABS } from "./index";
 import { type Ctx, type Filters, makeCtx } from "./types";

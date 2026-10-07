@@ -1,5 +1,5 @@
 import initSqlJs from "sql.js";
-import schema from "../../../data/schema.sql?raw";
+import schema from "../../../../data/schema.sql?raw";
 
 /** sql.js under Bun: the same engine the dashboard runs in the browser. */
 export const SQL = await initSqlJs();

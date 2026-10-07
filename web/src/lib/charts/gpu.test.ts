@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { legendOf, peak, plotted, pointsOf, row } from "../fixtures";
+import { legendOf, peak, plotted, pointsOf, row } from "../test/fixtures";
 import { gpuCopyOverhead, gpuEqualEffort, gpuKernels } from "./gpu";
 import { type Filters, makeCtx } from "./types";
 

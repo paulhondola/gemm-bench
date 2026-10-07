@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { legendOf, peak, plotted, pointsOf, row } from "../fixtures";
 import { BASELINE_INK, FAMILY_INK } from "../palette";
+import { legendOf, peak, plotted, pointsOf, row } from "../test/fixtures";
 import {
 	canShowSpeedup,
 	fastestPerSize,

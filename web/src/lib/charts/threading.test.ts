@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../db";
-import { legendOf, plotted, row } from "../fixtures";
+import { legendOf, plotted, row } from "../test/fixtures";
 import {
 	canShowScaling,
 	parallelEfficiency,
