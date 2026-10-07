@@ -6,7 +6,10 @@ import {
 	type Row,
 	readMachine,
 	readRows,
-} from "./db";
+} from "./data/db";
+import { HOSTS } from "./data/hostlist";
+import { type Host, pickHost } from "./data/hosts";
+import { loadSql } from "./data/sqlite";
 import {
 	defaultParallelKernel,
 	defaultPrecision,
@@ -14,10 +17,7 @@ import {
 	partitionPlottable,
 	pinKnobs,
 } from "./derive";
-import { HOSTS } from "./hostlist";
-import { type Host, pickHost } from "./hosts";
 import { parsePeaks } from "./peaks";
-import { loadSql } from "./sqlite";
 
 export const store = $state({
 	rows: [] as Row[],

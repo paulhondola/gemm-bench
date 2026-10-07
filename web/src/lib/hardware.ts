@@ -1,4 +1,4 @@
-import type { Peak, Row } from "./db";
+import type { Peak, Row } from "./data/db";
 import { type Family, familyOf, familyPeak } from "./derive";
 import { FAMILY_ORDER } from "./palette";
 

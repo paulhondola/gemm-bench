@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Machine } from "./db";
+import type { Machine } from "./data/db";
 import { cacheLabel } from "./machine";
 
 const { machine }: { machine: Machine } = $props();

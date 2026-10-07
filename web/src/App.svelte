@@ -8,7 +8,7 @@ import {
 	TABS,
 } from "./lib/charts/index";
 import { makeCtx } from "./lib/charts/types";
-import type { Row } from "./lib/db";
+import type { Row } from "./lib/data/db";
 import {
 	allSizes,
 	formatParams,

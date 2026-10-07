@@ -1,4 +1,4 @@
-import type { Cache, CoreTier, Machine } from "./db";
+import type { Cache, CoreTier, Machine } from "./data/db";
 
 /** "8P + 2E": each tier's cores, tagged with the initial of the OS's name for it. */
 export function tierSummary(tiers: CoreTier[]): string {

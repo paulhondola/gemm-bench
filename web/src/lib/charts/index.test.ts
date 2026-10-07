@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import peaksCsv from "../../../../data/peaks.csv?raw";
-import { openDb, type Row, readMachine, readRows } from "../db";
+import { openDb, type Row, readMachine, readRows } from "../data/db";
 import {
 	defaultParallelKernel,
 	defaultPrecision,

@@ -1,4 +1,4 @@
-import type { Peak } from "./db";
+import type { Peak } from "./data/db";
 
 /** data/peaks.csv's header, exactly. */
 export const PEAKS_HEADER = [

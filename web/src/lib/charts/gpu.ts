@@ -1,4 +1,4 @@
-import type { Row } from "../db";
+import type { Row } from "../data/db";
 import { bestPerFamily, bestPerKernel, type Family, familyOf } from "../derive";
 import { FAMILY_INK, REFERENCE_INK } from "../palette";
 import {

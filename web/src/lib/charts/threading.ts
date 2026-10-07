@@ -1,4 +1,4 @@
-import type { Row } from "../db";
+import type { Row } from "../data/db";
 import { hasSingleThreadBaseline } from "../derive";
 import { REFERENCE_INK, sequentialRamp } from "../palette";
 import {

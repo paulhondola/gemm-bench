@@ -12,7 +12,7 @@ import throughputVsDepthBlockDoc from "../../docs/charts/throughput-vs-depth-blo
 import throughputVsMatrixSizeDoc from "../../docs/charts/throughput-vs-matrix-size.md?raw";
 import throughputVsThreadCountDoc from "../../docs/charts/throughput-vs-thread-count.md?raw";
 import throughputVsTileSizeDoc from "../../docs/charts/throughput-vs-tile-size.md?raw";
-import type { Row } from "../db";
+import type { Row } from "../data/db";
 import {
 	defaultParallelKernel,
 	defaultSize,

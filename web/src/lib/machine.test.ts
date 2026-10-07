@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Machine } from "./db";
+import type { Machine } from "./data/db";
 import { cacheLabel, formatBytes, machineLabel, tierSummary } from "./machine";
 
 const m1Pro: Machine = {

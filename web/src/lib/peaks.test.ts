@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import peaksCsv from "../../../data/peaks.csv?raw";
-import { openDb, type Peak, readRows } from "./db";
+import { openDb, type Peak, readRows } from "./data/db";
 import { PEAKS_HEADER, parseCsv, parsePeaks } from "./peaks";
 import { SQL } from "./test/testdb";
 

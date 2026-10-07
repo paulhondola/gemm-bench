@@ -5,7 +5,7 @@ import type {
 	ScatterData,
 	Shape,
 } from "plotly.js-dist-min";
-import type { Peak, Row } from "../db";
+import type { Peak, Row } from "../data/db";
 import {
 	type Family,
 	families,

@@ -1,5 +1,5 @@
 import type { ScatterData } from "plotly.js-dist-min";
-import type { Row } from "../db";
+import type { Row } from "../data/db";
 import {
 	BASELINE_KERNEL,
 	bestPerFamily,

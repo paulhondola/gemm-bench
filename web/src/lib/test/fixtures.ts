@@ -1,6 +1,6 @@
 import type { Datum } from "plotly.js-dist-min";
 import type { Figure } from "../charts/types";
-import type { Peak, Row } from "../db";
+import type { Peak, Row } from "../data/db";
 
 /**
  * A test row: a single-threaded f32 CPU result on the M1 Pro unless the

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { percentOfPeak } from "./charts/types";
-import type { Row } from "./db";
+import type { Row } from "./data/db";
 import { families } from "./derive";
 import { engineRows } from "./hardware";
 import { peak, row } from "./test/fixtures";

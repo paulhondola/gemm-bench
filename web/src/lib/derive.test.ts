@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Row } from "./db";
+import type { Row } from "./data/db";
 import {
 	allSizes,
 	BASELINE_KERNEL,

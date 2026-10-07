@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Row } from "../db";
+import type { Row } from "../data/db";
 import { legendOf, plotted, pointsOf, row } from "../test/fixtures";
 import { knobSweep } from "./knobs";
 import { type Filters, makeCtx } from "./types";

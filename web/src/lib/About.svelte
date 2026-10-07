@@ -1,7 +1,7 @@
 <script lang="ts">
 import about from "../docs/about.md?raw";
 import hardware from "../docs/hardware.md?raw";
-import type { Machine, Peak, Row } from "./db";
+import type { Machine, Peak, Row } from "./data/db";
 import type { Family } from "./derive";
 import { KERNEL_DOCS } from "./docs";
 import HardwareTable from "./HardwareTable.svelte";

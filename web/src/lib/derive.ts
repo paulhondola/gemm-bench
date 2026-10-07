@@ -1,4 +1,4 @@
-import type { Peak, Row } from "./db";
+import type { Peak, Row } from "./data/db";
 
 /** Every precision present in the rows, once each, sorted. */
 export function precisions(rows: Row[]): string[] {
