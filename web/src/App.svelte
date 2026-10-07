@@ -45,7 +45,24 @@ const columns = $derived(
 	scoped.length ? (Object.keys(scoped[0]) as (keyof Row)[]) : [],
 );
 // Precision is the x-axis of an inertPrecision tab, so it always charts.
-const tabPrecisions = $derived(precisionsForTab(tab, store.rows, filters, ctx));
+// Read without `relative`: the projection never decides whether a panel
+// exists, so the toggle shouldn't rebuild every precision's panels.
+const tabPrecisions = $derived(
+	about
+		? []
+		: precisionsForTab(
+				tab,
+				store.rows,
+				{
+					precision: store.precision,
+					n: store.n,
+					kernel: store.kernel,
+					knobs: store.knobs,
+					relative: false,
+				},
+				ctx,
+			),
+);
 const charted = $derived(
 	Boolean(tab.inertPrecision) || tabPrecisions.includes(store.precision),
 );
@@ -151,9 +168,14 @@ function selectTab(id: string) {
 						label="Precision"
 						items={precisions(store.rows)}
 						selected={store.precision}
-						disabled={() => Boolean(tab.inertPrecision)}
-						title={() =>
-							tab.inertPrecision ? "Precision is this chart's x-axis" : ""}
+						disabled={(p) =>
+							Boolean(tab.inertPrecision) || !tabPrecisions.includes(p)}
+						title={(p) =>
+							tab.inertPrecision
+								? "Precision is this chart's x-axis"
+								: tabPrecisions.includes(p)
+									? ""
+									: `no ${tab.label} runs at ${p}`}
 						onSelect={pickPrecision} />
 				{/if}
 
