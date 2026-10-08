@@ -134,7 +134,8 @@ pub(crate) trait GpuDispatch<T: Element> {
 
 /// Per-repetition timings of a Metal kernel.
 pub struct GpuSamples {
-    /// `commit` → `waitUntilCompleted`: GPU execution only.
+    /// The command buffer's `GPUStartTime` → `GPUEndTime`: GPU execution
+    /// only, without the submission and wake-up latency around it.
     pub gpu: Vec<Duration>,
     /// Upload, encode, commit, wait and download: what a caller pays.
     pub e2e: Vec<Duration>,
@@ -144,8 +145,8 @@ pub struct GpuSamples {
 
 /// Runs one untimed warm-up iteration, then `repetitions` timed ones, and
 /// leaves the last result in `output`. Every iteration does the full
-/// upload → encode → commit → wait → download round trip; the GPU-only window
-/// sits inside the end-to-end one.
+/// upload → encode → commit → wait → download round trip; the GPU's own
+/// execution time sits inside the end-to-end one.
 pub(crate) fn time_dispatch<T: Element>(
     kernel: &impl GpuDispatch<T>,
     lhs: &Matrix<T>,
@@ -172,10 +173,8 @@ pub(crate) fn time_dispatch<T: Element>(
                 .commandBuffer()
                 .ok_or("failed to create a Metal command buffer")?;
             kernel.encode(&cmd_buf, &operands)?;
-            let gpu_start = Instant::now();
             cmd_buf.commit();
             cmd_buf.waitUntilCompleted();
-            let gpu = gpu_start.elapsed();
             if cmd_buf.status() == MTLCommandBufferStatus::Error {
                 let reason = cmd_buf.error().map_or_else(
                     || "no error detail".to_owned(),
@@ -183,6 +182,11 @@ pub(crate) fn time_dispatch<T: Element>(
                 );
                 return Err(format!("Metal command buffer failed: {reason}"));
             }
+            // The GPU's own clock, in seconds: execution alone. A CPU clock
+            // around commit/wait would add ~0.2 ms of submission and wake-up
+            // latency, most of the window at small n.
+            let gpu =
+                Duration::from_secs_f64((cmd_buf.GPUEndTime() - cmd_buf.GPUStartTime()).max(0.0));
             operands.download(output);
             let e2e = start.elapsed();
             if iteration > 0 {

@@ -1,11 +1,9 @@
-use std::sync::Mutex;
-
 use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 
 use crate::kernels::{GemmKernel, Param, assert_gemm_dimensions, ikj_rows};
 use crate::{Element, Matrix};
 
-use super::static_row_counts;
+use super::row_chunks;
 
 /// Fixed, contiguous row chunks on a persistent thread pool.
 ///
@@ -36,20 +34,7 @@ impl<T: Element> GemmKernel<T> for StaticIkjGemm {
         );
         output.as_mut_slice().fill(T::default());
 
-        // Split the output into one disjoint chunk per worker up front. Each
-        // mutex is locked by exactly one worker, once per call, so it only
-        // hands the `&mut` chunk across threads and never contends.
-        let mut remaining = output.as_mut_slice();
-        let mut first_row = 0;
-        let chunks: Vec<Mutex<(usize, &mut [T])>> = static_row_counts(n, threads)
-            .map(|rows| {
-                let (chunk, rest) = std::mem::take(&mut remaining).split_at_mut(rows * n);
-                remaining = rest;
-                let chunk_first_row = first_row;
-                first_row += rows;
-                Mutex::new((chunk_first_row, chunk))
-            })
-            .collect();
+        let chunks = row_chunks(output.as_mut_slice(), n, threads);
 
         let (lhs_data, rhs_data) = (lhs.as_slice(), rhs.as_slice());
         self.pool.broadcast(|context| {

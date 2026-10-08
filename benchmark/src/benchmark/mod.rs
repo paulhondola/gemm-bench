@@ -71,6 +71,9 @@ fn run_precision<T: Element>(
                     thread_count,
                     kernel.knob().zip(knob),
                 );
+                // A kernel that wrote nothing must not pass on the previous
+                // kernel's output.
+                output.as_mut_slice().fill(T::default());
                 let samples = measure(
                     kernel,
                     thread_count,
@@ -83,7 +86,11 @@ fn run_precision<T: Element>(
                 progress.step();
 
                 // Checked after timing, against the last timed run's output.
-                let error = max_relative_error(&output, &reference);
+                // Within tolerance of either the ikj reference or the f64
+                // truth: past n ~ 13k the f16 reference itself drifts further
+                // than the sqrt(n) slack, failing kernels more accurate than it.
+                let error = max_relative_error(&output, &reference)
+                    .min(max_relative_error(&output, &truth));
                 if error > tolerance {
                     let knob_text = kernel
                         .knob()

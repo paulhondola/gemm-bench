@@ -26,7 +26,7 @@ pub(super) fn check_stamps(db: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn check_integrity(db: &Connection) -> Result<(), String> {
+pub(crate) fn check_integrity(db: &Connection) -> Result<(), String> {
     let status: String = db
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))
         .map_err(sql)?;
@@ -47,7 +47,7 @@ pub(super) fn check_integrity(db: &Connection) -> Result<(), String> {
 
 /// The stored DDL must be byte-identical to data/schema.sql's: a file with a
 /// CHECK stripped, or with an extra table, view or trigger, fails here.
-pub(super) fn check_schema(db: &Connection) -> Result<(), String> {
+pub(crate) fn check_schema(db: &Connection) -> Result<(), String> {
     let reference = Connection::open_in_memory().map_err(sql)?;
     reference.execute_batch(db::SCHEMA).map_err(sql)?;
     let objects = |db: &Connection| -> rusqlite::Result<Vec<(String, String, Option<String>)>> {
