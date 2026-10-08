@@ -1,6 +1,7 @@
 /target
 /.host
 /.mcp.json
+.archify/
 
 # SQLite's journals: only the .sqlite file is committed
 *.sqlite-journal
