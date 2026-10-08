@@ -209,3 +209,33 @@ fn a_write_protected_db_is_refused_before_running() {
     let error = open_for_run(&path, "2026-10-02T11:00:00Z").expect_err("a read-only DB");
     assert!(error.contains("read-only"), "{error}");
 }
+
+/// validate would reject the file, so no run may be added to it.
+#[test]
+fn a_db_whose_schema_differs_is_refused_before_running() {
+    let path = temp_db("altered");
+    drop(open_for_run(&path, "2026-10-02T10:00:00Z").expect("open"));
+    Connection::open(&path)
+        .expect("reopen")
+        .execute_batch("CREATE TABLE extra (x)")
+        .expect("alter");
+    let error = open_for_run(&path, "2026-10-02T11:00:00Z").expect_err("an altered schema");
+    assert!(error.contains("fails validation"), "{error}");
+}
+
+/// A writable file in a read-only directory can't create its journal, so
+/// the run would only fail once the sweep was over.
+#[cfg(unix)]
+#[test]
+fn a_db_in_a_write_protected_directory_is_refused_before_running() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = temp_db("read-only-dir");
+    drop(open_for_run(&path, "2026-10-02T10:00:00Z").expect("open"));
+    let dir = path.parent().expect("parent");
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o555)).expect("chmod");
+    let result = open_for_run(&path, "2026-10-02T11:00:00Z");
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).expect("restore");
+    let error = result.expect_err("a read-only directory");
+    assert!(error.contains("cannot write"), "{error}");
+}

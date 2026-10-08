@@ -28,6 +28,11 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: web
 
+      # Deploy doesn't wait for CI: a bad peaks.csv or view must not ship.
+      - name: Test Web App
+        run: bun test
+        working-directory: web
+
       - name: Build Web App
         run: bun run build
         working-directory: web

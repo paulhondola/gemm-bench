@@ -22,6 +22,8 @@ pub(crate) struct BenchmarkPlan {
     /// Opened and checked before any kernel runs; the run is written into it.
     pub(crate) db: Connection,
     pub(crate) output_path: PathBuf,
+    /// `db` is a file this run created, removed again if the run fails.
+    pub(crate) created_db: bool,
     pub(crate) no_progress: bool,
     /// One line per group of skipped cells, printed before the run.
     pub(crate) skipped: Vec<String>,

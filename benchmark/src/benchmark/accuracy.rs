@@ -12,7 +12,10 @@ pub(crate) fn benchmark_inputs<T: Element>(n: usize) -> (Matrix<T>, Matrix<T>) {
 
 /// Largest element-wise `|output - reference| / |reference|`. A NaN anywhere
 /// counts as an infinite error so it can never pass a tolerance check.
-pub(crate) fn max_relative_error<T: Element>(output: &Matrix<T>, reference: &Matrix<T>) -> f64 {
+pub(crate) fn max_relative_error<T: Element, U: Element>(
+    output: &Matrix<T>,
+    reference: &Matrix<U>,
+) -> f64 {
     output
         .as_slice()
         .iter()

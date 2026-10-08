@@ -53,6 +53,8 @@ export interface Tab {
 	 * is never a reason to set this flag.
 	 */
 	inertKnobs?: boolean;
+	/** A panel reads `relative`, so the tab shows the Relative toggle. */
+	relative?: boolean;
 }
 
 export const TABS: Tab[] = [
@@ -86,6 +88,7 @@ export const TABS: Tab[] = [
 		id: "cpu",
 		label: "CPU & matrix",
 		controls: ["precision", "knobs"],
+		relative: true,
 		panels: [
 			{
 				title: "Throughput vs matrix size",
@@ -105,6 +108,7 @@ export const TABS: Tab[] = [
 		id: "threads",
 		label: "CPU threading",
 		controls: ["precision", "n", "kernel", "knobs"],
+		relative: true,
 		panels: [
 			{
 				title: "Throughput vs thread count",
@@ -161,7 +165,7 @@ export const TABS: Tab[] = [
 			},
 			{
 				title: "Copy overhead",
-				note: "Share of end-to-end GPU time spent copying and encoding · copies grow as N², arithmetic as N³",
+				note: "Share of end-to-end GPU time spent copying, encoding and dispatching · copies grow as N², arithmetic as N³",
 				doc: copyOverheadDoc,
 				spec: gpuCopyOverhead,
 			},

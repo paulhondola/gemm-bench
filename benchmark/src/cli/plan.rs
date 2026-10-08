@@ -107,6 +107,7 @@ impl Cli {
             }
             None => host::db_path(&host::read_host_file(Path::new(host::HOST_FILE))?),
         };
+        let created_db = !output_path.exists();
         let db = db::open_for_run(&output_path, &context.timestamp)?;
 
         Ok(BenchmarkPlan {
@@ -121,6 +122,7 @@ impl Cli {
             machine,
             db,
             output_path,
+            created_db,
             no_progress: self.no_progress,
             skipped,
         })

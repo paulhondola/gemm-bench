@@ -7,7 +7,7 @@ import {
 	defaultPrecision,
 	defaultSize,
 } from "../model/defaults";
-import { families } from "../model/family";
+import { type Family, families } from "../model/family";
 import { pinKnobs } from "../model/knobs";
 import { precisions, sizesFor } from "../model/rows";
 
@@ -29,9 +29,13 @@ export function initialFilters(rows: Row[]): Filters {
  * defaults. The precision pills and precisionsForTab both go through this, so
  * a pill is enabled iff clicking it renders a chart.
  */
-export function atPrecision(rows: Row[], f: Filters, p: string): Filters {
+export function atPrecision(
+	rows: Row[],
+	f: Filters,
+	p: string,
+	family: Map<string, Family> = families(rows),
+): Filters {
 	const n = sizesFor(rows, p).includes(f.n) ? f.n : defaultSize(rows, p);
-	const family = families(rows);
 	const kernelStillValid = rows.some(
 		(r) =>
 			r.precision === p &&
@@ -43,7 +47,9 @@ export function atPrecision(rows: Row[], f: Filters, p: string): Filters {
 		precision: p,
 		n,
 		knobs: pinKnobs(rows, p, n, f.knobs),
-		kernel: kernelStillValid ? f.kernel : defaultParallelKernel(rows, p),
+		kernel: kernelStillValid
+			? f.kernel
+			: defaultParallelKernel(rows, p, family),
 	};
 }
 
@@ -59,7 +65,7 @@ export function precisionsForTab(
 	ctx: Ctx,
 ): string[] {
 	return precisions(rows).filter((p) => {
-		const at = atPrecision(rows, f, p);
+		const at = atPrecision(rows, f, p, ctx.family);
 		const scoped = rowsForTab(tab, rows, p, at.knobs, ctx);
 		return tab.panels.some((panel) => panel.spec(scoped, at, ctx) !== null);
 	});

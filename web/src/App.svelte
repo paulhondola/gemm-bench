@@ -30,7 +30,7 @@ const scoped = $derived(
 // Read without `relative`: the projection never decides whether a panel
 // exists, so the toggle shouldn't rebuild every precision's panels.
 const tabPrecisions = $derived(
-	about
+	about || tab.inertPrecision
 		? []
 		: precisionsForTab(
 				tab,
@@ -105,10 +105,12 @@ function selectTab(id: string) {
 
 			{#if !charted}
 				<p class="muted">
-					{#if tabPrecisions.length === 0}
-						{store.host.id} has no {tab.label} runs.
+					{#if tabPrecisions.length > 0}
+						No {tab.label} runs to chart at {store.precision}. Try {tabPrecisions.join(", ")}.
+					{:else if scoped.length > 0}
+						{store.host.id}'s {tab.label} runs cover too few sizes or thread counts to chart; the data view lists them.
 					{:else}
-						No {tab.label} runs at {store.precision}. Try {tabPrecisions.join(", ")}.
+						{store.host.id} has no {tab.label} runs.
 					{/if}
 				</p>
 			{:else}
@@ -123,9 +125,9 @@ function selectTab(id: string) {
 						spec={panel.spec(scoped, filters, ctx)} />
 				{/each}
 			</div>
+			{/if}
 
 			<DataTable rows={scoped} />
-			{/if}
 		{/if}
 	{/if}
 </main>

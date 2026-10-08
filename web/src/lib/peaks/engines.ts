@@ -54,12 +54,8 @@ export function engineRows(
 		(r) => Number(r.gops),
 	);
 
-	const devices = [
-		...new Set([
-			...rows.map((r) => String(r.device)),
-			...peaks.map((p) => p.device),
-		]),
-	].sort();
+	// The host's own devices only: peaks.csv covers every contributor's hardware.
+	const devices = [...new Set(rows.map((r) => String(r.device)))].sort();
 	return devices.flatMap((device) => {
 		const gpuCores =
 			rows.find((r) => r.device === device && r.gpu_cores !== null)

@@ -13,7 +13,7 @@
 
 mod file;
 mod rules;
-mod schema;
+pub(crate) mod schema;
 
 #[cfg(test)]
 mod tests;

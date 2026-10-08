@@ -13,8 +13,8 @@ pub(crate) struct BenchmarkRecord {
     pub(crate) median_ms: f64,
     pub(crate) min_ms: f64,
     pub(crate) stddev_ms: f64,
-    /// Median GPU execution (`commit` → `waitUntilCompleted`) inside the
-    /// round trip that `median_ms` times. `None` off Metal.
+    /// Median GPU execution (the command buffer's `GPUStartTime` →
+    /// `GPUEndTime`) inside the round trip that `median_ms` times. `None` off Metal.
     pub(crate) gpu_ms: Option<f64>,
     /// One-time cost of building the kernel for this configuration, one sample.
     pub(crate) setup_ms: f64,

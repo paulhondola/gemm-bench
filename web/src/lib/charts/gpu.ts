@@ -290,9 +290,10 @@ export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
 };
 
 /**
- * The share of end-to-end time spent outside the GPU dispatch: copying the
- * inputs in, encoding, and copying the result out. Copies grow as N² and
- * arithmetic as N³, so the share falls at large sizes.
+ * The share of end-to-end time spent outside the GPU's own execution:
+ * copying the inputs in, encoding, dispatch latency, and copying the result
+ * out. Copies grow as N² and arithmetic as N³, so the share falls at large
+ * sizes.
  */
 export const gpuCopyOverhead: ChartSpec = (rows, _f, ctx) => {
 	// The same best-per-(kernel, n) rows the kernel chart plots. Only Metal

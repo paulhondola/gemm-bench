@@ -148,7 +148,7 @@ fn metal_kernels_time_the_round_trip_the_gpu_window_and_setup() {
         measure(KernelChoice::Mps, 1, None, 2, &lhs, &rhs, &mut output).expect("mps should run");
     let gpu = samples.gpu.expect("a Metal kernel records its GPU window");
     assert_eq!((samples.timed.len(), gpu.len()), (2, 2));
-    // `timed` is the round trip, and the GPU window sits inside it.
+    // `timed` is the round trip, and the GPU's execution sits inside it.
     assert!(gpu.iter().zip(&samples.timed).all(|(gpu, e2e)| gpu <= e2e));
     assert!(samples.setup > Duration::ZERO);
 }

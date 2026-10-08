@@ -1,5 +1,5 @@
 import type { Row } from "../data/db";
-import { families } from "./family";
+import { type Family, families } from "./family";
 import { precisions, sizesFor } from "./rows";
 
 /**
@@ -31,8 +31,11 @@ export function defaultSize(rows: Row[], precision: string): number {
 export const BASELINE_KERNEL = "naive-ijk";
 
 /** The parallel kernel with the highest gops at this precision — T2's default pin. */
-export function defaultParallelKernel(rows: Row[], precision: string): string {
-	const family = families(rows);
+export function defaultParallelKernel(
+	rows: Row[],
+	precision: string,
+	family: Map<string, Family> = families(rows),
+): string {
 	const candidates = rows.filter(
 		(r) =>
 			r.precision === precision && family.get(String(r.kernel)) === "parallel",

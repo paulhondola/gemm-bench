@@ -30,7 +30,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for notice in &plan.skipped {
         eprintln!("{notice}");
     }
-    let records = benchmark::run(&plan)?;
+    let records = match benchmark::run(&plan) {
+        Ok(records) => records,
+        Err(error) => {
+            // A file holding no runs fails validate: leave none behind.
+            if plan.created_db {
+                drop(plan.db);
+                let _ = std::fs::remove_file(&plan.output_path);
+            }
+            return Err(error);
+        }
+    };
 
     report::print_results_table(&records);
     db::write_run(

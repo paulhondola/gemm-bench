@@ -1,11 +1,9 @@
-use std::sync::Mutex;
-
 use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 
 use crate::kernels::{GemmKernel, Param, assert_gemm_dimensions};
 use crate::{Element, Matrix};
 
-use super::static_row_counts;
+use super::row_chunks;
 
 /// Fixed row chunks on a persistent thread pool executing 2D cache-blocked GEMM.
 pub struct StaticTiledGemm {
@@ -33,17 +31,7 @@ impl<T: Element> GemmKernel<T> for StaticTiledGemm {
         );
         output.as_mut_slice().fill(T::default());
 
-        let mut remaining = output.as_mut_slice();
-        let mut first_row = 0;
-        let chunks: Vec<Mutex<(usize, &mut [T])>> = static_row_counts(n, threads)
-            .map(|rows| {
-                let (chunk, rest) = std::mem::take(&mut remaining).split_at_mut(rows * n);
-                remaining = rest;
-                let chunk_first_row = first_row;
-                first_row += rows;
-                Mutex::new((chunk_first_row, chunk))
-            })
-            .collect();
+        let chunks = row_chunks(output.as_mut_slice(), n, threads);
 
         let block_size = self.block_size;
         let (lhs_data, rhs_data) = (lhs.as_slice(), rhs.as_slice());

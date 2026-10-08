@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import peaksCsv from "../../../../data/peaks.csv?raw";
-import { openDb, type Peak, readRows } from "../data/db";
+import { openDb, type Peak, type Row, readRows } from "../data/db";
 import { SQL } from "../test/testdb";
 import { PEAKS_HEADER, parseCsv, parsePeaks } from "./parse";
 
@@ -151,18 +151,26 @@ test("parsePeaks types every row", () => {
 	);
 });
 
-const hostKey = (r: { device: string; backend: string; precision: string }) =>
-	`${r.device}\u0000${r.backend}\u0000${r.precision}`;
+// A GPU ceiling must also match a run's GPU core count (familyPeak).
+const key = (
+	device: string,
+	backend: string,
+	precision: string,
+	gpuCores: number | null,
+) =>
+	`${device}\u0000${backend}\u0000${precision}\u0000${backend === "metal" ? gpuCores : ""}`;
+const hostKey = (r: Row) => key(r.device, r.backend, r.precision, r.gpu_cores);
+const peakKey = (p: Peak) => key(p.device, p.backend, p.precision, p.cores);
 
 /** The ceilings no host row matches, named by device/backend/precision/cores. */
 function unmatched(peaks: Peak[], seen: Set<string>): string[] {
 	return peaks
-		.filter((p) => !seen.has(hostKey(p)))
+		.filter((p) => !seen.has(peakKey(p)))
 		.map((p) => `${p.device}/${p.backend}/${p.precision}/${p.cores}`);
 }
 
 test("every ceiling matches a host's device, backend and precision", async () => {
-	// A typo in any of the three would silently draw no ceiling.
+	// A typo in any of the three (or a GPU's core count) would silently draw no ceiling.
 	const repo = new URL("../../../../", import.meta.url).pathname;
 	const seen = new Set<string>();
 	for await (const path of new Bun.Glob("data/db/*/*.sqlite").scan({
@@ -188,7 +196,7 @@ test("a ceiling whose device, backend or precision no host row has goes unmatche
 		source: "a cited source",
 		...over,
 	});
-	const seen = new Set([hostKey(peak({}))]);
+	const seen = new Set([peakKey(peak({}))]);
 	expect(unmatched([peak({})], seen)).toEqual([]);
 	for (const typo of [
 		{ device: "Test CPU " },

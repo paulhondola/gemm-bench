@@ -71,6 +71,13 @@ test("a device without peaks still gets its measured rows", () => {
 	expect(other[0].best?.gops).toBe(9);
 });
 
+test("another host's device gets no rows from its peaks alone", () => {
+	const rows = [row({ device: "Other CPU", kernel: "ikj", n: 512, gops: 9 })];
+	expect(new Set(rowsFor(rows).map((e) => e.device))).toEqual(
+		new Set(["Other CPU"]),
+	);
+});
+
 test("integer precisions are left out", () => {
 	const rows = [row({ kernel: "ikj", precision: "i32", n: 512, gops: 30 })];
 	expect(rowsFor(rows).some((e) => e.precision === "i32")).toBe(false);
