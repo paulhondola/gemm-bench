@@ -2,7 +2,7 @@ import type { ScatterData } from "plotly.js-dist-min";
 import type { Row } from "../data/db";
 import { BASELINE_INK, FAMILY_INK, FAMILY_ORDER } from "../design/palette";
 import { fmtGops } from "../format/numbers";
-import { bestPerFamily, bestPerKernel } from "../model/best";
+import { bestBy, bestPerFamily, bestPerKernel } from "../model/best";
 import { BASELINE_KERNEL } from "../model/defaults";
 import { type Family, familyOf } from "../model/family";
 import { hasKernel } from "../model/rows";
@@ -185,12 +185,11 @@ export const serialOnly: ChartSpec = (rows, _f, ctx) =>
  * cell that the legend can still name and hide by family.
  */
 export const fastestPerSize: ChartSpec = (rows, _f, ctx) => {
-	const winners = new Map<number, Row>();
-	for (const r of bestPerKernel(rows)) {
-		const n = Number(r.n);
-		const current = winners.get(n);
-		if (!current || Number(r.gops) > Number(current.gops)) winners.set(n, r);
-	}
+	const winners = bestBy(
+		rows,
+		(r) => Number(r.n),
+		(r) => Number(r.gops),
+	);
 	if (!winners.size) return null;
 
 	const cells = [...winners.entries()].map(([n, r]) => ({

@@ -15,11 +15,13 @@ SELECT m.*,
     WHERE p.measurement_id = m.measurement_id AND p.source = 'swept') AS swept_params
 FROM measurements m JOIN runs r USING (run_id);
 
--- The newest measurement of each cell: the latest run wins.
+-- The newest measurement of each cell: the latest run wins. Latest by
+-- append order (run_id), not started_at, which a skewed clock can put out
+-- of order.
 CREATE TEMP VIEW latest AS
 SELECT * FROM (
   SELECT *, row_number() OVER (
     PARTITION BY kernel, precision, n, threads, swept_params
-    ORDER BY started_at DESC, measurement_id DESC) AS recency
+    ORDER BY run_id DESC, measurement_id DESC) AS recency
   FROM measurement_rows)
 WHERE recency = 1;

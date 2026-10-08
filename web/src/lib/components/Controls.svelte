@@ -30,7 +30,12 @@ const {
 	family: Map<string, Family>;
 } = $props();
 
-const available = $derived(sizesFor(store.rows, store.precision));
+// An inertPrecision tab charts every precision, so any measured size is pickable.
+const available = $derived(
+	tab.inertPrecision
+		? allSizes(store.rows)
+		: sizesFor(store.rows, store.precision),
+);
 // The kernel pill group is threading-tab-only and must offer only the
 // kernels that tab's chart can plot — parallel-family kernels — not every
 // kernel in scope.
@@ -39,11 +44,21 @@ const parallelKernelList = $derived(
 );
 
 function pickPrecision(p: string) {
-	setFilters(atPrecision(store.rows, filters, p));
+	setFilters(atPrecision(store.rows, filters, p, family));
 }
 
 function pickSize(s: number) {
-	setFilters(withSize(store.rows, filters, s));
+	// The hidden precision follows to one measured at s, so the other tabs stay valid.
+	const p = sizesFor(store.rows, store.precision).includes(s)
+		? store.precision
+		: (precisions(store.rows).find((q) =>
+				sizesFor(store.rows, q).includes(s),
+			) ?? store.precision);
+	const f =
+		p === store.precision
+			? filters
+			: atPrecision(store.rows, filters, p, family);
+	setFilters(withSize(store.rows, f, s));
 }
 </script>
 
@@ -101,10 +116,12 @@ function pickSize(s: number) {
 			onSelect={(k) => (store.kernel = k)} />
 	{/if}
 
-	<label class="toggle">
-		<input type="checkbox" bind:checked={store.relative} />
-		Relative
-	</label>
+	{#if tab.relative}
+		<label class="toggle">
+			<input type="checkbox" bind:checked={store.relative} />
+			Relative
+		</label>
+	{/if}
 </div>
 
 <style>

@@ -23,6 +23,8 @@ let {
 const docHtml = $derived(renderMarkdown(doc));
 
 let host = $state<HTMLDivElement | null>(null);
+/** Why the last draw failed, shown in place of a silently blank panel. */
+let failed = $state("");
 
 /**
  * Plotly's built-ins are why the dashboard uses it: box zoom and pan,
@@ -80,7 +82,15 @@ $effect(() => {
 			legend: { ...layout.legend, uirevision: title },
 		},
 		{ ...CONFIG, toImageButtonOptions: { format: "svg", filename: title } },
-	).then(syncGroupedShapes);
+	).then(
+		(gd) => {
+			failed = "";
+			syncGroupedShapes(gd);
+		},
+		(e) => {
+			failed = `This chart failed to draw: ${e}`;
+		},
+	);
 });
 
 // Its own effect: a cleanup in the draw effect would run before every redraw
@@ -116,6 +126,7 @@ $effect(() => {
 	</details>
 	{#if spec}
 		<div class="plot" bind:this={host}></div>
+		{#if failed}<p class="empty">{failed}</p>{/if}
 	{:else}
 		<p class="empty">{empty}</p>
 	{/if}

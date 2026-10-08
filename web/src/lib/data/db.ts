@@ -81,11 +81,14 @@ export const SCHEMA_VERSION = 1;
 
 function all<T>(db: Database, sql: string, params: SqlValue[] = []): T[] {
 	const statement = db.prepare(sql, params);
-	const rows: T[] = [];
-	// getAsObject is untyped (column → SqlValue); each query's T names its columns.
-	while (statement.step()) rows.push(statement.getAsObject() as unknown as T);
-	statement.free();
-	return rows;
+	try {
+		const rows: T[] = [];
+		// getAsObject is untyped (column → SqlValue); each query's T names its columns.
+		while (statement.step()) rows.push(statement.getAsObject() as unknown as T);
+		return rows;
+	} finally {
+		statement.free();
+	}
 }
 
 function pragma(db: Database, name: string): number {
@@ -143,7 +146,7 @@ export function readMachine(db: Database): Machine | undefined {
 		db,
 		`SELECT run_id, started_at, os, arch, target_features, rustc_version, cpu,
 		        available_parallelism, gpu, gpu_cores
-		 FROM runs ORDER BY started_at DESC LIMIT 1`,
+		 FROM runs ORDER BY run_id DESC LIMIT 1`,
 	);
 	if (!run) return undefined;
 	const { run_id: runId, ...machine } = run;

@@ -15,22 +15,26 @@ import { partitionPlottable } from "../model/rows";
 import { parsePeaks } from "../peaks/parse";
 import { initialFilters } from "./filters";
 
-export const store = $state({
-	rows: [] as Row[],
-	peaks: [] as Peak[],
-	hosts: HOSTS as Host[],
-	host: undefined as Host | undefined,
-	machine: undefined as Machine | undefined,
-	error: "",
-	loaded: false,
-	precision: "",
-	n: 0,
-	kernel: "",
-	knobs: {} as Record<string, number>,
-	relative: false,
-	tab: "overview",
-	dropped: 0,
-});
+class Store {
+	// Raw: replaced wholesale, never mutated. A deep $state proxy would wrap
+	// every row and make each scan in the deriveds roughly 10× slower.
+	rows = $state.raw<Row[]>([]);
+	peaks = $state.raw<Peak[]>([]);
+	readonly hosts: Host[] = HOSTS;
+	host = $state.raw<Host | undefined>();
+	machine = $state.raw<Machine | undefined>();
+	error = $state("");
+	loaded = $state(false);
+	precision = $state("");
+	n = $state(0);
+	kernel = $state("");
+	knobs = $state.raw<Record<string, number>>({});
+	relative = $state(false);
+	tab = $state("overview");
+	dropped = $state(0);
+}
+
+export const store = new Store();
 
 /**
  * Fetches the selected host's database (`?host=`, else the first) and reads
@@ -45,9 +49,14 @@ export async function boot(): Promise<void> {
 			const [SQL, response] = await Promise.all([loadSql(), fetch(host.url)]);
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			const db = openDb(SQL, new Uint8Array(await response.arrayBuffer()));
-			const { rows, dropped } = partitionPlottable(readRows(db));
-			store.machine = readMachine(db);
-			db.close();
+			let plottable: ReturnType<typeof partitionPlottable>;
+			try {
+				plottable = partitionPlottable(readRows(db));
+				store.machine = readMachine(db);
+			} finally {
+				db.close();
+			}
+			const { rows, dropped } = plottable;
 			store.rows = rows;
 			store.dropped = dropped;
 			setFilters(initialFilters(rows));
