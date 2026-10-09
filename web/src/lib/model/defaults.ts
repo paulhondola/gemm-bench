@@ -40,13 +40,11 @@ export function defaultParallelKernel(
 		(r) =>
 			r.precision === precision && family.get(String(r.kernel)) === "parallel",
 	);
-	let best = "";
-	let peak = Number.NEGATIVE_INFINITY;
-	for (const r of candidates) {
-		if (Number(r.gops) > peak) {
-			peak = Number(r.gops);
-			best = String(r.kernel);
-		}
-	}
-	return best;
+	// Strict `>`: ties keep the first row.
+	return (
+		candidates.reduce<Row | undefined>(
+			(best, r) => (!best || r.gops > best.gops ? r : best),
+			undefined,
+		)?.kernel ?? ""
+	);
 }

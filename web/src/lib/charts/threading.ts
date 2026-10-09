@@ -1,13 +1,12 @@
 import type { Row } from "../data/db";
 import { REFERENCE_INK, sequentialRamp } from "../design/palette";
-import { hasSingleThreadBaseline } from "../model/rows";
 import { AXIS, BASE_LAYOUT, LABELLED_MARGIN } from "./layout";
 import type { ChartSpec, Ctx } from "./spec";
 import { lineTraces, type SeriesPoint } from "./traces";
 
 /** Speedup is relative to one thread, so a 1-thread row must exist. */
 export function canShowScaling(rows: Row[]): boolean {
-	return hasSingleThreadBaseline(rows);
+	return rows.some((r) => r.threads === 1);
 }
 
 function parallelRows(rows: Row[], ctx: Ctx): Row[] {
