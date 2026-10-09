@@ -104,33 +104,15 @@ pub(crate) fn measure<T: Element>(
             )
         }
         #[cfg(target_os = "macos")]
-        KernelChoice::MetalNaive => {
-            let kernel = ShaderGemm::<T>::new(Shader::Naive)?
-                .expect("metal-naive needs a Metal device and f16, f32, i32 or i64");
-            let built = setup_start.elapsed();
-            let params = GemmKernel::<T>::params(&kernel, lhs.rows());
-            on_gpu(
-                built,
-                kernel.benchmark(lhs, rhs, io.2, repetitions)?,
-                params,
-            )
-        }
-        #[cfg(target_os = "macos")]
-        KernelChoice::MetalTiled => {
-            let kernel = ShaderGemm::<T>::new(Shader::Tiled)?
-                .expect("metal-tiled needs a Metal device and f16, f32, i32 or i64");
-            let built = setup_start.elapsed();
-            let params = GemmKernel::<T>::params(&kernel, lhs.rows());
-            on_gpu(
-                built,
-                kernel.benchmark(lhs, rhs, io.2, repetitions)?,
-                params,
-            )
-        }
-        #[cfg(target_os = "macos")]
-        KernelChoice::MetalSimdgroup => {
-            let kernel = ShaderGemm::<T>::new(Shader::Simdgroup)?
-                .expect("metal-simdgroup needs a Metal device and f16 or f32");
+        KernelChoice::MetalNaive | KernelChoice::MetalTiled | KernelChoice::MetalSimdgroup => {
+            let shader = match choice {
+                KernelChoice::MetalNaive => Shader::Naive,
+                KernelChoice::MetalTiled => Shader::Tiled,
+                _ => Shader::Simdgroup,
+            };
+            // `KernelChoice::supports` keeps unsupported precisions out of the plan.
+            let kernel = ShaderGemm::<T>::new(shader)?
+                .unwrap_or_else(|| panic!("{} needs a Metal device", choice.label()));
             let built = setup_start.elapsed();
             let params = GemmKernel::<T>::params(&kernel, lhs.rows());
             on_gpu(
