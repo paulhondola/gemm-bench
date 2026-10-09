@@ -5,7 +5,6 @@ import { fmtGops } from "../format/numbers";
 import { bestBy, bestPerFamily, bestPerKernel } from "../model/best";
 import { BASELINE_KERNEL } from "../model/defaults";
 import { type Family, familyOf } from "../model/family";
-import { hasKernel } from "../model/rows";
 import { type Ceiling, ceilingOf, ceilingShape, pctOfPeak } from "./ceiling";
 import {
 	AXIS,
@@ -21,7 +20,7 @@ import { lineTraces, type SeriesPoint, uidOf } from "./traces";
 
 /** Without a naive-ijk row there is no denominator, so the toggle is hidden. */
 export function canShowSpeedup(rows: Row[]): boolean {
-	return hasKernel(rows, BASELINE_KERNEL);
+	return rows.some((r) => r.kernel === BASELINE_KERNEL);
 }
 
 function baselineAt(rows: Row[]): Map<number, number> {
