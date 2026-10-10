@@ -10,14 +10,12 @@ let {
 	title,
 	note = "",
 	doc,
-	empty = "No data for this selection.",
 }: {
 	spec: Figure | null;
 	title: string;
 	note?: string;
 	/** The chart's Markdown explanation, from web/src/docs/charts/. */
 	doc: string;
-	empty?: string;
 } = $props();
 
 const docHtml = $derived(renderMarkdown(doc));
@@ -128,7 +126,7 @@ $effect(() => {
 		<div class="plot" bind:this={host}></div>
 		{#if failed}<p class="empty">{failed}</p>{/if}
 	{:else}
-		<p class="empty">{empty}</p>
+		<p class="empty">No data for this selection.</p>
 	{/if}
 </section>
 

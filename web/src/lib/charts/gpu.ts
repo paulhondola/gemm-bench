@@ -59,9 +59,6 @@ function gpuRows(rows: Row[], ctx: Ctx): Row[] {
 
 const toKernelPoint = (r: Row): Point => toPoint(String(r.kernel), r);
 
-const gpuPoints = (rows: Row[], ctx: Ctx): Point[] =>
-	gpuRows(rows, ctx).map(toKernelPoint);
-
 /** A family's best row at each size, keyed by n. */
 function familyBest(rows: Row[], ctx: Ctx, family: Family): Map<number, Row> {
 	return new Map(
@@ -167,7 +164,7 @@ type RatioPoint = {
  * same size: where the GPU wins for the same engineering effort.
  */
 export const gpuEqualEffort: ChartSpec = (rows, _f, ctx) => {
-	const kernelPoints = gpuPoints(rows, ctx);
+	const kernelPoints = gpuRows(rows, ctx).map(toKernelPoint);
 	const best = new Map(
 		[...new Set(kernelPoints.map((p) => counterpartOf(p.kernel)))].map(
 			(family) => [family, familyBest(rows, ctx, family)] as const,

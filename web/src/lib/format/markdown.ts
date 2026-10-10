@@ -1,22 +1,4 @@
-import { Marked } from "marked";
-
-/** One parser per heading offset: walkTokens is fixed when one is built. */
-const parsers = new Map<number, Marked>();
-
-function parserFor(offset: number): Marked {
-	let parser = parsers.get(offset);
-	if (!parser) {
-		parser = new Marked({
-			walkTokens(token) {
-				if (token.type === "heading") {
-					token.depth = Math.min(6, token.depth + offset);
-				}
-			},
-		});
-		parsers.set(offset, parser);
-	}
-	return parser;
-}
+import { lexer, parser, walkTokens } from "marked";
 
 /**
  * Markdown to HTML for the dashboard's own docs (web/src/docs). The output is
@@ -26,5 +8,11 @@ function parserFor(offset: number): Marked {
  * page's own headings.
  */
 export function renderMarkdown(src: string, headingOffset = 0): string {
-	return parserFor(headingOffset).parse(src, { async: false });
+	const tokens = lexer(src);
+	walkTokens(tokens, (token) => {
+		if (token.type === "heading") {
+			token.depth = Math.min(6, token.depth + headingOffset);
+		}
+	});
+	return parser(tokens);
 }

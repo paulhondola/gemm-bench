@@ -76,14 +76,10 @@ fn lscpu_field(lscpu: &str, field: &str) -> Option<String> {
         .filter(|value| !value.is_empty() && value != "-")
 }
 
-/// lscpu's `Model name`, e.g. `Neoverse-V1` on an ARM server.
-fn parse_lscpu_model(lscpu: &str) -> Option<String> {
-    lscpu_field(lscpu, "Model name")
-}
-
-/// The model name, or the `Vendor ID` (`Apple`) when a VM leaves the model out.
+/// lscpu's `Model name` (`Neoverse-V1` on an ARM server), or the `Vendor ID`
+/// (`Apple`) when a VM leaves the model out.
 fn parse_lscpu_name(lscpu: &str) -> Option<String> {
-    parse_lscpu_model(lscpu).or_else(|| lscpu_field(lscpu, "Vendor ID"))
+    lscpu_field(lscpu, "Model name").or_else(|| lscpu_field(lscpu, "Vendor ID"))
 }
 
 /// The first display device in `lspci -mm`, whose lines read
@@ -240,8 +236,8 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use super::{
-        Cache, CacheKind, CoreTier, linux_topology, parse_cpu_list, parse_cpu_model,
-        parse_lscpu_model, parse_lscpu_name, parse_lspci_gpu, parse_size,
+        Cache, CacheKind, CoreTier, linux_topology, lscpu_field, parse_cpu_list, parse_cpu_model,
+        parse_lscpu_name, parse_lspci_gpu, parse_size,
     };
 
     #[test]
@@ -444,14 +440,14 @@ mod tests {
     #[test]
     fn a_blank_model_name_counts_as_missing() {
         assert_eq!(parse_cpu_model("model name\t: \nprocessor\t: 0\n"), None);
-        assert_eq!(parse_lscpu_model("Model name:   \t\n"), None);
+        assert_eq!(lscpu_field("Model name:   \t\n", "Model name"), None);
     }
 
     /// lscpu prints `-` when a VM's firmware gives no model name.
     #[test]
     fn a_dash_model_name_counts_as_missing() {
         assert_eq!(
-            parse_lscpu_model("Vendor ID:  Apple\nModel name:  -\n"),
+            lscpu_field("Vendor ID:  Apple\nModel name:  -\n", "Model name"),
             None
         );
     }
@@ -466,10 +462,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_lscpu_model_reads_the_decoded_arm_part() {
+    fn lscpu_model_name_reads_the_decoded_arm_part() {
         let lscpu = "Architecture:  aarch64\nVendor ID:     ARM\nModel name:    Neoverse-V1\n";
-        assert_eq!(parse_lscpu_model(lscpu).as_deref(), Some("Neoverse-V1"));
-        assert_eq!(parse_lscpu_model("Architecture: aarch64\n"), None);
+        assert_eq!(
+            lscpu_field(lscpu, "Model name").as_deref(),
+            Some("Neoverse-V1")
+        );
+        assert_eq!(lscpu_field("Architecture: aarch64\n", "Model name"), None);
     }
 
     /// `lspci -mm` on a laptop with an Intel iGPU and an NVIDIA dGPU, after a

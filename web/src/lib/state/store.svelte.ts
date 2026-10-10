@@ -1,3 +1,6 @@
+import initSqlJs from "sql.js";
+// The wasm comes from Vite's content-hashed asset URL.
+import wasmUrl from "sql.js/dist/sql-wasm-browser.wasm?url";
 import peaksCsv from "../../../../data/peaks.csv?raw";
 import type { Filters } from "../charts/spec";
 import {
@@ -10,7 +13,6 @@ import {
 } from "../data/db";
 import { HOSTS } from "../data/hostlist";
 import { type Host, pickHost } from "../data/hosts";
-import { loadSql } from "../data/sqlite";
 import { partitionPlottable } from "../model/rows";
 import { parsePeaks } from "../peaks/parse";
 import { initialFilters } from "./filters";
@@ -46,7 +48,10 @@ export async function boot(): Promise<void> {
 	try {
 		store.peaks = parsePeaks(peaksCsv);
 		if (host) {
-			const [SQL, response] = await Promise.all([loadSql(), fetch(host.url)]);
+			const [SQL, response] = await Promise.all([
+				initSqlJs({ locateFile: () => wasmUrl }),
+				fetch(host.url),
+			]);
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			const db = openDb(SQL, new Uint8Array(await response.arrayBuffer()));
 			let plottable: ReturnType<typeof partitionPlottable>;

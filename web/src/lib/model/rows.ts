@@ -51,12 +51,3 @@ export function sizesFor(rows: Row[], precision: string): number[] {
 export function allSizes(rows: Row[]): number[] {
 	return [...new Set(rows.map((r) => Number(r.n)))].sort(ascending);
 }
-
-export function hasKernel(rows: Row[], kernel: string): boolean {
-	return rows.some((r) => r.kernel === kernel);
-}
-
-/** A speedup-vs-1-thread projection needs a 1-thread row to divide by. */
-export function hasSingleThreadBaseline(rows: Row[]): boolean {
-	return rows.some((r) => Number(r.threads) === 1);
-}

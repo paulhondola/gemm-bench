@@ -1,11 +1,8 @@
 import { expect, test } from "bun:test";
 import type { Row } from "../data/db";
-import { mixed, row, threaded } from "../test/fixtures";
-import { BASELINE_KERNEL } from "./defaults";
+import { mixed, row } from "../test/fixtures";
 import {
 	allSizes,
-	hasKernel,
-	hasSingleThreadBaseline,
 	isPlottable,
 	partitionPlottable,
 	precisions,
@@ -68,12 +65,4 @@ test("partitionPlottable reports the usable rows and the dropped count", () => {
 	const { rows: usable, dropped } = partitionPlottable(rows);
 	expect(usable).toEqual([validRow]);
 	expect(dropped).toBe(2);
-});
-
-test("baseline guards detect what a partial sweep is missing", () => {
-	expect(hasKernel(threaded, BASELINE_KERNEL)).toBe(false);
-	expect(hasSingleThreadBaseline(threaded)).toBe(true);
-	expect(hasSingleThreadBaseline(threaded.filter((r) => r.threads !== 1))).toBe(
-		false,
-	);
 });

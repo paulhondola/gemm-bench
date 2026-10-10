@@ -1,10 +1,8 @@
-use std::fmt;
-
 /// A contiguous, row-major matrix.
 ///
 /// Dimensions are kept even though the benchmark currently operates on square
 /// matrices, so dimension checks remain explicit at kernel boundaries.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Matrix<T> {
     rows: usize,
     cols: usize,
@@ -82,15 +80,6 @@ impl<T> Matrix<T> {
         let start = row * self.cols;
         &mut self.data[start..start + self.cols]
     }
-
-    #[must_use]
-    pub fn get(&self, row: usize, col: usize) -> &T {
-        assert!(
-            row < self.rows && col < self.cols,
-            "matrix index is out of range"
-        );
-        &self.data[row * self.cols + col]
-    }
 }
 
 impl<T: Default + Clone> Matrix<T> {
@@ -100,17 +89,6 @@ impl<T: Default + Clone> Matrix<T> {
             .checked_mul(cols)
             .expect("matrix dimensions overflow usize");
         Self::from_vec(rows, cols, vec![T::default(); len])
-    }
-}
-
-impl<T: fmt::Debug> fmt::Debug for Matrix<T> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Matrix")
-            .field("rows", &self.rows)
-            .field("cols", &self.cols)
-            .field("data", &self.data)
-            .finish()
     }
 }
 

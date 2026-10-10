@@ -27,7 +27,7 @@ impl BenchmarkProgress {
         let bar = ProgressBar::new(total as u64);
         let style = ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} {msg} ({eta})")
-            .unwrap_or_else(|_| ProgressStyle::default_bar())
+            .expect("constant progress template")
             .progress_chars("=>-");
 
         bar.set_style(style);
@@ -68,7 +68,7 @@ impl BenchmarkProgress {
             .template(
                 "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} {msg}",
             )
-            .unwrap_or_else(|_| ProgressStyle::default_bar())
+            .expect("constant progress template")
             .progress_chars("=>-");
         self.bar.set_style(finish_style);
         self.bar.finish_with_message("Complete");
